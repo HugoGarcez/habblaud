@@ -1,0 +1,255 @@
+// Tap de statusline (scripts/statusline-tap.mjs, testado como processo de verdade) e o instalador
+// (scripts/statusline-install.ts). Tudo com HOME e config dirs FALSOS em pastas temporárias.
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+  decodeOriginal,
+  detectNodeCommand,
+  encodeOriginal,
+  planInstall,
+  planUninstall,
+  run,
+  TAP_SCRIPT,
+  unwrapCommand,
+  wrapCommand,
+  type RunOptions,
+} from '../../scripts/statusline-install';
+import { tempDir } from './fixtures';
+
+const TAP = resolve(__dirname, '../../scripts/statusline-tap.mjs');
+const NOW_S = Math.floor(Date.now() / 1000);
+
+function statusJson(over: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    hook_event_name: 'Status',
+    session_id: 'sess-1',
+    transcript_path: '/fake/home/.claude-conta2/projects/-x-proj/sess-1.jsonl',
+    cwd: '/x/proj',
+    model: { id: 'claude-teste', display_name: 'Teste' },
+    workspace: { current_dir: '/x/proj', project_dir: '/x/proj' },
+    cost: { total_cost_usd: 1.23 },
+    rate_limits: {
+      five_hour: { used_percentage: 42.5, resets_at: NOW_S + 3_600 },
+      seven_day: { used_percentage: 15, resets_at: NOW_S + 86_400 },
+    },
+    ...over,
+  });
+}
+
+describe('statusline-tap.mjs', () => {
+  let tmp: ReturnType<typeof tempDir>;
+  let env: NodeJS.ProcessEnv;
+  let usageDir: string;
+
+  beforeEach(() => {
+    tmp = tempDir();
+    usageDir = join(tmp.dir, 'usage');
+    // HOME falso e pasta de uso explícita: o teste nunca toca em ~/.codetown nem em ~/.claude*.
+    env = { PATH: process.env.PATH, HOME: join(tmp.dir, 'home'), CODETOWN_USAGE_DIR: usageDir };
+  });
+  afterEach(() => tmp.cleanup());
+
+  const tap = (args: string[], input: string, extraEnv: NodeJS.ProcessEnv = {}) =>
+    spawnSync(process.execPath, [TAP, ...args], { input, env: { ...env, ...extraEnv }, encoding: 'utf8', timeout: 10_000 });
+
+  it('repassa o stdin ao comando original e grava SÓ os limites, de forma atômica e com modo 600', () => {
+    const input = statusJson();
+    const r = tap(['--', 'cat'], input);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe(input);
+    const files = readdirSync(usageDir);
+    expect(files).toEqual(['.claude-conta2.json']);
+    const file = join(usageDir, files[0]);
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    const rec = JSON.parse(readFileSync(file, 'utf8'));
+    expect(Object.keys(rec).sort()).toEqual(['accountId', 'configDir', 'fetchedAt', 'five_hour', 'seven_day']);
+    expect(rec).toMatchObject({
+      accountId: '.claude-conta2',
+      configDir: '/fake/home/.claude-conta2',
+      five_hour: { utilization: 42.5, resets_at: NOW_S + 3_600 },
+      seven_day: { utilization: 15, resets_at: NOW_S + 86_400 },
+    });
+    expect(Math.abs(rec.fetchedAt - Date.now())).toBeLessThan(30_000);
+    // Nada do resto do stdin (custo, sessão, cwd...).
+    const raw = readFileSync(file, 'utf8');
+    for (const leak of ['sess-1', 'total_cost_usd', '/x/proj', 'claude-teste']) expect(raw).not.toContain(leak);
+  });
+
+  it('sai com o código do comando original; comandos com pipe e aspas continuam valendo', () => {
+    expect(tap(['--', 'exit', '7'], statusJson()).status).toBe(7);
+    // O instalador põe o comando complexo entre aspas simples; o shell do Claude Code as tira e o tap
+    // recebe o comando inteiro como um único argumento.
+    const complex = `printf '%s|' "a b" | tr a-z A-Z`;
+    const viaShell = spawnSync('/bin/sh', ['-c', `"${process.execPath}" "${TAP}" -- ${encodeOriginal(complex)}`], {
+      input: statusJson(),
+      env,
+      encoding: 'utf8',
+    });
+    expect(viaShell.status).toBe(0);
+    expect(viaShell.stdout).toBe('A B|');
+  });
+
+  it('sem comando original: não imprime nada, mas captura', () => {
+    const r = tap([], statusJson());
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe('');
+    expect(existsSync(join(usageDir, '.claude-conta2.json'))).toBe(true);
+  });
+
+  it('sem rate_limits, JSON inválido ou pasta de uso impossível: nunca atrapalha o statusline', () => {
+    const noLimits = statusJson({ rate_limits: undefined });
+    expect(tap(['--', 'cat'], noLimits).stdout).toBe(noLimits);
+    expect(tap(['--', 'cat'], 'isto não é json').stdout).toBe('isto não é json');
+    expect(existsSync(usageDir)).toBe(false);
+    // CODETOWN_USAGE_DIR aponta para um arquivo: a gravação falha em silêncio.
+    writeFileSync(join(tmp.dir, 'arquivo'), 'x');
+    const r = tap(['--', 'echo', 'ok'], statusJson(), { CODETOWN_USAGE_DIR: join(tmp.dir, 'arquivo') });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe('ok\n');
+    expect(r.stderr).toBe('');
+  });
+
+  it('sem transcript_path: CLAUDE_CONFIG_DIR (primeiro da lista) e depois ~/.claude', () => {
+    tap([], statusJson({ transcript_path: undefined }), { CLAUDE_CONFIG_DIR: '/outra/.claude-trabalho,/x' });
+    expect(JSON.parse(readFileSync(join(usageDir, '.claude-trabalho.json'), 'utf8')).configDir).toBe('/outra/.claude-trabalho');
+    tap([], statusJson({ transcript_path: undefined }));
+    expect(JSON.parse(readFileSync(join(usageDir, '.claude.json'), 'utf8')).configDir).toBe(join(env.HOME!, '.claude'));
+  });
+
+  it('não regrava valores idênticos em menos de 10 s', () => {
+    tap([], statusJson());
+    const file = join(usageDir, '.claude-conta2.json');
+    const first = JSON.parse(readFileSync(file, 'utf8')).fetchedAt;
+    tap([], statusJson());
+    expect(JSON.parse(readFileSync(file, 'utf8')).fetchedAt).toBe(first);
+    tap([], statusJson({ rate_limits: { five_hour: { used_percentage: 43, resets_at: NOW_S + 3_600 } } }));
+    const changed = JSON.parse(readFileSync(file, 'utf8'));
+    expect(changed.five_hour.utilization).toBe(43);
+    expect(changed.seven_day).toBeUndefined();
+  });
+});
+
+describe('statusline-install.ts (funções puras)', () => {
+  const tapPath = '/repo/codetown/scripts/statusline-tap.mjs';
+
+  it('envolve e desembrulha preservando o comando original', () => {
+    expect(wrapCommand('node', tapPath, 'npx -y ccstatusline')).toBe('node "/repo/codetown/scripts/statusline-tap.mjs" -- npx -y ccstatusline');
+    expect(wrapCommand('node', tapPath)).toBe('node "/repo/codetown/scripts/statusline-tap.mjs"');
+    for (const original of ['npx -y ccstatusline', `bash -c 'echo "oi" | head -1'`, '~/.claude/statusline.sh 2>/dev/null', `echo 'it'"'"'s'`]) {
+      const wrapped = wrapCommand('/opt/homebrew/bin/node', tapPath, original);
+      expect(unwrapCommand(wrapped)).toEqual({ tapPath, original });
+    }
+    expect(unwrapCommand(wrapCommand('node', '/caminho com $ e "/statusline-tap.mjs', 'x'))).toEqual({ tapPath: '/caminho com $ e "/statusline-tap.mjs', original: 'x' });
+    expect(unwrapCommand('npx -y ccstatusline')).toBeUndefined();
+    expect(decodeOriginal(encodeOriginal('a | b'))).toBe('a | b');
+  });
+
+  it('planos de instalação e remoção', () => {
+    const settings = { model: 'opus', statusLine: { type: 'command', command: 'npx -y ccstatusline', padding: 0 }, permissions: { allow: ['Bash(ls:*)'] } };
+    const inst = planInstall(settings, 'node', tapPath);
+    expect(inst.action).toBe('install');
+    if (inst.action !== 'install') return;
+    expect(inst.settings).toEqual({ ...settings, statusLine: { type: 'command', command: wrapCommand('node', tapPath, 'npx -y ccstatusline'), padding: 0 } });
+    expect(Object.keys(inst.settings)).toEqual(['model', 'statusLine', 'permissions']);
+    expect(planInstall(inst.settings, 'node', tapPath).action).toBe('none');
+    // Repo mudou de lugar: atualiza o caminho sem perder o original.
+    const moved = planInstall(inst.settings, 'node', '/novo/scripts/statusline-tap.mjs');
+    expect(moved.action === 'install' && unwrapCommand(String((moved.settings.statusLine as { command: string }).command))).toEqual({ tapPath: '/novo/scripts/statusline-tap.mjs', original: 'npx -y ccstatusline' });
+    const un = planUninstall(inst.settings);
+    expect(un.action === 'uninstall' && un.settings).toEqual(settings);
+    expect(planUninstall(settings).action).toBe('none');
+    // Sem statusLine: cria um só com o tap; remover tira o campo.
+    const created = planInstall({ model: 'x' }, 'node', tapPath);
+    expect(created.action === 'install' && created.settings).toEqual({ model: 'x', statusLine: { type: 'command', command: wrapCommand('node', tapPath) } });
+    expect(created.action === 'install' && planUninstall(created.settings)).toMatchObject({ action: 'uninstall', settings: { model: 'x' } });
+    expect(planInstall({ statusLine: 'texto' }, 'node', tapPath).action).toBe('skip');
+    expect(planInstall({ statusLine: { type: 'outro' } }, 'node', tapPath).action).toBe('skip');
+  });
+
+  it('node estável no PATH vira caminho absoluto; nvm/fnm viram só "node"', () => {
+    const home = '/Users/fulano';
+    const has = (set: string[]) => (p: string) => set.includes(p);
+    expect(detectNodeCommand({ PATH: '/opt/homebrew/bin:/usr/bin' }, home, has(['/opt/homebrew/bin/node', '/usr/bin/node']))).toBe('/opt/homebrew/bin/node');
+    expect(detectNodeCommand({ PATH: `${home}/.nvm/versions/node/v24.1.0/bin:/opt/homebrew/bin` }, home, has([`${home}/.nvm/versions/node/v24.1.0/bin/node`, '/opt/homebrew/bin/node']))).toBe('node');
+    expect(detectNodeCommand({ PATH: '' }, home, () => false)).toBe('node');
+  });
+});
+
+describe('statusline-install.ts (arquivos, HOME falso)', () => {
+  let tmp: ReturnType<typeof tempDir>;
+  let home: string;
+  let out: string[];
+  const original = { model: 'opus', statusLine: { type: 'command', command: 'npx -y ccstatusline', padding: 0 }, env: { FOO: '1' } };
+
+  beforeEach(() => {
+    tmp = tempDir();
+    home = join(tmp.dir, 'home');
+    out = [];
+    mkdirSync(join(home, '.claude', 'projects'), { recursive: true });
+    mkdirSync(join(home, '.claude-conta2', 'sessions'), { recursive: true });
+    writeFileSync(join(home, '.claude', 'settings.json'), `${JSON.stringify(original, null, 2)}\n`, { mode: 0o644 });
+  });
+  afterEach(() => tmp.cleanup());
+
+  const exec = (command: RunOptions['command'], extra: Partial<RunOptions> = {}) =>
+    run(
+      { command, dryRun: false, nodeCmd: process.execPath, ...extra },
+      { env: { HOME: home, CODETOWN_USAGE_DIR: join(tmp.dir, 'usage') }, home, now: new Date(2026, 9, 6, 14, 5, 9), tapPath: TAP_SCRIPT, out: (l) => out.push(l) },
+    );
+  const read = (acc: string) => JSON.parse(readFileSync(join(home, acc, 'settings.json'), 'utf8'));
+
+  it('install: backup, só o statusLine muda, permissão preservada; de novo = nada a fazer', () => {
+    expect(exec('install')).toBe(0);
+    const c = read('.claude');
+    expect(c.model).toBe('opus');
+    expect(c.env).toEqual({ FOO: '1' });
+    expect(c.statusLine).toEqual({ type: 'command', command: wrapCommand(process.execPath, TAP_SCRIPT, 'npx -y ccstatusline'), padding: 0 });
+    expect(statSync(join(home, '.claude', 'settings.json')).mode & 0o777).toBe(0o644);
+    const backup = join(home, '.claude', 'settings.json.codetown-backup-20261006-140509');
+    expect(JSON.parse(readFileSync(backup, 'utf8'))).toEqual(original);
+    // Conta sem settings.json: cria um só com o statusline do tap (sem backup, não havia nada).
+    expect(read('.claude-conta2')).toEqual({ statusLine: { type: 'command', command: wrapCommand(process.execPath, TAP_SCRIPT) } });
+    expect(readdirSync(join(home, '.claude-conta2'))).not.toContain(expect.stringContaining('backup'));
+
+    out = [];
+    expect(exec('install')).toBe(0);
+    expect(out.join('\n')).toContain('já instalado');
+    expect(readdirSync(join(home, '.claude')).filter((f) => f.includes('backup'))).toHaveLength(1);
+  });
+
+  it('o comando instalado funciona de verdade: repassa a saída e captura o uso', () => {
+    exec('install');
+    const cmd: string = read('.claude').statusLine.command.replace('npx -y ccstatusline', 'cat');
+    const usageDir = join(tmp.dir, 'usage');
+    const input = statusJson({ transcript_path: join(home, '.claude', 'projects', '-p', 's.jsonl') });
+    const r = spawnSync('/bin/sh', ['-c', cmd], { input, encoding: 'utf8', env: { PATH: process.env.PATH, HOME: home, CODETOWN_USAGE_DIR: usageDir } });
+    expect(r.stdout).toBe(input);
+    expect(JSON.parse(readFileSync(join(usageDir, '.claude.json'), 'utf8')).five_hour.utilization).toBe(42.5);
+  });
+
+  it('status e uninstall devolvem tudo como era', () => {
+    exec('install');
+    out = [];
+    exec('status');
+    expect(out.join('\n')).toMatch(/\.claude \(.*\): instalado \(na frente de: npx -y ccstatusline\); nenhum uso capturado ainda/);
+    expect(exec('uninstall')).toBe(0);
+    expect(read('.claude')).toEqual(original);
+    expect(read('.claude-conta2')).toEqual({});
+    out = [];
+    exec('uninstall');
+    expect(out.join('\n')).toContain('não estava instalado');
+  });
+
+  it('--dry-run não grava; JSON inválido nunca é sobrescrito', () => {
+    const before = readFileSync(join(home, '.claude', 'settings.json'), 'utf8');
+    exec('install', { dryRun: true });
+    expect(readFileSync(join(home, '.claude', 'settings.json'), 'utf8')).toBe(before);
+    expect(existsSync(join(home, '.claude-conta2', 'settings.json'))).toBe(false);
+    writeFileSync(join(home, '.claude-conta2', 'settings.json'), '{ quebrado');
+    expect(exec('install')).toBe(1);
+    expect(readFileSync(join(home, '.claude-conta2', 'settings.json'), 'utf8')).toBe('{ quebrado');
+    expect(out.join('\n')).toContain('JSON inválido');
+  });
+});

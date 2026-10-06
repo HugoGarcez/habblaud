@@ -1,0 +1,81 @@
+// Peças visuais reutilizadas pelos painéis: chip de conta, ponto de status, selo de papel, barra de progresso.
+import type { AccountInfo, Activity, AgentInfo, AgentStatus } from '../../../shared/types';
+import { h, setAttr, setStyleVar, setText, setTitle, setVariant } from './dom';
+import { WORDMARK } from './icons';
+import { statusLabel } from './model';
+
+/** Chip quadrado com a letra curta da conta ("C", "D") na cor da conta. */
+export function createAccountChip(size: 'sm' | 'md' | 'lg' = 'sm'): HTMLElement {
+  return h('span', { class: `ui-acc-chip ui-acc-chip--${size}` });
+}
+
+export function updateAccountChip(chip: HTMLElement, account: AccountInfo | undefined, fallbackId = ''): void {
+  const short = account?.short ?? (fallbackId.replace(/^\.claude-?/, '').charAt(0).toUpperCase() || '?');
+  setText(chip, short);
+  setStyleVar(chip, '--acc', account?.color ?? '#8b98b3');
+  const label = account ? `${account.name}${account.email ? ` (${account.email})` : ''}` : fallbackId || 'Conta desconhecida';
+  setTitle(chip, label);
+  setAttr(chip, 'aria-label', label);
+}
+
+/** Quadradinho de status (pixel), com pulso quando precisa de você. */
+export function createStatusDot(): HTMLElement {
+  return h('span', { class: 'ui-status-dot', role: 'img' });
+}
+
+export function updateStatusDot(dot: HTMLElement, status: AgentStatus): void {
+  setVariant(dot, 'is-', status);
+  const label = statusLabel(status);
+  setAttr(dot, 'aria-label', label);
+  setTitle(dot, label);
+}
+
+export function createRoleBadge(): HTMLElement {
+  return h('span', { class: 'ui-role' });
+}
+
+export function updateRoleBadge(badge: HTMLElement, agent: Pick<AgentInfo, 'kind' | 'role' | 'background'>): void {
+  setText(badge, agent.kind === 'main' ? 'Principal' : agent.role || 'Subagente');
+  setVariant(badge, 'ui-role--', agent.kind);
+  setTitle(badge, agent.kind === 'main' ? 'Agente principal' : `Subagente: ${agent.role}${agent.background ? ' (em segundo plano)' : ''}`);
+}
+
+/** Barra de progresso fina; `value` 0–1. */
+export function createProgress(label: string): HTMLElement {
+  const bar = h('span', { class: 'ui-progress', role: 'progressbar', attrs: { 'aria-label': label, 'aria-valuemin': 0, 'aria-valuemax': 100 } });
+  bar.append(h('span', { class: 'ui-progress__fill' }));
+  return bar;
+}
+
+export function updateProgress(bar: HTMLElement, done: number, total: number, partial = 0): void {
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  const partialPct = total > 0 ? Math.round(((done + partial) / total) * 100) : 0;
+  setStyleVar(bar, '--p', `${pct}%`);
+  setStyleVar(bar, '--pp', `${partialPct}%`);
+  setAttr(bar, 'aria-valuenow', String(pct));
+  setAttr(bar, 'aria-valuetext', `${done} de ${total}`);
+  bar.classList.toggle('is-complete', total > 0 && done === total);
+}
+
+/** Linha "ícone + texto" de atividade, com reticências. */
+export function createActivityLine(): HTMLElement {
+  const el = h('span', { class: 'ui-activity' });
+  el.append(h('span', { class: 'ui-activity__icon', attrs: { 'aria-hidden': 'true' } }), h('span', { class: 'ui-activity__text' }));
+  return el;
+}
+
+export function updateActivityLine(el: HTMLElement, activity: Activity | undefined, fallback = 'Sem atividade ainda'): void {
+  const [icon, text] = el.children as unknown as [HTMLElement, HTMLElement];
+  setText(icon, activity?.icon ?? '·');
+  setText(text, activity?.text ?? fallback);
+  el.classList.toggle('is-error', !!activity?.error);
+  setTitle(el, activity ? (activity.detail ? `${activity.text}\n${activity.detail}` : activity.text) : fallback);
+}
+
+/** Nome do produto como logotipo em pixels (o texto fica para leitores de tela). */
+export function wordmark(cls = 'ui-brand__name'): HTMLElement {
+  const el = h('span', { class: cls });
+  el.innerHTML = WORDMARK;
+  el.append(h('span', { class: 'ui-sr', text: 'CodeTown' }));
+  return el;
+}

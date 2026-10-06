@@ -1,0 +1,158 @@
+// Estado de um personagem: posição, pose, animação, fila de passos e marcadores visuais.
+import type { AgentInfo } from '../../../../shared/types';
+import type { Appearance, Dir, HeldItem, IconName, Pose } from '../../art/api';
+import { mulberry32 } from '../../../../shared/hash';
+import { FOOT_DX, FOOT_DY, TILE } from '../constants';
+import type { Mode } from './behavior';
+import type { Meeting, Step } from './steps';
+
+export class Character {
+  readonly id: string;
+  info: AgentInfo;
+  appearance: Appearance;
+  readonly rng: () => number;
+
+  // posição (px de mundo; pés) e tile lógico (sempre caminhável quando parado)
+  x = 0;
+  y = 0;
+  tx = 0;
+  ty = 0;
+  dir: Dir = 'down';
+  pose: Pose = 'stand';
+  held: HeldItem = 'none';
+  seated = false;
+  alpha = 1;
+  visible = true;
+  /** Profundidade forçada (assentos). null = usa y. */
+  sortY: number | null = null;
+  /** Tempo (ms) na pose atual, para escolher o frame da animação. */
+  animT = 0;
+
+  // comportamento
+  mode: Mode = 'idle';
+  queue: Step[] = [];
+  step: Step | null = null;
+  stepT = 0;
+  stepStarted = false;
+  /** Replanejar assim que o passo atual (não interrompível) terminar. */
+  replan = false;
+  /** Spot da mesa/banqueta/ponto de trabalho (reservado enquanto o personagem existir). */
+  homeSpot: string | null = null;
+  /** Spot onde está agora (assento/máquina), além do home. */
+  atSpot: string | null = null;
+  /** Spots temporários reservados durante um passeio. */
+  tempSpots: string[] = [];
+  roomId: string;
+  leaving = false;
+  gone = false;
+  arriving = false;
+  missingSince: number | null = null;
+  /** Próximo passeio do ocioso (ms epoch). */
+  nextOutingAt = 0;
+  meeting: Meeting | null = null;
+  /** Desenha só depois deste instante (fila no elevador). */
+  hiddenUntil = 0;
+  /** Escondido (dentro de cabine ou elevador fechado). */
+  inside = false;
+  /** Próxima vez que o planejador pode rodar (evita replanejar a cada frame sem necessidade). */
+  thinkAt = 0;
+  /** Subagente já entregou o resultado ao pai. */
+  delivered = false;
+  /** Fim do uso da cabine (ms epoch). */
+  stallUntil = 0;
+  /** Origem do encaixe/saída de um assento (interpolação curta). */
+  enterFrom: { x: number; y: number } | null = null;
+  /** Sala lotada: tile em que trabalha em pé (sem lugar reservado). */
+  standTile: { x: number; y: number } | null = null;
+  /** Ritmo próprio da caminhada (±8%), para quem sai junto não andar em fila perfeita. */
+  readonly speedK: number;
+  /** Faixa lateral (px) ao andar: dois personagens no mesmo caminho não se sobrepõem. */
+  readonly lane: number;
+  /** Deslocamento visual atual (px), suavizado em direção à faixa enquanto anda. */
+  offX = 0;
+  offY = 0;
+
+  // marcadores
+  icon: IconName | null = null;
+  iconUntil = 0;
+  iconAt = 0;
+  bubbleText: string | null = null;
+  bubbleIcon = '';
+  bubbleAt = 0;
+  bubbleUntil = 0;
+  /** Mini-balão de conversa (emoji). */
+  chatEmoji = '';
+  chatUntil = 0;
+  lastActivityId: string | null = null;
+  activityChangedAt = 0;
+
+  constructor(info: AgentInfo, appearance: Appearance) {
+    this.id = info.id;
+    this.info = info;
+    this.appearance = appearance;
+    this.roomId = info.roomId;
+    this.rng = mulberry32((info.seed ^ 0x9e3779b9) >>> 0);
+    // derivados de outro gerador para não alterar a sequência de sorteios do comportamento
+    const r = mulberry32((info.seed ^ 0x51ed27a3) >>> 0);
+    this.speedK = 0.92 + r() * 0.16;
+    this.lane = Math.round((r() * 2 - 1) * 3.5);
+  }
+
+  /** Aproxima o deslocamento visual da faixa (andando) ou do centro (parado). */
+  updateLane(dt: number): void {
+    const walking = this.pose === 'walk' || this.pose === 'run';
+    const horiz = this.dir === 'left' || this.dir === 'right';
+    const tx = walking && !horiz ? this.lane : 0;
+    const ty = walking && horiz ? this.lane * 0.6 : 0;
+    const k = Math.min(1, dt * 5);
+    this.offX += (tx - this.offX) * k;
+    this.offY += (ty - this.offY) * k;
+    if (Math.abs(this.offX) < 0.05) this.offX = 0;
+    if (Math.abs(this.offY) < 0.05) this.offY = 0;
+  }
+
+  /** Coloca os pés no ponto padrão de um tile. */
+  placeAtTile(tx: number, ty: number): void {
+    this.tx = tx;
+    this.ty = ty;
+    this.x = tx * TILE + FOOT_DX;
+    this.y = ty * TILE + FOOT_DY;
+  }
+
+  setPose(pose: Pose, held: HeldItem = 'none'): void {
+    if (this.pose !== pose) {
+      this.pose = pose;
+      this.animT = 0;
+    }
+    this.held = held;
+  }
+
+  setIcon(icon: IconName | null, ms: number, now: number): void {
+    this.icon = icon;
+    this.iconAt = now;
+    this.iconUntil = icon ? now + ms : 0;
+  }
+
+  showBubble(icon: string, text: string, ms: number, now: number): void {
+    this.bubbleIcon = icon;
+    this.bubbleText = text;
+    this.bubbleAt = now;
+    this.bubbleUntil = now + ms;
+  }
+
+  depth(): number {
+    return this.sortY ?? this.y;
+  }
+}
+
+/** Direção dominante de um deslocamento. */
+export function dirOf(dx: number, dy: number, fallback: Dir): Dir {
+  if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) return fallback;
+  if (Math.abs(dx) >= Math.abs(dy)) return dx > 0 ? 'right' : 'left';
+  return dy > 0 ? 'down' : 'up';
+}
+
+/** Direção de A olhando para B. */
+export function facing(ax: number, ay: number, bx: number, by: number): Dir {
+  return dirOf(bx - ax, by - ay, 'down');
+}

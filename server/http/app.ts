@@ -1,0 +1,148 @@
+// Rotas da API (/api/*). Respostas JSON; rotas desconhecidas -> 404 JSON.
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { SourceInfo } from '../../shared/types';
+import type { AccountsService } from '../accounts/service';
+import type { Office } from '../model/office';
+import { isJsonContentType } from './guard';
+import type { Hub } from './sse';
+
+export interface ApiDeps {
+  office: Office;
+  hub: Hub;
+  accounts: AccountsService;
+  sources: () => SourceInfo[];
+  version: string;
+  inDocker: boolean;
+}
+
+const MAX_BODY = 256 * 1024;
+
+class HttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+export function sendJson(res: ServerResponse, status: number, body: unknown): void {
+  const data = JSON.stringify(body);
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': Buffer.byteLength(data),
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+    // A API só é lida pela própria página: nada de leitura "no-cors" por outras origens.
+    'Cross-Origin-Resource-Policy': 'same-origin',
+  });
+  res.end(data);
+}
+
+/** Lê o corpo JSON. Exige `Content-Type: application/json` (barreira contra CSRF; ver http/guard.ts). */
+function readJson(req: IncomingMessage): Promise<unknown> {
+  if (!isJsonContentType(req.headers['content-type'])) {
+    req.resume();
+    return Promise.reject(new HttpError(415, 'envie o corpo como JSON (Content-Type: application/json)'));
+  }
+  return new Promise((ok, fail) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on('data', (c: Buffer) => {
+      size += c.length;
+      // Grande demais: continua drenando (sem guardar) para conseguir responder 413.
+      if (size > MAX_BODY) return void fail(new HttpError(413, 'corpo grande demais'));
+      chunks.push(c);
+    });
+    req.on('end', () => {
+      if (size > MAX_BODY) return;
+      const raw = Buffer.concat(chunks).toString('utf8');
+      if (!raw.trim()) return ok({});
+      try {
+        ok(JSON.parse(raw));
+      } catch {
+        fail(new HttpError(400, 'JSON inválido'));
+      }
+    });
+    req.on('error', fail);
+  });
+}
+
+/** Devolve um handler que trata /api/* e responde false para o resto. */
+export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: ServerResponse, url: URL) => boolean {
+  const { office, hub, accounts } = deps;
+
+  const methodNotAllowed = (res: ServerResponse, allow: string) => {
+    res.setHeader('Allow', allow);
+    sendJson(res, 405, { error: 'método não permitido' });
+  };
+
+  const handleDemo = async (req: IncomingMessage, res: ServerResponse) => {
+    const body = (await readJson(req)) as { enabled?: unknown };
+    if (typeof body?.enabled !== 'boolean') throw new HttpError(400, 'esperado {enabled: boolean}');
+    office.setDemo(body.enabled);
+    sendJson(res, 200, { ok: true, demo: office.isDemo() });
+  };
+
+  const fail = (res: ServerResponse, err: unknown) => {
+    if (res.headersSent) return void res.destroy();
+    if (err instanceof HttpError) sendJson(res, err.status, { error: err.message });
+    else sendJson(res, 500, { error: 'erro interno' });
+  };
+
+  return (req, res, url) => {
+    const path = url.pathname;
+    if (path !== '/api' && !path.startsWith('/api/')) return false;
+    const method = req.method ?? 'GET';
+    const isRead = method === 'GET' || method === 'HEAD';
+
+    if (path === '/api/stream') {
+      if (method !== 'GET') methodNotAllowed(res, 'GET');
+      else hub.attach(req, res);
+      return true;
+    }
+    if (path === '/api/snapshot') {
+      if (!isRead) methodNotAllowed(res, 'GET');
+      else sendJson(res, 200, hub.current());
+      return true;
+    }
+    if (path === '/api/health') {
+      if (!isRead) methodNotAllowed(res, 'GET');
+      else {
+        sendJson(res, 200, {
+          ok: true,
+          version: deps.version,
+          demo: office.isDemo(),
+          docker: deps.inDocker,
+          sources: deps.sources(),
+          accounts: accounts.entries().map((a) => ({ id: a.id, usageStatus: accounts.usageView(a.id).status })),
+        });
+      }
+      return true;
+    }
+    if (path.startsWith('/api/agents/')) {
+      if (!isRead) {
+        methodNotAllowed(res, 'GET');
+        return true;
+      }
+      let id: string;
+      try {
+        id = decodeURIComponent(path.slice('/api/agents/'.length));
+      } catch {
+        sendJson(res, 400, { error: 'id inválido' });
+        return true;
+      }
+      const detail = office.detail(id);
+      if (detail) sendJson(res, 200, detail);
+      else sendJson(res, 404, { error: 'agente não encontrado' });
+      return true;
+    }
+    if (path === '/api/demo') {
+      if (method !== 'POST') methodNotAllowed(res, 'POST');
+      else handleDemo(req, res).catch((err) => fail(res, err));
+      return true;
+    }
+    sendJson(res, 404, { error: 'rota desconhecida' });
+    return true;
+  };
+}
