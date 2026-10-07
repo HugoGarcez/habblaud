@@ -39,7 +39,45 @@ export interface WorldApi {
    * (visão geral) e centralizar (focusAgent/focusRoom/seguir) dentro da área livre.
    */
   setViewInsets?(insets: Partial<ViewInsets>): void;
+  /**
+   * (Opcional, aditivo) Vida social de um agente presente no escritório: personalidade, carteira de
+   * moedinhas, amizades/rivalidades com quem está lá agora e a roda de que participa. null se não está.
+   */
+  social?(agentId: string): AgentSocial | null;
+  /** (Opcional, aditivo) Acontecimentos sociais (partidas e apostas) para o feed. */
+  onSocialEvent?(cb: (e: SocialEvent) => void): () => void;
   destroy(): void;
+}
+
+export interface AgentSocial {
+  traits: { emoji: string; label: string; desc: string }[];
+  /** Bordão ("Tá pago!"). */
+  catchphrase: string;
+  /** Saldo de moedinhas (🪙). */
+  coins: number;
+  /** Quanto já ganhou trabalhando (saldo inicial + tarefas + pedidos + entregas). */
+  earned: number;
+  wins: number;
+  losses: number;
+  /** Colegas presentes com quem tem amizade ou rivalidade; `record` = [vitórias, derrotas] contra ele. */
+  bonds: { id: string; name: string; kind: 'amizade' | 'rivalidade'; record: [number, number] | null }[];
+  /** O que está fazendo numa roda agora ("📺 Vendo futebol na TV com Rafaela"), ou null. */
+  doing: string | null;
+  /** Extrato: movimentações mais recentes primeiro. */
+  ledger: { at: number; delta: number; icon: string; text: string }[];
+}
+
+/** Partida/aposta resolvida (vira uma linha do feed). */
+export interface SocialEvent {
+  id: string;
+  at: number;
+  icon: string;
+  /** Protagonista (quem venceu). */
+  agentId: string;
+  /** Texto sem o nome do protagonista: "ganhou 🪙10 de Caio no jokenpô". */
+  text: string;
+  /** Onde aconteceu ("Lounge", "Copa"...). */
+  place: string;
 }
 
 /** Margens da viewport cobertas pela UI (px CSS). */

@@ -241,5 +241,8 @@ export function layoutLounge(): AreaLayout {
   });
   b.spot('talk', 11, 9, 'right', { group: 'talk:lounge', dx: -1 });
   b.spot('talk', 12, 9, 'left', { group: 'talk:lounge', dx: 1 });
+  // torcida do ping-pong: atrás da mesa, de frente para a câmera
+  b.spot('watch', 10, 5, 'down', { group: 'watch:pingpong', dx: 2 });
+  b.spot('watch', 12, 5, 'down', { group: 'watch:pingpong', dx: -2 });
   return b.build();
 }

@@ -36,6 +36,7 @@ import {
   visibleShells,
 } from './model';
 import { createAgentRow, updateAgentRow } from './rows';
+import { SocialSection } from './social';
 import { createAccountChip, createProgress, createStatusDot, updateAccountChip, updateProgress, updateStatusDot } from './widgets';
 
 const TIMELINE_LIMIT = 80;
@@ -203,6 +204,7 @@ class AgentView {
   private timeline: KeyedList<Activity>;
   private timelineSec: ReturnType<typeof section>;
   private stats: KvList<StatKey>;
+  private social: SocialSection;
   private sessionValue: HTMLElement;
   private linesPlus: HTMLElement;
   private linesMinus: HTMLElement;
@@ -274,6 +276,7 @@ class AgentView {
     this.actDetail = h('pre', { class: 'ui-mono' });
     this.actDetails = h('details', { class: 'ui-now__details' }, h('summary', { text: 'Detalhes' }), this.actDetail);
     const nowSec = section('Agora', h('div', { class: 'ui-now' }, this.actIcon, h('div', { class: 'ui-now__body' }, this.actText, this.actTime)), this.actDetails);
+    this.social = new SocialSection(ctx);
 
     this.tasksBar = createProgress('Progresso das tarefas');
     const tasksList = h('ul', { class: 'ui-tasks' });
@@ -324,6 +327,7 @@ class AgentView {
       this.shellBox,
       this.shellsSec.el,
       nowSec.el,
+      this.social.el,
       this.tasksSec.el,
       this.teamSec.el,
       this.timelineSec.el,
@@ -443,6 +447,10 @@ class AgentView {
     const detail = act?.detail ?? '';
     setHidden(this.actDetails, !detail);
     setText(this.actDetail, detail);
+
+    // Vida social (personalidade, carteira, rodas): só de quem está no escritório.
+    if (live) this.social.render(a.id, now);
+    else setHidden(this.social.el, true);
 
     // Tarefas.
     const tp = taskProgress(a.tasks);

@@ -3799,3 +3799,185 @@
 .ui-popover:focus {
   outline: none;
 }
+
+/* ---------------------------------------------------------------- vida social (gaveta do agente) */
+
+.ui-social__balance {
+  color: #ffd34d;
+}
+
+.ui-social__doing {
+  margin: 0 0 10px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(124, 200, 255, 0.08);
+  border: 1px solid rgba(124, 200, 255, 0.2);
+  color: #cfe9ff;
+  font-size: 12.5px;
+}
+
+.ui-social__wallet {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.ui-social__purse {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: rgba(255, 211, 77, 0.1);
+  border: 1px solid rgba(255, 211, 77, 0.28);
+  font-size: 15px;
+}
+
+.ui-social__wallet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ui-social__wallet-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ui-social__coins {
+  font-weight: 700;
+  color: #ffe08a;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-social__record,
+.ui-social__earned {
+  font-size: 11.5px;
+  color: var(--ui-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-social__traits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 11px;
+}
+
+.ui-trait {
+  display: inline-flex;
+  align-items: center;
+  height: 21px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #e3d9ff;
+  background: rgba(170, 140, 255, 0.14);
+  border: 1px solid rgba(170, 140, 255, 0.26);
+  cursor: help;
+}
+
+.ui-social__phrase {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--ui-muted);
+  font-style: italic;
+}
+
+.ui-social__bond {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+
+.ui-social__bond-label {
+  color: var(--ui-muted);
+  white-space: nowrap;
+}
+
+.ui-social__names {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ui-social__name {
+  padding: 1px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--ui-line);
+  background: var(--ui-bg-soft);
+  color: var(--ui-text);
+  font: 500 12px/1.4 var(--font-ui);
+  cursor: pointer;
+}
+
+.ui-social__name:hover,
+.ui-social__name:focus-visible {
+  background: var(--ui-bg-hover);
+  border-color: var(--ui-line-strong);
+}
+
+.ui-social__extract {
+  margin-top: 10px;
+}
+
+.ui-social__extract summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--ui-muted);
+}
+
+.ui-social__ledger {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ui-social__entry {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+}
+
+.ui-social__delta {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-social__entry.is-plus .ui-social__delta {
+  color: #ffd34d;
+}
+
+.ui-social__entry.is-minus .ui-social__delta {
+  color: #ff8a8a;
+}
+
+.ui-social__what {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-social__when {
+  color: var(--ui-faint);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* Partidas e apostas no feed: tom dourado discreto. */
+.ui-feed__item.is-social .ui-feed__text {
+  color: #ffe6a3;
+}

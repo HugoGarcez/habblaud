@@ -96,7 +96,8 @@ export type SpotKind =
   | 'stall'
   | 'sink'
   | 'elevator'
-  | 'talk';
+  | 'talk'
+  | 'watch'; // ponto em pé da torcida (assistir a uma partida)
 
 /**
  * Ponto de interesse. O personagem anda até o tile de aproximação (tx, ty), caminhável,

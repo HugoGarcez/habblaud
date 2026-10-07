@@ -4,8 +4,9 @@ import type { Appearance, Dir, HeldItem, IconName, Pose } from '../../art/api';
 import { mulberry32 } from '../../../../shared/hash';
 import { FOOT_DX, FOOT_DY, TILE } from '../constants';
 import type { Mode } from './behavior';
+import type { Gathering } from '../social/gathering';
 import type { ShellStage } from './shell';
-import type { Meeting, Step } from './steps';
+import type { Step } from './steps';
 
 export class Character {
   readonly id: string;
@@ -50,7 +51,10 @@ export class Character {
   missingSince: number | null = null;
   /** Próximo passeio do ocioso (ms epoch). */
   nextOutingAt = 0;
-  meeting: Meeting | null = null;
+  /** Roda de que participa (ou a caminho dela). */
+  gathering: Gathering | null = null;
+  /** Quem espera um shell: próxima tentativa de entrar numa roda (ms epoch; 0 = agendar). */
+  nextSocialAt = 0;
   /** Desenha só depois deste instante (fila no elevador). */
   hiddenUntil = 0;
   /** Escondido (dentro de cabine ou elevador fechado). */
@@ -84,6 +88,10 @@ export class Character {
   /** Mini-balão de conversa (emoji). */
   chatEmoji = '';
   chatUntil = 0;
+  /** Fala curta (balãozinho com texto) das rodas: convites, papo, torcida, apostas. */
+  sayText = '';
+  sayAt = 0;
+  sayUntil = 0;
   lastActivityId: string | null = null;
   activityChangedAt = 0;
 

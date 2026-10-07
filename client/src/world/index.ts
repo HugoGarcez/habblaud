@@ -3,7 +3,7 @@
 import * as artModule from '../art';
 import { TILE, type ArtModule } from '../art/api';
 import type { OfficeStore } from '../net/store';
-import { DEFAULT_WORLD_OPTIONS, type Selection, type WorldApi, type WorldOptions } from './api';
+import { DEFAULT_WORLD_OPTIONS, type Selection, type SocialEvent, type WorldApi, type WorldOptions } from './api';
 import { loadWorldAssets } from './assets';
 import { Camera, overviewFrame } from './camera';
 import { createDebug, type WorldDebug } from './debug';
@@ -27,6 +27,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
   const overlay = new Overlay(renderer.ctx, sim, renderer, camera);
   const selectCbs = new Set<(s: Selection) => void>();
   const hoverCbs = new Set<(id: string | null) => void>();
+  const socialCbs = new Set<(e: SocialEvent) => void>();
   let selection: Selection = null;
   let hover: string | null = null;
   let mouse: { x: number; y: number } | null = null;
@@ -217,6 +218,12 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
       const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
       if (canvas.clientWidth !== camera.viewW || canvas.clientHeight !== camera.viewH || dpr !== camera.dpr) resize();
       sim.update(dt, now);
+      // partidas e apostas resolvidas: para o feed
+      const events = sim.social.events;
+      if (events.length) {
+        for (const e of events) for (const cb of socialCbs) cb(e);
+        events.length = 0;
+      }
       renderer.sync();
       if (sim.building.cols !== lastCols) {
         lastCols = sim.building.cols;
@@ -308,6 +315,11 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
       if (p.x < 0 || p.y < 0 || p.x > camera.viewW || p.y > camera.viewH) return null;
       return p;
     },
+    social: (id) => sim.social.info(id),
+    onSocialEvent: (cb) => {
+      socialCbs.add(cb);
+      return () => void socialCbs.delete(cb);
+    },
     destroy: () => {
       cancelAnimationFrame(raf);
       abort.abort();
@@ -317,6 +329,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
       document.removeEventListener('visibilitychange', onVisibility);
       selectCbs.clear();
       hoverCbs.clear();
+      socialCbs.clear();
     },
     debug,
   };

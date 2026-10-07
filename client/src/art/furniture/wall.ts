@@ -364,6 +364,8 @@ export function mirror(): BufFurniture {
   b.line(x + 8, y + 1, x + 3, y + h - 2, 'rgba(255,255,255,0.75)');
   b.outline();
   wallShadow(b, x - 1, y - 1, w + 2, h + 2);
+  // Vidro (sem a moldura): o mundo pode desenhar ali o reflexo de quem está diante da pia.
+  s.rects = { glass: rectAt(s, x + 1, y + 1, w - 2, h - 2) };
   return { base: s };
 }
 

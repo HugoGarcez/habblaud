@@ -22,22 +22,26 @@ import {
 const SCALE = 3;
 const DIRS: readonly Dir[] = ['down', 'left', 'up', 'right'];
 const DIR_PT: Record<Dir, string> = { down: 'baixo', left: 'esquerda', up: 'cima', right: 'direita' };
-const POSES: readonly Pose[] = ['stand', 'walk', 'run', 'sit', 'type', 'sleep', 'drink', 'use', 'raise_hand', 'talk', 'stretch', 'read', 'play', 'wait'];
+const POSES: readonly Pose[] = [
+  'stand', 'walk', 'run', 'sit', 'type', 'sleep', 'drink', 'use', 'raise_hand', 'talk', 'stretch', 'read', 'play', 'wait',
+  'cheer', 'laugh', 'game', 'rps', 'groom', 'sulk',
+];
 const POSE_PT: Record<Pose, string> = {
   stand: 'parado', walk: 'andando', run: 'correndo', sit: 'sentado', type: 'digitando', sleep: 'cochilando', drink: 'bebendo',
   use: 'usando máquina', raise_hand: 'mão levantada', talk: 'conversando', stretch: 'espreguiçando', read: 'lendo', play: 'ping-pong',
-  wait: 'esperando',
+  wait: 'esperando', cheer: 'comemorando', laugh: 'gargalhando', game: 'videogame', rps: 'jokenpô', groom: 'no espelho', sulk: 'chateado',
 };
 /** Poses que sempre são sentadas (as demais podem ser em pé ou sentadas). */
 const SEATED_POSES: readonly Pose[] = ['sit', 'type', 'sleep', 'wait'];
-const HELD: readonly HeldItem[] = ['coffee', 'water', 'papers', 'laptop', 'book', 'box', 'paddle', 'popcorn'];
+const HELD: readonly HeldItem[] = ['coffee', 'water', 'papers', 'laptop', 'book', 'box', 'paddle', 'popcorn', 'controller', 'phone', 'lipstick', 'comb', 'rock', 'paper', 'scissors'];
 const HELD_PT: Record<HeldItem, string> = {
   none: 'nada', coffee: 'café', water: 'água', papers: 'papéis', laptop: 'notebook', book: 'livro', box: 'caixa', paddle: 'raquete', popcorn: 'pipoca',
+  controller: 'controle', phone: 'celular', lipstick: 'batom', comb: 'pente', rock: 'pedra', paper: 'papel', scissors: 'tesoura',
 };
-const SCREENS: readonly ScreenMode[] = ['off', 'standby', 'idle', 'code', 'terminal', 'browser', 'search', 'chat', 'docs', 'tasks', 'alert', 'progress'];
+const SCREENS: readonly ScreenMode[] = ['off', 'standby', 'idle', 'code', 'terminal', 'browser', 'search', 'chat', 'docs', 'tasks', 'alert', 'progress', 'show', 'game'];
 const SCREEN_PT: Record<ScreenMode, string> = {
   off: 'desligado', standby: 'em espera', idle: 'descanso', code: 'código', terminal: 'terminal', browser: 'navegador', search: 'busca', chat: 'chat', docs: 'documento', tasks: 'tarefas', alert: 'alerta',
-  progress: 'progresso',
+  progress: 'progresso', show: 'programa', game: 'videogame',
 };
 const FLOORS: readonly FloorKind[] = ['carpet', 'wood', 'tile_check', 'tile_white', 'concrete', 'marble', 'grass', 'sidewalk', 'street'];
 const FLOOR_PT: Record<FloorKind, string> = {
@@ -45,7 +49,7 @@ const FLOOR_PT: Record<FloorKind, string> = {
 };
 const ICONS: readonly IconName[] = [
   'alert', 'question', 'zzz', 'check', 'heart', 'coffee', 'music', 'idea', 'sweat', 'star', 'lightning', 'chat', 'box', 'wave',
-  'hourglass', 'hourglass_flip', 'cobweb', 'storm',
+  'hourglass', 'hourglass_flip', 'cobweb', 'storm', 'coin', 'sparkle', 'trophy', 'hand_rock', 'hand_paper', 'hand_scissors',
 ];
 
 type Painter = (ctx: CanvasRenderingContext2D, t: number) => void;
@@ -385,6 +389,173 @@ function shellWait(): void {
   }, '#e9ecf1', 4);
 }
 
+// ------------------------------------------------------------------ vida social
+
+/**
+ * Vida social montada só com peças do módulo de arte: torcida diante da TV (programa mudando),
+ * dupla no videogame com plateia, jokenpô valendo moedas (contagem, revelação com o gesto sobre a
+ * cabeça, vencedor comemorando com a moeda e perdedor chateado) e o espelho do banheiro com o
+ * reflexo de quem se arruma (o reflexo é recortado no rects.glass — sugestão para o mundo).
+ */
+function socialLife(): void {
+  const s = section(
+    'social',
+    'Vida social',
+    'TV com torcida (o programa troca a cada 6 s: futebol, novela, desenho), videogame com plateia, jokenpô valendo moedas nas 4 direções (contagem, revelação, vitória e derrota) e o espelho com reflexo. Abaixo, os programas da TV e do fliperama por semente.',
+  );
+  const W = 31 * TILE;
+  const H = 12 * TILE;
+  const lounge: WallStyle = { base: '#e6e2ea', trim: '#8f8aa3', pattern: 'plain' };
+  const bath: WallStyle = { base: '#dce8ee', trim: '#8fb0c4', pattern: 'tiles' };
+  type D = { y: number; draw: Painter };
+  const G = ['rock', 'paper', 'scissors'] as const;
+  const HAND: Record<(typeof G)[number], IconName> = { rock: 'hand_rock', paper: 'hand_paper', scissors: 'hand_scissors' };
+  canvas(s, W, H, (ctx, t) => {
+    const ds: D[] = [];
+    const icons: { name: IconName; x: number; y: number }[] = [];
+    art.drawFloor(ctx, 'wood', 0, 2 * TILE, 18 * TILE, 10 * TILE, { seed: 7 });
+    art.drawFloor(ctx, 'marble', 18 * TILE, 2 * TILE, 8 * TILE, 10 * TILE, { seed: 8 });
+    art.drawFloor(ctx, 'tile_white', 26 * TILE, 2 * TILE, 5 * TILE, 10 * TILE, { seed: 9 });
+    art.drawRug(ctx, 1 * TILE, 5 * TILE, 15 * TILE, 4 * TILE, '#4f8a5b', 2);
+    art.drawWallFace(ctx, 0, 0, 18 * TILE, lounge);
+    art.drawWallFace(ctx, 18 * TILE, 0, 8 * TILE, { base: '#e9e5dc', trim: '#a88e6c', pattern: 'wood_panel' });
+    art.drawWallFace(ctx, 26 * TILE, 0, 5 * TILE, bath);
+    const wall = (kind: FurnitureKind, cx: number, fn?: (sp: Sprite, ox: number, oy: number) => void) => {
+      const sp = art.furnitureSprites(kind).base;
+      const x = cx * TILE;
+      blit(ctx, sp, x, 2 * TILE);
+      fn?.(sp, x - sp.ax, 2 * TILE - sp.ay);
+    };
+    const program = Math.floor(t / 6000) % 3;
+    wall('tv', 4.5, (sp, ox, oy) => {
+      const r = sp.rects?.tv;
+      if (r) art.drawScreen(ctx, { x: ox + r.x, y: oy + r.y, w: r.w, h: r.h }, 'show', t, program);
+    });
+    wall('tv', 12.5, (sp, ox, oy) => {
+      const r = sp.rects?.tv;
+      if (r) art.drawScreen(ctx, { x: ox + r.x, y: oy + r.y, w: r.w, h: r.h }, 'game', t, Math.floor(t / 8000) % 2);
+    });
+    // Espelhos com o reflexo de quem está diante da pia.
+    const groomers = [
+      { seed: 404, tx: 27, held: 'lipstick' as HeldItem },
+      { seed: 505, tx: 29, held: 'comb' as HeldItem },
+    ];
+    for (const g of groomers) {
+      wall('mirror', g.tx + 0.5, (sp, ox, oy) => {
+        const r = sp.rects?.glass;
+        if (!r) return;
+        const who = art.characterSprite({ appearance: art.appearanceFromSeed(g.seed), dir: 'down', pose: 'groom', frame: frameOf('groom', t, g.seed), held: g.held });
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(ox + r.x, oy + r.y, r.w, r.h);
+        ctx.clip();
+        ctx.globalAlpha = 0.8;
+        // Rosto centrado no vidro: a franja no topo, olhos e boca no meio (o corpo fica abaixo da moldura).
+        ctx.drawImage(who.canvas, Math.round(ox + r.x + r.w / 2 - who.ax), Math.round(oy + r.y - 6));
+        ctx.globalAlpha = 0.28;
+        ctx.fillStyle = '#cfe6f2';
+        ctx.fillRect(ox + r.x, oy + r.y, r.w, r.h);
+        ctx.restore();
+      });
+    }
+    const furn = (kind: FurnitureKind, tx: number, ty: number, variant?: string) => {
+      const f = art.furnitureSprites(kind, variant);
+      const def = FURNITURE[kind];
+      const x = tx * TILE + (def.footprint.w * TILE) / 2;
+      const y = (ty + def.footprint.h) * TILE;
+      ds.push({ y, draw: (c) => blit(c, f.base, x, y) });
+      if (f.front) ds.push({ y: y + 0.5, draw: (c) => blit(c, f.front as Sprite, x, y) });
+      return { x, y };
+    };
+    const person = (seed: number, x: number, y: number, dir: Dir, pose: Pose, o: { held?: HeldItem; seated?: boolean; sortY?: number; icon?: IconName } = {}) => {
+      const a = art.appearanceFromSeed(seed);
+      ds.push({
+        y: o.sortY ?? y,
+        draw: (c) => blit(c, art.characterSprite({ appearance: a, dir, pose, frame: frameOf(pose, t, seed * 37), held: o.held, seated: o.seated }), x, y),
+      });
+      if (o.icon) icons.push({ name: o.icon, x, y: y - (o.seated ? 26 : 30) });
+    };
+    // TV: três no sofá (de costas) trocando de reação; poltrona com alguém no celular.
+    const sofa = furn('sofa', 3, 6, 'up');
+    const react: { pose: Pose; held?: HeldItem }[] = [{ pose: 'wait', held: 'popcorn' }, { pose: 'laugh' }, { pose: 'cheer' }, { pose: 'sit' }];
+    for (let i = 0; i < 3; i++) {
+      const r = react[(Math.floor(t / 2500) + i) % react.length];
+      person(700 + i, sofa.x + (i - 1) * TILE, sofa.y - SEAT_FOOT_DY, 'up', r.pose, { seated: true, held: r.held, sortY: sofa.y + 0.25 });
+    }
+    const chair = furn('armchair', 7, 4, 'left');
+    person(710, chair.x, chair.y - SEAT_FOOT_DY, 'left', 'read', { seated: true, held: 'phone', sortY: chair.y + 0.25 });
+    // Videogame: dois jogando no sofá, uma pessoa torcendo atrás e outra de frente, de pé.
+    const sofa2 = furn('sofa', 11, 6, 'up');
+    person(720, sofa2.x - TILE, sofa2.y - SEAT_FOOT_DY, 'up', 'game', { seated: true, held: 'controller', sortY: sofa2.y + 0.25 });
+    person(721, sofa2.x, sofa2.y - SEAT_FOOT_DY, 'up', 'game', { seated: true, held: 'controller', sortY: sofa2.y + 0.25 });
+    person(722, sofa2.x + 2 * TILE, sofa2.y + TILE + 11, 'up', Math.floor(t / 3000) % 2 ? 'cheer' : 'laugh');
+    person(723, 15 * TILE + 8, 5 * TILE + 11, 'left', 'game', { held: 'controller' });
+    // Jokenpô: rodadas de 4 s — contagem, revelação (gesto sobre a cabeça), vitória/derrota.
+    const duel = (k: number, ax: number, ay: number, adir: Dir, bx: number, by: number, bdir: Dir) => {
+      const round = Math.floor((t + k * 900) / 4000);
+      const ph = ((t + k * 900) % 4000) / 4000;
+      const ga = G[(round * 7 + k) % 3];
+      let gb = G[(round * 5 + k * 2 + 1) % 3];
+      if (gb === ga) gb = G[(G.indexOf(ga) + 1) % 3];
+      const beats = (x: string, y: string) => (x === 'rock' && y === 'scissors') || (x === 'scissors' && y === 'paper') || (x === 'paper' && y === 'rock');
+      const aWins = beats(ga, gb);
+      const side = (seed: number, x: number, y: number, dir: Dir, g: (typeof G)[number], win: boolean) => {
+        if (ph < 0.3) person(seed, x, y, dir, 'rps');
+        else if (ph < 0.65) person(seed, x, y, dir, 'rps', { held: g, icon: HAND[g] });
+        else person(seed, x, y, dir, win ? 'cheer' : 'sulk', { icon: win ? 'coin' : undefined });
+      };
+      side(800 + k, ax, ay, adir, ga, aWins);
+      side(810 + k, bx, by, bdir, gb, !aWins);
+    };
+    duel(0, 19 * TILE + 8, 5 * TILE + 11, 'right', 22 * TILE + 8, 5 * TILE + 11, 'left');
+    duel(1, 21 * TILE + 8, 8 * TILE + 11, 'down', 21 * TILE + 8, 10 * TILE + 11, 'up');
+    // Banheiro: pias diante dos espelhos.
+    for (const g of groomers) {
+      furn('sink', g.tx, 2);
+      person(g.seed, g.tx * TILE + 8, 3 * TILE + 8, 'up', 'groom', { held: g.held, icon: Math.floor(t / 2200) % 2 ? 'sparkle' : undefined });
+    }
+    furn('plant_tall', 17, 2, 'monstera');
+    furn('plant_small', 25, 2, 'flower');
+    ds.sort((a, b) => a.y - b.y);
+    for (const d of ds) d.draw(ctx, t);
+    for (const ic of icons) blit(ctx, art.iconSprite(ic.name), ic.x, ic.y);
+    for (const [txt, cx] of [['ver tv', 4.5], ['videogame', 12.5], ['jokenpô', 22], ['espelho', 28.5]] as const) {
+      const w = pixelTextWidth(txt) + 6;
+      ctx.fillStyle = 'rgba(22,26,38,0.78)';
+      ctx.fillRect(Math.round(cx * TILE - w / 2), H - 10, w, 9);
+      labelCentered(ctx, txt, Math.round(cx * TILE - w / 2), w, H - 8, '#f5f7fb');
+    }
+  }, '#e9ecf1', 3);
+  // Programas por semente (o mundo usa o mesmo mapeamento fixo).
+  const progs: { mode: ScreenMode; seed: number; name: string }[] = [
+    { mode: 'show', seed: 0, name: 'futebol' },
+    { mode: 'show', seed: 1, name: 'novela' },
+    { mode: 'show', seed: 2, name: 'desenho' },
+    { mode: 'game', seed: 0, name: 'corrida' },
+    { mode: 'game', seed: 1, name: 'luta' },
+  ];
+  const tv = art.furnitureSprites('tv').base;
+  const arcade = art.furnitureSprites('arcade').base;
+  const cw = 56;
+  canvas(s, cw * progs.length + 2 * 36, 64, (ctx, t) => {
+    progs.forEach((p, i) => {
+      const x = i * cw + cw / 2;
+      blit(ctx, tv, x, 34);
+      const r = tv.rects?.tv;
+      if (r) art.drawScreen(ctx, { x: x - tv.ax + r.x, y: 34 - tv.ay + r.y, w: r.w, h: r.h }, p.mode, t, p.seed);
+      labelCentered(ctx, `${p.mode} ${p.seed}`, i * cw, cw, 40, '#2b3142');
+      labelCentered(ctx, p.name, i * cw, cw, 48);
+    });
+    // Fliperama com as duas partidas.
+    [0, 1].forEach((seed, j) => {
+      const ax = progs.length * cw + 18 + j * 36;
+      blit(ctx, arcade, ax, 56);
+      const ra = arcade.rects?.screen;
+      if (ra) art.drawScreen(ctx, { x: ax - arcade.ax + ra.x, y: 56 - arcade.ay + ra.y, w: ra.w, h: ra.h }, 'game', t, seed);
+    });
+  }, '#dfe3e8', 4);
+}
+
 // ------------------------------------------------------------------ personagens
 
 function characters(): void {
@@ -413,6 +584,17 @@ function poses(): void {
     { pose: 'raise_hand', seated: true },
     { pose: 'talk', seated: true },
     { pose: 'read', seated: true, held: 'papers' },
+    { pose: 'cheer', seated: true },
+    { pose: 'laugh', seated: true },
+    { pose: 'game', seated: true, held: 'controller' },
+    { pose: 'rps', seated: false, held: 'rock' },
+    { pose: 'rps', seated: false, held: 'paper' },
+    { pose: 'rps', seated: false, held: 'scissors' },
+    { pose: 'groom', seated: false, held: 'lipstick' },
+    { pose: 'groom', seated: false, held: 'comb' },
+    { pose: 'sulk', seated: true },
+    { pose: 'read', seated: false, held: 'phone' },
+    { pose: 'sit', seated: true, held: 'phone' },
   ];
   const a = art.appearanceFromSeed(2024, { look: 'f', sub: true });
   const b = art.appearanceFromSeed(77, { look: 'm' });
@@ -422,8 +604,12 @@ function poses(): void {
     ctx.translate(0, 6);
     list.forEach((p, row) => {
       label(ctx, POSE_PT[p.pose], 2, row * ch + 16);
-      if (p.held && p.pose === 'wait') label(ctx, `(${HELD_PT[p.held]})`, 2, row * ch + 23);
-      else if (p.seated && !SEATED_POSES.includes(p.pose)) label(ctx, '(sentado)', 2, row * ch + 23);
+      let ly = row * ch + 23;
+      if (p.held) {
+        label(ctx, `(${HELD_PT[p.held]})`, 2, ly);
+        ly += 7;
+      }
+      if (p.seated && !SEATED_POSES.includes(p.pose)) label(ctx, '(sentado)', 2, ly);
       DIRS.forEach((dir, k) => {
         [a, b].forEach((ap, j) => {
           const x = 72 + (k * 2 + j) * cw;
@@ -704,6 +890,7 @@ function avatars(): void {
 
 sampleScene();
 shellWait();
+socialLife();
 characters();
 poses();
 heldItems();

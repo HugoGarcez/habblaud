@@ -35,6 +35,17 @@ const ICON_HELP: [string, string][] = [
   ['⚠️', 'Algo deu errado'],
 ];
 
+/** Rodas da vida social (quem está à toa se junta com os colegas). */
+const SOCIAL_HELP: [string, string][] = [
+  ['📺', 'TV no lounge: futebol (comemoram o gol junto com a tela), novela ou desenho, com pipoca.'],
+  ['🎮', 'Videogame no sofá (melhor de 3) ou duelo nos fliperamas, com torcida.'],
+  ['🏓', 'Pingue-pongue até 5 pontos, com placar e torcida atrás da mesa.'],
+  ['☕', 'Papo na copa: pegam café e sentam para fofocar, contar piada e falar de trabalho.'],
+  ['✊', 'Jokenpô valendo moedinhas: jo-ken-pô, revelação, quem ganha leva o 🪙 (e quem perde pede revanche).'],
+  ['💄', 'Espelho do banheiro: se arrumam (batom, pente) e aparecem refletidos no vidro.'],
+  ['🪙', 'Carteira: entram com 🪙100 (subagentes 🪙30), ganham 🪙10 por tarefa concluída, 🪙5 por pedido atendido e 🪙15 por entrega de subagente.'],
+];
+
 /** O fim da espera (o servidor marca com uma atividade ✅ ou ❌). */
 const SHELL_END_HELP: [string, string][] = [
   ['🎉', 'Terminou bem: levanta, comemora com confete e uma estrela.'],
@@ -93,6 +104,7 @@ export class HelpDialog {
         h('section', {}, h('h3', { text: 'Status' }), statusList),
         h('section', {}, h('h3', { text: 'Atividades' }), iconList),
         this.shellSection(),
+        this.socialSection(),
         h(
           'section',
           {},
@@ -145,6 +157,25 @@ export class HelpDialog {
           'fica na mesa com a ampulheta virando, o monitor mostra o progresso e um balão diz qual shell ele espera e há quanto tempo. Quanto mais demora…',
       }),
       h('ul', { class: 'ui-shell-legend' }, ...SHELL_STAGES.map((s) => item(s.emoji, s.help)), ...SHELL_END_HELP.map(([e, t]) => item(e, t))),
+    );
+  }
+
+  /** Legenda da vida social: as rodas dos ociosos, as personalidades e as moedinhas. */
+  private socialSection(): HTMLElement {
+    const item = (emoji: string, text: string) =>
+      h('li', {}, h('span', { class: 'ui-icon-legend__icon', text: emoji, attrs: { 'aria-hidden': 'true' } }), h('span', { text }));
+    return h(
+      'section',
+      { class: 'ui-help__shell' },
+      h('h3', { text: 'Vida social' }),
+      h('p', {
+        class: 'ui-help__lead',
+        text:
+          'Quando dois ou mais agentes estão à toa (ociosos, ou esperando um shell há mais de 40 s), eles se juntam. Cada um tem 2 ou 3 traços de personalidade ' +
+          '(competição, fofoca, vaidade, sonecas…), amizades e rivalidades, e isso decide o que preferem fazer, com quem e o que falam. ' +
+          'Os detalhes do agente mostram a personalidade, a carteira e o extrato; as partidas e apostas aparecem no feed.',
+      }),
+      h('ul', { class: 'ui-shell-legend' }, ...SOCIAL_HELP.map(([e, t]) => item(e, t))),
     );
   }
 

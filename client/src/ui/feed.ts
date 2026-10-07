@@ -70,6 +70,21 @@ export class FeedPanel implements UiComponent {
       ctx.invalidate();
     });
     this.pending.push(...ctx.store.feed.slice(-VISIBLE));
+    // Partidas e apostas resolvidas no escritório (vida social) entram no feed como eventos locais.
+    ctx.world.onSocialEvent?.((e) => {
+      const a = ctx.agent(e.agentId);
+      if (!a) return;
+      this.pending.push({
+        id: e.id,
+        agentId: a.id,
+        roomId: a.roomId,
+        agentName: a.name,
+        roomName: e.place,
+        account: a.account,
+        activity: { id: e.id, kind: 'other', icon: e.icon, text: e.text, at: e.at },
+      });
+      ctx.invalidate();
+    });
   }
 
   render(): void {
@@ -183,6 +198,7 @@ export class FeedPanel implements UiComponent {
     setText(icon, f.activity.icon);
     setText(text, f.activity.text);
     li.classList.toggle('is-error', !!f.activity.error);
+    li.classList.toggle('is-social', f.id.startsWith('social:'));
     // Fim de um shell (✅ terminou / ❌ falhou ou foi interrompido): linha com destaque próprio.
     const done = shellDoneKind(f.activity);
     li.classList.toggle('is-shell-ok', done === 'ok');

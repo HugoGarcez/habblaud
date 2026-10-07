@@ -28,6 +28,10 @@ fazendo o quê. O **CodeTown** transforma isso num escritório que dá para ente
 quem levantou a mão porque **precisa de você**, quem entregou o trabalho e foi embora, quem foi tomar um café
 enquanto espera a próxima instrução — e quanto de cada conta você já gastou na sessão de 5 horas e na semana.
 
+E quando dois ou mais agentes estão à toa, o escritório ganha **vida social**: cada um tem personalidade própria, e
+eles veem futebol juntos no lounge, jogam videogame e ping-pong, fofocam na copa, se arrumam no espelho e apostam
+moedinhas no jokenpô. Veja em [Vida social](#vida-social).
+
 Tudo roda na sua máquina, lendo os arquivos que o próprio Claude Code já grava (e só as linhas `alias` do seu shell,
 para dar a letra de cada conta). Nada sai do computador: o CodeTown não lê credenciais nem faz chamadas externas.
 
@@ -44,6 +48,7 @@ para dar a letra de cada conta). Nada sai do computador: o CodeTown não lê cre
 - [Solução de problemas](#solução-de-problemas)
 - [Aviso](#aviso)
 - [Licença](#licença)
+- [Vida social](#vida-social)
 
 ## Como é
 
@@ -211,8 +216,8 @@ dar erro. O `usage:uninstall` deixa cópias `settings.json.codetown-backup-<data
 | --- | --- |
 | **Trabalhando** | Na mesa, digitando. O monitor e um balão mostram a atividade: 📖 lendo, ✏️ editando, 💻 terminal, 🧪 testes, 🌐 pesquisando… |
 | **Precisa de você** | Corre para a mesa e levanta a mão, com alerta piscando: está esperando uma permissão ou resposta no terminal. |
-| **Esperando o shell** | Terminou o turno mas deixou um comando rodando (testes, build, deploy…), então fica na mesa com uma ampulheta virando sobre a cabeça e o terminal em progresso: come pipoca assistindo, depois de 3 min cruza os braços e gira na cadeira, depois de 10 min junta teia de aranha e depois de 25 min cochila; quando o comando termina, levanta e comemora com confete (ou ganha uma nuvem de chuva, se falhou). |
-| **Ocioso** | Terminou o turno e passeia: café na copa, bebedouro, banheiro, sofá do lounge, ping-pong, conversa com colegas. Depois de 10 min parado, cochila. |
+| **Esperando o shell** | Terminou o turno mas deixou um comando rodando (testes, build, deploy…), então fica na mesa com uma ampulheta virando sobre a cabeça e o terminal em progresso: come pipoca assistindo, depois de 3 min cruza os braços e gira na cadeira, depois de 10 min junta teia de aranha e depois de 25 min cochila; quando o comando termina, levanta e comemora com confete (ou ganha uma nuvem de chuva, se falhou). Depois de 40 s, se houver colegas à toa, pode sair para uma roda — com a ampulheta na cabeça. |
+| **Ocioso** | Terminou o turno e passeia: café na copa, bebedouro, banheiro, sofá do lounge, celular no puff, espelho. Com colegas à toa, entra numa roda: TV, videogame, ping-pong, papo na copa, jokenpô (veja [Vida social](#vida-social)). Depois de 10 min parado, cochila — mas um colega pode acordá-lo para uma roda. |
 | **Subagente concluído** | Vai até o agente que o chamou, entrega o resultado e sai pelo elevador. |
 | **Sessão encerrada** | Vai embora; se era o último da sala, apaga a luz antes de sair. |
 
@@ -323,6 +328,9 @@ demais ficam fixas dentro do container. Opções: `npm run docker:up -- --no-bui
   quem aparece e o que cada um faz.
 - **Shells rodando:** nos transcripts, cada `Bash` em segundo plano (ou comando longo em primeiro plano) vira um
   "shell" com rótulo e cronômetro, até chegar a notificação de que terminou, falhou ou foi interrompido.
+- **Vida social:** as rodas, as personalidades e as moedinhas são simulação do navegador (`client/src/world/social/`),
+  sem nenhum efeito nos agentes de verdade. A personalidade sai da semente de cada agente (é a mesma em qualquer
+  navegador); as carteiras ficam no `localStorage` do navegador.
 - **O que cada um está fazendo:** o servidor acompanha o fim dos transcripts (`.jsonl`) das sessões abertas e traduz
   cada chamada de ferramenta numa atividade em português, com ícone. Dali também saem tarefas, título, modelo e
   estatísticas.
@@ -482,6 +490,79 @@ depois de uma atualização, o CodeTown pode deixar de funcionar, total ou parci
 
 [MIT](LICENSE). As imagens em `client/public/assets` (logotipo, ilustrações, quadros e pôsteres) foram geradas com
 IA para este projeto e convertidas em pixel art pelos scripts de `scripts/assets/`.
+
+## Vida social
+
+Quando dois ou mais agentes estão à toa — ociosos, ou esperando um shell há mais de 40 segundos —, eles param de
+passear sozinhos e se juntam. Ninguém combina nada: cada personagem tem uma **personalidade**, **amigos** e
+**rivais**, e isso decide o que ele prefere fazer, com quem e o que fala. Quem está esperando um shell só sai da mesa
+para uma roda (sozinho, continua na pipoca) e leva a ampulheta junto; quando o comando termina — ou quando você manda
+um pedido novo para alguém —, ele avisa a turma ("Opa, me chamaram! 🏃") e corre de volta para a mesa.
+
+<p align="center">
+  <img src="docs/screenshots/social-lounge.gif" width="816" alt="Lounge do CodeTown com três rodas ao mesmo tempo: três colegas no sofá vendo futebol na TV (a tela pisca GOL), uma partida de pingue-pongue com torcida e um duelo nos fliperamas com provocações nos balões" />
+</p>
+
+### As rodas
+
+| | Roda | O que acontece |
+| --- | --- | --- |
+| 📺 | **TV no lounge** | Futebol, novela ou desenho, com pipoca no sofá. No futebol a torcida comemora junto com o "GOL" que pisca na tela (ou lamenta o gol do adversário); na novela, coraçõezinhos e "Não acredito! 😱". Quem é de sonecas acaba dormindo no sofá. |
+| 🎮 | **Videogame** | Dois no sofá com o controle, a TV em tela dividida (corrida ou luta), melhor de 3, provocações ("Que lag é esse?!") e torcida. |
+| 👾 | **Fliperama** | Duelo nas duas máquinas do lounge, uma partida só. |
+| 🏓 | **Pingue-pongue** | Até 5 pontos, com a bolinha indo e voltando, placar nos balões ("3 × 2 🏓") e torcida atrás da mesa. |
+| ☕ | **Papo na copa** | Cada um pega um café (ou água) e senta à mesa: fofoca com o nome dos colegas ("Viram o commit de Rafaela? 👀"), piada (a roda gargalha), trabalho ("Deploy na sexta? 😈") e assuntos do dia e da hora ("Sextou! 🎉"). |
+| 💬 | **Conversa** | Dois colegas em pé num canto da recepção, da copa ou do lounge. |
+| ✊ | **Jokenpô valendo** | "Jo… ken… pô!", os gestos aparecem sobre a cabeça, quem ganha comemora e as moedinhas voam de um para o outro; quem perde fica chateado e, se for competitivo, pede revanche. Empate repete. Quem está passando pode parar para assistir. |
+| 💄 | **Espelho do banheiro** | Batom ou pente, com o rosto refletido no espelho e um brilho no final. Vale sozinho ou em dupla ("Empresta o pente?"). |
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/social-rps.png" alt="Jokenpô na recepção: Lia comemora com uma moeda sobre a cabeça e o balão 'Ganhei!', moedinhas voam de Bruna (chateada, com o ícone de pedra) para ela, '+20' e '−20' flutuando, e Iara assiste atrás" /></td>
+    <td width="50%"><img src="docs/screenshots/social-kitchen.png" alt="Papo na copa: quatro colegas sentados à mesa comprida com café, com os balões 'Vai dar certo!' e 'Hahaha'" /></td>
+  </tr>
+  <tr>
+    <td><b>Jokenpô valendo moedinhas.</b> A aposta sai da personalidade (quem é de apostas aposta alto, quem é pão-duro aposta pouco) e nunca passa do saldo de quem tem menos.</td>
+    <td><b>Papo na copa.</b> Quem fala mais é quem é mais sociável; as reações dependem do assunto (gargalhada na piada, 👀 na fofoca).</td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/social-mirror.png" alt="Duas colegas diante das pias do banheiro se arrumando, com os rostos refletidos nos espelhos e o balão 'Tá arrasando!'" /></td>
+    <td><img src="docs/screenshots/social-drawer.png" alt="Seção Vida social nos detalhes do agente: 'Vendo novela na TV com Bruna e Iara', 115 moedinhas, 1 vitória e 0 derrotas, os traços Vaidade e Economia, o bordão, amizades, rivalidades com o placar e o extrato" /></td>
+  </tr>
+  <tr>
+    <td><b>No espelho.</b> Quem é de vaidade passa no banheiro sempre que pode — e aparece refletido.</td>
+    <td><b>Nos detalhes do agente.</b> O que está fazendo, a carteira, o placar, a personalidade, amizades e rivalidades (com o retrospecto) e o extrato.</td>
+  </tr>
+</table>
+
+### Personalidades
+
+Cada agente tem 2 ou 3 traços, sorteados pela semente dele (é sempre a mesma pessoa, em qualquer navegador):
+
+🏆 Competição · 🎲 Apostas · 🎮 Games · 📺 Séries e TV · 🗣️ Fofoca · 💄 Vaidade · ☕ Cafeína · 😂 Piadas · 🏓 Esporte ·
+🙈 Timidez · 💰 Economia · 😴 Sonecas · 🧘 Calma · 📚 Leitura
+
+Os traços mudam o que cada um escolhe (quem é de séries liga a TV, quem é de esporte chama para o ping-pong), quem
+chama (amigos se procuram; rivais se desafiam nos jogos), o que fala e até quem joga melhor. Cada um também tem um
+bordão ("Tá pago!", "Bora codar!"). Passe o mouse sobre um traço nos detalhes do agente para ver o que ele faz.
+
+### Moedinhas
+
+Moedinhas fictícias (🪙), só para dar graça às apostas:
+
+| | |
+| --- | --- |
+| **Chegou ao escritório** | 🪙100 (subagentes, 🪙30) |
+| **Tarefa concluída** (item da lista de tarefas) | +🪙10 |
+| **Pedido atendido** (fim de turno) | +🪙5 |
+| **Subagente entregou o resultado** | +🪙15 |
+| **Apostas** (jokenpô; partidas entre rivais ou com quem é de apostas) | o que perder vai para quem ganhar |
+
+Cada ganho aparece como "+🪙10" sobre a cabeça; as partidas e apostas entram no feed de atividade. O saldo, o placar
+e o extrato ficam salvos no navegador (cada navegador tem a sua economia: as apostas são sorteadas ali) e são
+esquecidos três dias depois de o agente sair.
+
+> Tudo isso é encenação do CodeTown: nada muda nos agentes do Claude Code, que continuam trabalhando normalmente.
 
 ---
 

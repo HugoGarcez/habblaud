@@ -11,6 +11,10 @@ import { layoutProjectRoom } from '../layout/room';
 import type { SpotDef, SpotKind } from '../layout/types';
 import { PathFinder } from '../path/astar';
 import { BLOCKED, FREE, SEAT } from '../path/grid';
+import { PROGRAM_SEED } from '../social/gathering';
+import { hasTrait, personaFor, soloWeights } from '../social/persona';
+import { Social } from '../social/social';
+import { browserStorage } from '../social/wallet';
 import {
   canDismantle,
   chooseSeat,
@@ -20,7 +24,6 @@ import {
   modeFor,
   pickIdleActivity,
   shouldRun,
-  TALK_EMOJIS,
   type IdleActivity,
   type Mode,
 } from './behavior';
@@ -29,14 +32,16 @@ import { Elevator } from './elevator';
 import { RoomState } from './room-state';
 import { countShells, latestShellDone, shellLabel, shellStage, shellWaitSince, spinDir, spinPhase, yawnPhase } from './shell';
 import { SpotRegistry } from './spots';
-import type { Meeting, Step } from './steps';
+import type { Step } from './steps';
 
-/** Efeito visual pontual pedido pela simulação ao render (drenado a cada frame). */
-export interface WorldEffect {
-  kind: 'confetti';
-  charId: string;
-  at: number;
-}
+/**
+ * Efeito visual pontual pedido pela simulação ao render (drenado a cada frame): confete (shell
+ * concluído), moedinhas voando de quem perdeu a aposta para quem ganhou e brilho (espelho).
+ */
+export type WorldEffect =
+  | { kind: 'confetti'; charId: string; at: number }
+  | { kind: 'coins'; charId: string; toId: string; at: number }
+  | { kind: 'sparkle'; charId: string; at: number };
 
 export { SHELL_DONE_TOOL } from './shell';
 /** Comemoração (shell concluído) e lamento (falhou/morto). */
@@ -54,6 +59,8 @@ const FALLBACK_THEME: RoomTheme = {
 };
 
 const LOUNGE_SEATS: SpotKind[] = ['sofa', 'armchair', 'beanbag'];
+/** Onde dá para sentar e mexer no celular. */
+const PHONE_SEATS: SpotKind[] = ['beanbag', 'sofa', 'armchair', 'cafe_seat', 'bench'];
 /** Assentos de descanso possíveis já na carga inicial (bancos de corredor/banheiro não). */
 const INITIAL_LOUNGE_SEATS: SpotKind[] = ['sofa', 'armchair', 'beanbag', 'cafe_seat'];
 /** Fração dos ociosos elegíveis que começa fora da mesa. */
@@ -83,7 +90,8 @@ export class Sim {
   readonly machineUntil = new Map<string, number>();
   /** Cabines ocupadas (furnitureId). */
   readonly stallBusy = new Set<string>();
-  readonly meetings = new Set<Meeting>();
+  /** Vida social: rodas dos ociosos, personalidades e carteiras (social/social.ts). */
+  readonly social: Social = new Social(this, browserStorage());
   /** Depuração: agentes forçados a encerrar e salas forçadas a sumir do snapshot. */
   readonly forcedOffline = new Set<string>();
   readonly hiddenRooms = new Set<string>();
@@ -167,6 +175,7 @@ export class Sim {
       const ch = this.chars.get(a.id);
       if (ch) {
         this.updateAgent(ch, a, now);
+        this.social.syncAgent(ch, a, now, true);
         continue;
       }
       if (a.status === 'offline' || this.forcedOffline.has(a.id) || this.hiddenRooms.has(a.roomId)) continue;
@@ -177,7 +186,11 @@ export class Sim {
         if (parent && (parent.leaving || parent.gone)) continue;
       }
       const nc = this.spawn(a, first, now);
-      if (nc) fresh.push(nc);
+      if (nc) {
+        fresh.push(nc);
+        // chegou ao escritório: carteira com o saldo inicial (tarefas já concluídas pagas em silêncio)
+        this.social.syncAgent(nc, a, now, false);
+      }
     }
     for (const ch of this.chars.values()) {
       if (!seen.has(ch.id) && !ch.leaving && ch.missingSince === null) ch.missingSince = now;
@@ -236,6 +249,8 @@ export class Sim {
         if (act.kind === 'done') ch.setIcon('check', 2600, now);
         if (act.kind === 'error') ch.setIcon('sweat', 2200, now);
         if (act.kind === 'delegate' && ch.info.kind === 'main' && a.status === 'working') this.planDelegate(ch, now);
+        // pedido atendido: moedinhas pelo trabalho
+        if (act.kind === 'done' && ch.info.kind === 'main') this.social.turnDone(ch, now);
       }
     }
     // fim de um shell: comemora ou lamenta (uma vez por notificação)
@@ -259,6 +274,10 @@ export class Sim {
     if (prev === 'idle' && mode !== 'idle') ch.nextOutingAt = 0;
     if (ch.icon === 'zzz') ch.setIcon(null, 0, this.now);
     this.refreshShell(ch, this.now);
+    // numa roda, ocioso <-> esperando shell não muda nada (segue na roda)
+    if (ch.gathering && (mode === 'idle' || mode === 'shell') && (prev === 'idle' || prev === 'shell')) return;
+    // o trabalho chamou no meio de uma roda: avisa a turma antes de sair
+    if (ch.gathering) this.social.calledAway(ch, prev, this.now);
     // comemoração/lamento do fim de um shell em andamento: termina (curta, volta à mesa) e o
     // planejador segue o modo novo; ir embora não espera
     if (this.now < ch.reactUntil && mode !== 'leave' && mode !== 'deliver') return;
@@ -310,13 +329,10 @@ export class Sim {
   private reactShellDone(ch: Character, ok: boolean, now: number): void {
     if (ch.leaving || ch.mode === 'leave' || ch.mode === 'deliver') return;
     ch.setIcon(ok ? 'star' : 'storm', ok ? CHEER_MS : SULK_MS, now);
-    if (ok) {
-      if (this.effects.length >= MAX_EFFECTS) this.effects.shift();
-      this.effects.push({ kind: 'confetti', charId: ch.id, at: now });
-    }
+    if (ok) this.pushEffect({ kind: 'confetti', charId: ch.id, at: now });
     // só encena na própria mesa e parado; andando/passeando fica só o ícone (e o confete)
     const home = this.spots.get(ch.homeSpot);
-    if (!home || ch.atSpot !== home.id || ch.step || ch.queue.length || ch.meeting) return;
+    if (!home || ch.atSpot !== home.id || ch.step || ch.queue.length || ch.gathering) return;
     if (ok) {
       ch.reactUntil = now + CHEER_MS + 2 * ENTER_MS + 200;
       if (home.seated) ch.queue.push({ t: 'exit' });
@@ -327,6 +343,21 @@ export class Sim {
       ch.reactUntil = now + SULK_MS;
       ch.queue.push({ t: 'act', pose: home.seated ? 'sleep' : 'stand', ms: SULK_MS });
     }
+  }
+
+  /** Lance do futebol da TV agora (para a torcida comemorar junto com o "GOL" da tela). */
+  footballLance(t: number): { lance: number; progress: number; right: boolean; period: number; goalAt: number } | null {
+    try {
+      return this.art.footballLance?.(t, PROGRAM_SEED.futebol) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Pede um efeito visual ao render (confete, moedinhas, brilho). */
+  pushEffect(e: WorldEffect): void {
+    if (this.effects.length >= MAX_EFFECTS) this.effects.shift();
+    this.effects.push(e);
   }
 
   // =================================================================== nascimento e posicionamento
@@ -484,6 +515,7 @@ export class Sim {
     this.now = now;
     for (const e of this.elevators) e.update(dt, now);
     this.updateRooms(now);
+    this.social.update(now);
     for (const ch of this.chars.values()) {
       if (ch.missingSince !== null && !ch.leaving && now - ch.missingSince >= MISSING_DEBOUNCE_MS) this.refreshMode(ch);
       this.runCharacter(ch, dt, now);
@@ -511,7 +543,7 @@ export class Sim {
       }
     }
     if (this.shrinkPending) this.relayout();
-    for (const meeting of this.meetings) if (meeting.ended) this.meetings.delete(meeting);
+    this.social.housekeeping(now);
     for (const [id, until] of this.machineUntil) if (until < now) this.machineUntil.delete(id);
     this.refreshRoomInfo();
   }
@@ -703,8 +735,8 @@ export class Sim {
         return this.stepStall(ch, s, dt, now);
       case 'switch':
         return this.stepSwitch(ch, s, now);
-      case 'meet':
-        return this.stepMeet(ch, s.meeting, now);
+      case 'gather':
+        return this.social.stepGather(ch, s.g, now);
       case 'do':
         s.fn();
         return true;
@@ -953,40 +985,6 @@ export class Sim {
     return false;
   }
 
-  private stepMeet(ch: Character, m: Meeting, now: number): boolean {
-    if (m.ended) return true;
-    m.arrived.add(ch.id);
-    const spotId = m.spots[m.ids[0] === ch.id ? 0 : 1];
-    const spot = this.spots.get(spotId);
-    if (spot) ch.dir = spot.dir;
-    const both = m.arrived.size >= 2;
-    if (!both) {
-      ch.setPose('stand');
-      if (ch.stepT > 25_000) m.ended = true;
-      return m.ended;
-    }
-    if (!m.startAt) {
-      m.startAt = now;
-      m.until = now + (m.kind === 'pingpong' ? between(ch.rng, 12_000, 22_000) : between(ch.rng, 7_000, 13_000));
-    }
-    if (now >= m.until) {
-      m.ended = true;
-      return true;
-    }
-    if (m.kind === 'pingpong') ch.setPose('play', 'paddle');
-    else {
-      ch.setPose('talk');
-      // mini-balões alternados
-      const turn = Math.floor((now - m.startAt) / 1700);
-      const mine = (turn % 2 === 0) === (m.ids[0] === ch.id);
-      if (mine && now > ch.chatUntil + 300 && ch.rng() < 0.05) {
-        ch.chatEmoji = TALK_EMOJIS[Math.floor(ch.rng() * TALK_EMOJIS.length)];
-        ch.chatUntil = now + 1300;
-      }
-    }
-    return false;
-  }
-
   // =================================================================== planejamento
 
   /** Interrompe o plano atual (respeitando passos que precisam terminar). */
@@ -999,11 +997,12 @@ export class Sim {
     this.clearPlan(ch);
   }
 
-  private interruptible(s: Step): boolean {
-    return s.t === 'go' || s.t === 'act' || s.t === 'until' || s.t === 'meet' || s.t === 'do';
+  interruptible(s: Step): boolean {
+    return s.t === 'go' || s.t === 'act' || s.t === 'until' || s.t === 'gather' || s.t === 'do';
   }
 
-  private clearPlan(ch: Character): void {
+  /** Descarta a fila (e sai da roda, se estiver numa). */
+  clearPlan(ch: Character): void {
     ch.queue.length = 0;
     ch.step = null;
     ch.thinkAt = 0;
@@ -1012,19 +1011,16 @@ export class Sim {
     // vaza e ninguém mais acende (ou apaga) a luz da sala enquanto este personagem existir
     const room = this.rooms.get(ch.roomId);
     if (room && room.switchClaim === ch.id) room.switchClaim = null;
-    if (ch.meeting) {
-      ch.meeting.ended = true;
-      ch.meeting = null;
-    }
+    if (ch.gathering) this.social.leave(ch, this.now);
     ch.chatUntil = 0;
   }
 
-  private releaseTemp(ch: Character): void {
+  releaseTemp(ch: Character): void {
     for (const id of ch.tempSpots) if (id !== ch.homeSpot) this.spots.release(id, ch.id);
     ch.tempSpots.length = 0;
   }
 
-  private reserveTemp(ch: Character, spot: SpotDef): boolean {
+  reserveTemp(ch: Character, spot: SpotDef): boolean {
     if (!this.spots.reserve(spot.id, ch.id)) return false;
     ch.tempSpots.push(spot.id);
     return true;
@@ -1064,6 +1060,15 @@ export class Sim {
       if (now >= ch.nextOutingAt) {
         if (this.planOuting(ch, now)) return true;
         ch.nextOutingAt = now + idleSitMs(ch.rng, this.options().liveliness);
+      }
+    }
+    // esperando um shell: só sai da mesa para uma roda (sozinho, fica na pipoca)
+    if (ch.mode === 'shell') {
+      if (!ch.nextSocialAt) ch.nextSocialAt = now + idleSitMs(ch.rng, this.options().liveliness) * 1.3;
+      if (now >= ch.nextSocialAt) {
+        ch.nextSocialAt = now + idleSitMs(ch.rng, this.options().liveliness) * 1.3;
+        const p = personaFor(ch.info.seed);
+        if (this.social.hasCompany(ch, now) && ch.rng() < 0.5 + p.sociability * 0.4 && this.social.tryInitiate(ch, now, true)) return true;
       }
     }
     return false;
@@ -1214,10 +1219,7 @@ export class Sim {
     this.spots.releaseAll(ch.id);
     ch.homeSpot = null;
     ch.tempSpots.length = 0;
-    if (ch.meeting) {
-      ch.meeting.ended = true;
-      ch.meeting = null;
-    }
+    if (ch.gathering) this.social.leave(ch, now);
     const steps: Step[] = [];
     this.pushLeave(ch, steps);
     const room = this.rooms.get(ch.roomId);
@@ -1271,6 +1273,7 @@ export class Sim {
         fn: () => {
           ch.delivered = true;
           ch.mode = 'leave';
+          this.social.delivered(ch, this.now);
         },
       },
     );
@@ -1308,7 +1311,7 @@ export class Sim {
   }
 
   /** Tiles (índice y*w+x) onde há alguém parado ou indo parar, exceto `a` e `b`. */
-  private busyTiles(a: string, b?: string): Set<number> {
+  busyTiles(a: string, b?: string): Set<number> {
     const w = this.building.grid.w;
     const out = new Set<number>();
     for (const c of this.chars.values()) {
@@ -1328,37 +1331,29 @@ export class Sim {
     return cands[Math.floor(ch.rng() * cands.length)];
   }
 
-  /** Personagem ocioso, sentado na própria mesa, disponível para conversar/jogar. */
-  private availablePartner(ch: Character): Character | null {
-    const cands: Character[] = [];
-    for (const c of this.chars.values()) {
-      if (c === ch || c.mode !== 'idle' || c.leaving || c.arriving || c.meeting || c.step || c.queue.length) continue;
-      if (c.atSpot !== c.homeSpot || !c.homeSpot) continue;
-      if (isLongIdle(c.info.status, c.info.statusSince, this.now)) continue;
-      cands.push(c);
-    }
-    if (!cands.length) return null;
-    return cands[Math.floor(ch.rng() * cands.length)];
-  }
-
   private planOuting(ch: Character, now: number): boolean {
     const near = { tx: ch.tx, ty: ch.ty };
     const rng = ch.rng;
-    const partner = this.availablePartner(ch);
+    const persona = personaFor(ch.info.seed);
+    // colegas à toa: a vontade é de companhia (a personalidade dosa) — TV, jogo, papo, aposta...
+    if (this.social.hasCompany(ch, now) && rng() < 0.45 + persona.sociability * 0.4 && this.social.tryInitiate(ch, now, false)) return true;
     const avail: Partial<Record<IdleActivity, boolean>> = {
       coffee: !!this.spots.findFree('coffee', { by: ch.id }),
       water: !!this.spots.findFree('water', { by: ch.id }),
       bathroom: !!this.spots.findFree('stall', { by: ch.id }),
       lounge: LOUNGE_SEATS.some((k) => !!this.spots.findFree(k, { by: ch.id })),
-      pingpong: !!partner && !!this.spots.findFreeGroup('pingpong'),
-      talk: !!partner && !!this.spots.findFreeGroup('talk'),
+      // jogos e conversas são rodas (social/): aqui só o que se faz sozinho
+      pingpong: false,
+      talk: false,
       window: !!this.spots.findFree('window', { by: ch.id }),
       shelf: !!this.spots.findFree('shelf', { by: ch.id }),
       arcade: !!this.spots.findFree('arcade', { by: ch.id }),
       snack: !!this.spots.findFree('snack', { by: ch.id }),
       stretch: true,
+      mirror: !!this.social.plan('mirror', 1, ch),
+      phone: !!this.randomFree(PHONE_SEATS, ch),
     };
-    const what = pickIdleActivity(rng, avail);
+    const what = pickIdleActivity(rng, avail, soloWeights(persona));
     if (!what) return false;
     const steps: Step[] = [];
     const goUse = (s: SpotDef, held: 'none' | 'coffee' = 'none'): void => {
@@ -1419,7 +1414,7 @@ export class Sim {
         if (!s || !this.reserveTemp(ch, s)) return false;
         this.pushLeave(ch, steps);
         steps.push({ t: 'go', tx: s.tx, ty: s.ty }, { t: 'enter', spot: s.id });
-        if (rng() < 0.25) steps.push({ t: 'act', pose: 'sit', ms: between(rng, 3000, 6000) }, { t: 'act', pose: 'sleep', ms: between(rng, 8000, 16000), icon: 'zzz' });
+        if (rng() < (hasTrait(persona, 'sonecas') ? 0.7 : 0.25)) steps.push({ t: 'act', pose: 'sit', ms: between(rng, 3000, 6000) }, { t: 'act', pose: 'sleep', ms: between(rng, 8000, 16000), icon: 'zzz' });
         else steps.push({ t: 'act', pose: 'sit', ms: between(rng, 9000, 22000), icon: rng() < 0.3 ? 'music' : undefined });
         steps.push({ t: 'exit' });
         release(s);
@@ -1427,7 +1422,18 @@ export class Sim {
       }
       case 'pingpong':
       case 'talk':
-        return !!partner && this.startMeeting(what, ch, partner);
+        return this.social.tryInitiate(ch, now, false);
+      case 'mirror':
+        return this.social.startSolo('mirror', ch, now);
+      case 'phone': {
+        // senta num puff/sofá/banco e fica rolando o celular
+        const s = this.randomFree(PHONE_SEATS, ch);
+        if (!s || !this.reserveTemp(ch, s)) return false;
+        this.pushLeave(ch, steps);
+        steps.push({ t: 'go', tx: s.tx, ty: s.ty }, { t: 'enter', spot: s.id }, { t: 'act', pose: 'read', held: 'phone', ms: between(rng, 8000, 18000) }, { t: 'exit' });
+        release(s);
+        break;
+      }
       case 'window': {
         // olhar pela janela ou dar uma conferida no quadro kanban da própria sala
         const board = rng() < 0.35 ? this.spots.findFree('whiteboard', { by: ch.id, filter: (p) => p.areaId === ch.roomId }) : null;
@@ -1482,48 +1488,8 @@ export class Sim {
     return true;
   }
 
-  /** Encontro de dois ociosos (conversa ou ping-pong): ambos vão aos spots do par e voltam depois. */
-  startMeeting(kind: 'talk' | 'pingpong', ch: Character, partner: Character): boolean {
-    const group = this.spots.findFreeGroup(kind, { rng: ch.rng });
-    if (!group || ch === partner) return false;
-    for (const who of [ch, partner]) if (who.step && !this.interruptible(who.step)) return false;
-    for (const who of [ch, partner]) if (who.step || who.queue.length) this.clearPlan(who);
-    const [a, b] = group;
-    if (!this.reserveTemp(ch, a) || !this.reserveTemp(partner, b)) {
-      this.releaseTemp(ch);
-      this.releaseTemp(partner);
-      return false;
-    }
-    const meeting: Meeting = {
-      kind,
-      ids: [ch.id, partner.id],
-      spots: [a.id, b.id],
-      arrived: new Set(),
-      startAt: 0,
-      until: 0,
-      ended: false,
-      seed: Math.floor(ch.rng() * 1e9),
-    };
-    this.meetings.add(meeting);
-    for (const [who, spot] of [
-      [ch, a],
-      [partner, b],
-    ] as const) {
-      who.meeting = meeting;
-      this.pushLeave(who, who.queue);
-      who.queue.push(
-        { t: 'go', tx: spot.tx, ty: spot.ty, fx: spot.x, fy: spot.y, dir: spot.dir },
-        { t: 'meet', meeting },
-        { t: 'do', fn: () => this.spots.release(spot.id, who.id) },
-        { t: 'do', fn: () => (who.meeting = null) },
-      );
-      this.pushHome(who, 'none');
-    }
-    return true;
-  }
-
   /** Volta para a mesa ao final de um passeio. */
-  private pushHome(ch: Character, held: 'none' | 'coffee' | 'water'): void {
+  pushHome(ch: Character, held: 'none' | 'coffee' | 'water'): void {
     const home = this.spots.get(ch.homeSpot);
     ch.queue.push({ t: 'do', fn: () => this.releaseTemp(ch) });
     if (!home) return;
@@ -1610,8 +1576,7 @@ export class Sim {
     this.updateRooms(now);
     for (const e of this.elevators) e.reset();
     this.machineUntil.clear();
-    for (const m of this.meetings) m.ended = true;
-    this.meetings.clear();
+    this.social.reset(now);
     for (const ch of [...this.chars.values()]) {
       for (let guard = 0; guard < 60 && !ch.gone; guard++) {
         if (!ch.step) ch.step = ch.queue.shift() ?? null;
@@ -1619,7 +1584,7 @@ export class Sim {
         this.finishStep(ch, ch.step, now);
         ch.step = null;
       }
-      ch.meeting = null;
+      ch.gathering = null;
       if (ch.leaving && !ch.gone) ch.gone = true;
       if (ch.gone) {
         this.spots.releaseAll(ch.id);

@@ -1,17 +1,6 @@
 // Passos da fila de ações de um personagem. Criados no planejamento (nunca por frame).
 import type { Dir, HeldItem, IconName, Pose } from '../../art/api';
-
-export interface Meeting {
-  kind: 'talk' | 'pingpong';
-  ids: [string, string];
-  spots: [string, string];
-  arrived: Set<string>;
-  startAt: number;
-  until: number;
-  ended: boolean;
-  /** Para o ping-pong: fase da bolinha. */
-  seed: number;
-}
+import type { Gathering } from '../social/gathering';
 
 export type Step =
   /** Anda (ou corre) até o tile (tx, ty); depois, opcionalmente, até a posição fina (fx, fy) e vira para `dir`. */
@@ -32,8 +21,8 @@ export type Step =
   | { t: 'stall'; spot: string; ms: number; phase: number }
   /** Liga/desliga a luz da sala no interruptor (precisa estar no spot do interruptor). */
   | { t: 'switch'; room: string; on: boolean; phase: number; onlyIfLast?: boolean }
-  /** Encontro com outro personagem (conversa ou ping-pong). */
-  | { t: 'meet'; meeting: Meeting }
+  /** Participa de uma roda (TV, jogo, papo...) até ela acabar; a pose vem do diretor (social/social.ts). */
+  | { t: 'gather'; g: Gathering }
   /** Efeito colateral imediato. */
   | { t: 'do'; fn: () => void }
   /** Remove o personagem do mundo. */

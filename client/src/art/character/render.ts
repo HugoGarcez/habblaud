@@ -19,16 +19,20 @@ export const SEAT_DROP = 4;
 
 export const POSE_FRAMES: Readonly<Record<Pose, number>> = {
   stand: 2, walk: 4, run: 4, sit: 2, type: 4, sleep: 2, drink: 2, use: 2, raise_hand: 2, talk: 2, stretch: 2,
-  read: 2, play: 2, wait: 2,
+  read: 2, play: 2, wait: 2, cheer: 2, laugh: 2, game: 2, rps: 2, groom: 2, sulk: 2,
 };
 
 export const POSE_DURATION: Readonly<Record<Pose, number>> = {
   stand: 650, walk: 140, run: 95, sit: 800, type: 120, sleep: 1000, drink: 700, use: 380, raise_hand: 320, talk: 280,
-  stretch: 800, read: 1100, play: 200, wait: 480,
+  stretch: 800, read: 1100, play: 200, wait: 480, cheer: 260, laugh: 190, game: 150, rps: 300, groom: 420, sulk: 1300,
 };
 
 const SEATED_ONLY: ReadonlySet<Pose> = new Set<Pose>(['sit', 'type', 'sleep', 'wait']);
-const NEVER_SEATED: ReadonlySet<Pose> = new Set<Pose>(['walk', 'run', 'stretch', 'play']);
+const NEVER_SEATED: ReadonlySet<Pose> = new Set<Pose>(['walk', 'run', 'stretch', 'play', 'groom']);
+/** Poses que posicionam as mãos (e o item) por conta própria: a lógica genérica de itens não mexe nelas. */
+const OWN_HANDS: ReadonlySet<Pose> = new Set<Pose>(['play', 'drink', 'raise_hand', 'stretch', 'cheer', 'laugh', 'game', 'rps', 'groom', 'sulk']);
+/** Gestos do jokenpô (a mão vira pedra, papel ou tesoura). */
+const GESTURES: ReadonlySet<HeldItem> = new Set<HeldItem>(['rock', 'paper', 'scissors']);
 
 export function isSeated(pose: Pose, seated?: boolean): boolean {
   return SEATED_ONLY.has(pose) || (!!seated && !NEVER_SEATED.has(pose));
@@ -105,9 +109,10 @@ interface Rig {
   /** Braço A = esquerdo da tela (frente/costas) ou distante (perfil). B = direito/próximo. */
   armA: Arm;
   armB: Arm;
-  /** 'half' = pálpebras a meio mastro (tédio/impaciência). */
-  eyes: 'open' | 'closed' | 'half';
-  mouth: 'none' | 'open';
+  /** 'half' = pálpebras a meio mastro (tédio/impaciência); 'happy' = olhos fechados em arco (^ ^), rindo. */
+  eyes: 'open' | 'closed' | 'half' | 'happy';
+  /** 'wide' = gargalhada (boca larga com a língua aparecendo); 'frown' = boca triste (cantos para baixo). */
+  mouth: 'none' | 'open' | 'wide' | 'frown';
   held: HeldItem;
   /** Item atrás do corpo (costas). */
   itemBehind: boolean;
@@ -280,11 +285,29 @@ function makeRig(req: CharacterFrameRequest, view: HeadView): Rig {
       else rig.armB = up ? arm([16, 18], [18, 17], [16, 14]) : arm([16, 18], [17, 21], [16, 21]);
       break;
     }
+    case 'cheer':
+      cheerRig(rig, view, f);
+      break;
+    case 'laugh':
+      laughRig(rig, view, f);
+      break;
+    case 'game':
+      gameRig(rig, view, f);
+      break;
+    case 'rps':
+      rpsRig(rig, view, f, held);
+      break;
+    case 'groom':
+      groomRig(rig, view, f, held);
+      break;
+    case 'sulk':
+      sulkRig(rig, view, f);
+      break;
   }
 
   // Itens segurados: braços e posição do item (exceto poses que já posicionam a mão).
   const h = rig.held;
-  if (h !== 'none' && !rig.itemAt && pose !== 'play' && pose !== 'drink' && pose !== 'raise_hand' && pose !== 'stretch') {
+  if (h !== 'none' && !rig.itemAt && !OWN_HANDS.has(pose)) {
     if (TWO_HANDED.has(h) || pose === 'read') {
       rig.twoHands = true;
       if (side) {
@@ -361,6 +384,166 @@ function waitRig(rig: Rig, view: HeadView, f: number, held: HeldItem): void {
     rig.armA = arm([12, 18], [12, 21], [9, 21]);
     rig.armB = arm([10, 18], [10, 21], [7, 20 + tap]);
   }
+}
+
+// ---------------------------------------------------------------- vida social
+
+/**
+ * 'cheer' (comemorando): os dois braços para o alto em V com os punhos fechados e a boca aberta.
+ * No quadro 1, pulinho (o corpo inteiro sobe 2 px; sentado, só um quique) e olhos de alegria.
+ * De perfil o braço de trás passa por trás da cabeça e aparece acima dela.
+ */
+function cheerRig(rig: Rig, view: HeadView, f: number): void {
+  const jump = f === 1;
+  rig.mouth = 'open';
+  if (jump) rig.eyes = 'happy';
+  if (jump) {
+    if (rig.seated) rig.ub -= 1;
+    else {
+      rig.ub -= 2;
+      rig.legA = { dx: 0, dy: -2 };
+      rig.legB = { dx: 0, dy: -2 };
+    }
+  }
+  // Punhos acima do topo da cabeça: sentado de costas (sofá diante da TV) só a cabeça e as mãos
+  // passam do encosto.
+  if (view === 'side') {
+    rig.armB = jump ? arm([10, 18], [5, 13], [3, 3]) : arm([10, 18], [6, 13], [4, 4]);
+    rig.armA = jump ? arm([12, 18], [17, 12], [18, 2]) : arm([12, 18], [16, 12], [17, 3]);
+    return;
+  }
+  rig.armA = jump ? arm([6, 18], [3, 12], [2, 3]) : arm([6, 18], [4, 12], [3, 4]);
+  rig.armB = jump ? arm([16, 18], [19, 12], [20, 3]) : arm([16, 18], [18, 12], [19, 4]);
+}
+
+/**
+ * 'laugh' (gargalhando): olhos fechados em arco, boca larga, uma mão na barriga e o corpo
+ * sacudindo 1 px; no quadro 1 a outra mão bate na coxa e, de perfil, o corpo dobra para a frente.
+ */
+function laughRig(rig: Rig, view: HeadView, f: number): void {
+  rig.eyes = 'happy';
+  rig.mouth = f === 0 ? 'wide' : 'open';
+  if (f === 0) rig.ub -= 1;
+  if (view === 'side') {
+    rig.lean = f === 0 ? 1 : -1;
+    rig.armB = arm([10, 18], [10, 21], [7, 22]);
+    rig.armA = f === 0 ? arm([12, 18], [12, 22]) : arm([12, 18], [11, 21], [9, 23]);
+    return;
+  }
+  if (view === 'up') {
+    // De costas: cotovelos para fora (as mãos estão na barriga, escondidas pelo corpo).
+    rig.armA = arm([6, 18], [4, 21], [7, 22]);
+    rig.armB = arm([16, 18], [18, 21], [15, 22]);
+    return;
+  }
+  rig.armB = arm([16, 18], [17, 21], [14, 22]);
+  rig.armA = f === 0 ? arm([6, 18], [6, 22]) : arm([6, 18], [5, 21], [4, 23]);
+}
+
+/**
+ * 'game' (videogame): controle nas duas mãos à frente do peito, polegares alternando (uma mão sobe
+ * 1 px a cada quadro). De perfil o corpo inclina para a tela; de costas só os cotovelos para fora,
+ * mexendo — o controle fica escondido pelo corpo.
+ */
+function gameRig(rig: Rig, view: HeadView, f: number): void {
+  rig.held = 'controller';
+  rig.twoHands = true;
+  const a = f === 0 ? 0 : 1;
+  const b = 1 - a;
+  if (view === 'down') {
+    rig.itemAt = [9, 20];
+    rig.armA = arm([6, 18], [6, 20], [8, 20 + a]);
+    rig.armB = arm([16, 18], [16, 20], [15, 20 + b]);
+    return;
+  }
+  if (view === 'side') {
+    rig.lean = -1;
+    rig.itemAt = [4, 19];
+    rig.armA = arm([12, 18], [11, 21], [7, 20 + a]);
+    rig.armB = arm([10, 18], [10, 21], [6, 20 + b]);
+    return;
+  }
+  rig.held = 'none';
+  rig.twoHands = false;
+  rig.armA = arm([6, 18], [4, 20], [7, 21 + a]);
+  rig.armB = arm([16, 18], [18, 20], [15, 21 + b]);
+}
+
+/**
+ * 'rps' (pedra-papel-tesoura). Sem gesto: o punho sobe (quadro 0, gritando) e desce (1) na
+ * contagem. Com gesto: braço estendido para o adversário mostrando a mão — de perfil para a frente,
+ * de frente diante do peito e de costas para o lado (para continuar legível).
+ */
+function rpsRig(rig: Rig, view: HeadView, f: number, held: HeldItem): void {
+  const reveal = GESTURES.has(held);
+  rig.held = reveal ? held : 'rock';
+  rig.itemBehind = false;
+  if (!reveal) {
+    const up = f === 0;
+    if (view !== 'up') rig.mouth = up ? 'open' : 'none';
+    if (view === 'side') {
+      rig.armB = up ? arm([10, 18], [6, 16], [3, 12]) : arm([10, 18], [6, 18], [3, 16]);
+      rig.armA = arm([12, 18], [12, 22]);
+    } else if (view === 'down') {
+      rig.armB = up ? arm([16, 18], [18, 15], [18, 11]) : arm([16, 18], [18, 18], [18, 15]);
+      rig.armA = arm([6, 18], [5, 21], [6, 22]);
+    } else {
+      rig.armB = up ? arm([16, 18], [19, 15], [20, 11]) : arm([16, 18], [19, 18], [20, 15]);
+      rig.armA = arm([6, 18], [6, 22]);
+    }
+    return;
+  }
+  const bob = f === 1 ? -1 : 0;
+  if (view === 'side') {
+    rig.armB = arm([10, 18], [7, 19], [4, 19 + bob]);
+    rig.armA = arm([12, 18], [12, 22]);
+  } else if (view === 'down') {
+    rig.armB = arm([16, 18], [16, 20], [13, 20 + bob]);
+    rig.armA = arm([6, 18], [6, 22]);
+  } else {
+    rig.armB = arm([16, 18], [19, 18], [21, 17 + bob]);
+    rig.armA = arm([6, 18], [6, 22]);
+  }
+}
+
+/**
+ * 'groom' (diante do espelho): uma mão perto do rosto/cabelo indo e voltando. De costas (o normal,
+ * virado para o espelho) o cotovelo fica levantado para fora e a mão aparece na lateral da cabeça;
+ * de frente a mão passa o batom/pente na altura da boca/cabelo.
+ */
+function groomRig(rig: Rig, view: HeadView, f: number, held: HeldItem): void {
+  rig.itemBehind = false;
+  const comb = held === 'comb';
+  if (view === 'up') {
+    rig.armB = f === 0 ? arm([16, 18], [20, 15], [18, 11]) : arm([16, 18], [20, 14], [17, 9]);
+    return;
+  }
+  if (view === 'side') {
+    rig.armB = comb
+      ? f === 0 ? arm([10, 18], [8, 15], [9, 9]) : arm([10, 18], [8, 14], [11, 8])
+      : f === 0 ? arm([10, 18], [9, 17], [6, 15]) : arm([10, 18], [9, 16], [6, 14]);
+    return;
+  }
+  rig.armB = comb
+    ? f === 0 ? arm([16, 18], [19, 14], [18, 9]) : arm([16, 18], [19, 13], [16, 8])
+    : f === 0 ? arm([16, 18], [18, 17], [14, 15]) : arm([16, 18], [18, 17], [13, 15]);
+  if (!comb) rig.mouth = 'none';
+}
+
+/** 'sulk' (chateado): ombros caídos, cabeça baixa, olhos semicerrados e braços pendurados. */
+function sulkRig(rig: Rig, view: HeadView, f: number): void {
+  rig.eyes = 'half';
+  rig.mouth = 'frown';
+  rig.hd = f === 0 ? 1 : 2;
+  if (!rig.seated) rig.ub += 1;
+  if (view === 'side') {
+    rig.lean = -1;
+    rig.armB = arm([10, 18], [10, 22]);
+    rig.armA = arm([12, 18], [12, 22]);
+    return;
+  }
+  rig.armA = arm([6, 18], [7, 22]);
+  rig.armB = arm([16, 18], [15, 22]);
 }
 
 /**
@@ -448,7 +631,7 @@ function drawHead(dc: Dc): void {
   const { p, r } = dc;
   const tpl = HEAD_BASE[r.view];
   const dy = r.ub + r.hd;
-  const closed = r.eyes === 'closed';
+  const closed = r.eyes === 'closed' || r.eyes === 'happy';
   const half = r.eyes === 'half';
   // Semicerrado: a linha de cima vira pálpebra e a de baixo usa o tom mais escuro do olho
   // (em peles escuras eyeTop é o brilho claro, então a pupila fica com eyeBot).
@@ -460,10 +643,43 @@ function drawHead(dc: Dc): void {
     e: closed ? p.skin.base : half ? shade(p.skin.base, -0.16) : p.eyeTop,
     E: closed ? shade(p.skin.base, -0.3) : half ? pupil : p.eyeBot,
     b: p.blush,
-    m: r.mouth === 'open' ? p.mouthOpen : dc.a.look === 'f' ? mix(p.mouth, '#c0505a', 0.25) : p.mouth,
+    m: r.mouth === 'open' || r.mouth === 'wide' ? p.mouthOpen : dc.a.look === 'f' ? mix(p.mouth, '#c0505a', 0.25) : p.mouth,
     r: p.skin.dk,
   };
   dc.b.stamp(tpl.rows, HX + tpl.x + r.lean, HY + tpl.y + dy, pal);
+  const ox = HX + tpl.x + r.lean;
+  const oy = HY + tpl.y + dy;
+  if (r.eyes === 'happy' && r.view !== 'up') {
+    // Olhos de riso: arco "^" de 3 px no lugar de cada olho (a pupila vira pele).
+    const ink = mix(p.skin.base, '#1d1826', 0.7);
+    for (const cx of r.view === 'down' ? [4, 9] : [3]) {
+      dc.b.set(ox + cx, oy + 6, ink);
+      dc.b.set(ox + cx, oy + 7, p.skin.base);
+      dc.b.set(ox + cx - 1, oy + 7, ink);
+      dc.b.set(ox + cx + 1, oy + 7, ink);
+    }
+  }
+  if (r.mouth === 'frown' && r.view !== 'up') {
+    // Boca triste: os cantos descem 1 px (um arco virado para baixo).
+    const corner = shade(p.mouth, -0.12);
+    if (r.view === 'down') {
+      dc.b.set(ox + 5, oy + 10, corner);
+      dc.b.set(ox + 8, oy + 10, corner);
+    } else dc.b.set(ox + 3, oy + 10, corner);
+  }
+  if (r.mouth === 'wide' && r.view !== 'up') {
+    // Gargalhada: a boca abre para os lados e a língua aparece embaixo.
+    const tongue = '#d8646e';
+    if (r.view === 'down') {
+      dc.b.set(ox + 5, oy + 9, p.mouthOpen);
+      dc.b.set(ox + 8, oy + 9, p.mouthOpen);
+      dc.b.set(ox + 6, oy + 10, tongue);
+      dc.b.set(ox + 7, oy + 10, tongue);
+    } else {
+      dc.b.set(ox + 1, oy + 9, p.mouthOpen);
+      dc.b.set(ox + 2, oy + 10, tongue);
+    }
+  }
   // Brilho na testa (luz de cima/esquerda).
   if (r.view !== 'up') dc.b.set(HX + 3 + r.lean, HY + 7 + dy, p.skin.lt);
 }
@@ -1095,9 +1311,114 @@ function drawItem(dc: Dc, x: number, y: number): void {
     case 'popcorn':
       b.stamp(POPCORN, x, y, POPCORN_PAL);
       break;
+    case 'controller':
+      b.stamp(side ? CONTROLLER_SIDE : CONTROLLER, x, y, CONTROLLER_PAL);
+      break;
+    case 'phone':
+      b.stamp(side ? PHONE_SIDE : PHONE, x, y, PHONE_PAL);
+      break;
+    case 'lipstick':
+      // Batom deitado, ponta vermelha para o lado da boca (de costas não aparece).
+      if (r.view !== 'up') b.stamp(['rgG'], x, y, { r: '#d8365a', g: '#f0c75a', G: '#b38a2e' });
+      break;
+    case 'comb':
+      b.stamp(['cccc', 'c.c.'], x, y, { c: '#3d4252' });
+      break;
+    case 'rock':
+    case 'paper':
+    case 'scissors':
+      drawGesture(dc, it, x, y);
+      break;
     case 'none':
       break;
   }
+}
+
+/** Controle de videogame (7x3): corpo grafite com brilho, direcional escuro e dois botões. */
+const CONTROLLER: readonly string[] = ['.hLLLL.', 'LdLLrbL', 'cc...cc'];
+const CONTROLLER_SIDE: readonly string[] = ['hLL', 'cLr'];
+const CONTROLLER_PAL: Palette = { L: '#4c5263', h: '#737b8f', d: '#1d2029', r: '#e8545a', b: '#4f8fe6', c: '#363b48' };
+/** Celular (3x5) com a tela azul acesa; de perfil (2x4), a borda com a tela virada para o rosto. */
+const PHONE: readonly string[] = ['dDd', 'dBd', 'dbd', 'dbd', 'ddd'];
+const PHONE_SIDE: readonly string[] = ['dB', 'db', 'db', 'dd'];
+const PHONE_PAL: Palette = { d: '#2b2f3a', D: '#5a6172', b: '#6fbdf0', B: '#c8eaff' };
+
+/**
+ * Gestos do jokenpô em pele (L = luz, s = base, S = sombra), relativos à mão (canto do pincel 2x2).
+ * De perfil apontam para a frente (esquerda); de costas usam o mesmo desenho espelhado (para a
+ * direita, braço aberto para o lado); de frente aparecem diante do peito.
+ */
+interface GestureTpl {
+  rows: readonly string[];
+  dx: number;
+  dy: number;
+}
+const GESTURE_SIDE: Readonly<Record<'rock' | 'paper' | 'scissors', GestureTpl>> = {
+  // Punho redondo, maior que a mão parada.
+  rock: { rows: ['.LLs', 'LsLs', 'sssS', '.SS.'], dx: -2, dy: -1 },
+  // Mão aberta em leque: quatro dedos separados e o polegar para cima.
+  paper: { rows: ['..L.L.', 'L.L.Ls', '.LsLss', 'LsssSS', '.SSSS.'], dx: -4, dy: -3 },
+  // Indicador e médio abertos em V para a frente.
+  scissors: { rows: ['L....', '.L...', '..Lss', '.SsSS', 'S....'], dx: -3, dy: -2 },
+};
+const GESTURE_FRONT: Readonly<Record<'rock' | 'paper' | 'scissors', GestureTpl>> = {
+  rock: { rows: ['.LL.', 'LsLs', 'sSsS', '.SS.'], dx: -1, dy: -1 },
+  paper: { rows: ['L.L.L', 'L.L.s', 'sLsLs', 'sssss', 'SsssS', '.SSS.'], dx: -2, dy: -4 },
+  scissors: { rows: ['L...s', 'L...s', '.L.s.', '.LsS.', '.sSS.', '..S..'], dx: -2, dy: -4 },
+};
+
+function drawGesture(dc: Dc, kind: 'rock' | 'paper' | 'scissors', hx: number, hy: number): void {
+  const { b, p, r } = dc;
+  const pal: Palette = { L: p.skin.lt, s: p.skin.base, S: p.skin.dk };
+  let rows: readonly string[];
+  let x0: number;
+  let flip = false;
+  if (r.view === 'down') {
+    const g = GESTURE_FRONT[kind];
+    rows = g.rows;
+    x0 = hx + g.dx;
+    hy += g.dy;
+  } else {
+    const g = GESTURE_SIDE[kind];
+    rows = g.rows;
+    flip = r.view === 'up';
+    // Espelhado em torno do centro da mão (o pincel ocupa hx..hx+1).
+    x0 = flip ? hx - g.dx - rows[0].length + 2 : hx + g.dx;
+    hy += g.dy;
+  }
+  b.stamp(rows, x0, hy, pal, flip);
+  // Contorno próprio onde o gesto passa por cima da roupa (o contorno geral só pega o lado de fora).
+  const ink = mix(p.skin.dd, '#1d2433', 0.45);
+  const w = rows[0].length;
+  const on = (cx: number, cy: number) => {
+    if (cy < 0 || cy >= rows.length || cx < 0 || cx >= w) return false;
+    const ch = rows[cy][flip ? w - 1 - cx : cx];
+    return ch !== '.' && ch !== ' ';
+  };
+  const skins = [p.skin.lt, p.skin.base, p.skin.dk, p.skin.hi].map(hexKey);
+  for (let cy = -1; cy <= rows.length; cy++) {
+    for (let cx = -1; cx <= w; cx++) {
+      if (on(cx, cy)) continue;
+      if (!(on(cx - 1, cy) || on(cx + 1, cy) || on(cx, cy - 1) || on(cx, cy + 1))) continue;
+      const X = x0 + cx;
+      const Y = hy + cy;
+      if (b.alpha(X, Y) < 160 || skins.includes(pixelKey(b, X, Y))) continue;
+      b.set(X, Y, ink);
+    }
+  }
+}
+
+function hexKey(c: string): number {
+  const m = /^#([0-9a-f]{6})$/i.exec(c);
+  return m ? parseInt(m[1], 16) : -1;
+}
+
+function pixelKey(b: PixelBuf, x: number, y: number): number {
+  const xi = x + b.ox;
+  const yi = y + b.oy;
+  if (!b.inside(xi, yi)) return -1;
+  const i = (yi * b.w + xi) * 4;
+  return (b.data[i] << 16) | (b.data[i + 1] << 8) | b.data[i + 2];
 }
 
 /**
@@ -1127,9 +1448,11 @@ function itemPos(dc: Dc): Pt | null {
   const hand = r.armB.pts[r.armB.pts.length - 1];
   const hx = hand[0] + r.lean;
   const hy = hand[1] + r.ub;
+  if (GESTURES.has(it)) return [hx, hy];
   if (r.twoHands) {
     if (r.view === 'side') return [hx - 2, hy - 3];
     const y = 18 + r.ub + 1;
+    if (it === 'phone') return [10, y];
     if (it === 'box') return [7, y];
     if (it === 'laptop') return [8, y + 1];
     if (it === 'book' && r.view === 'down') return [8, y + 1];
@@ -1145,6 +1468,14 @@ function itemPos(dc: Dc): Pt | null {
     case 'popcorn':
       // Segurado pela lateral do balde (a mão fica na borda de trás/esquerda).
       return r.view === 'side' ? [hx - 5, hy - 4] : [hx + 1, hy - 4];
+    case 'controller':
+      return r.view === 'side' ? [hx - 2, hy] : [hx - 2, hy];
+    case 'phone':
+      return r.view === 'side' ? [hx - 2, hy - 3] : [hx, hy - 4];
+    case 'lipstick':
+      return r.view === 'side' ? [hx - 2, hy + 1] : [hx - 2, hy + 1];
+    case 'comb':
+      return [hx - 1, hy - 2];
     default:
       return [hx, hy - 2];
   }

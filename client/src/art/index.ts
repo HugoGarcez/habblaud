@@ -24,7 +24,7 @@ import { CHAR_H, CHAR_W, POSE_DURATION, POSE_FRAMES, isSeated, renderCharacter }
 import { shade } from './core/color';
 import { PixelBuf } from './core/pixbuf';
 import type { BufSprite } from './core/sprite';
-import { drawBoard, drawClock, drawScreen, drawWindowView } from './dynamic';
+import { drawBoard, drawClock, drawScreen, drawWindowView, footballLance } from './dynamic';
 import { normalizeFurniture, renderFurniture } from './furniture/index';
 import { renderIcon } from './icons';
 import { CHUNK_PX, floorChunk } from './surfaces/floor';
@@ -34,7 +34,7 @@ import { roomTheme as roomThemePure } from './theme';
 
 export * from './api';
 export { hash32 };
-export { drawBoard, drawClock, drawScreen, drawWindowView };
+export { drawBoard, drawClock, drawScreen, drawWindowView, footballLance };
 
 // ------------------------------------------------------------------ canvas e cache
 

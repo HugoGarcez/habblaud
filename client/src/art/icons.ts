@@ -291,6 +291,94 @@ const ICONS: Readonly<Record<IconName, IconDef>> = {
     ],
     pal: { s: '#ffd2a8', d: '#e0a87a' },
   },
+  coin: {
+    // Moeda dourada de frente: aro claro em cima à esquerda, sombra embaixo à direita, um "C"
+    // gravado no meio e um brilho.
+    rows: [
+      '..yyyy..',
+      '.yhwyyy.',
+      'yhyKKyyd',
+      'yhKyyyyd',
+      'yhKyyyyd',
+      'yyyKKyyd',
+      '.yyyyydd',
+      '..dddd..',
+    ],
+    pal: { y: '#ffcf3f', h: '#fff2a8', w: '#ffffff', K: '#d4931c', d: '#c98a1c' },
+  },
+  sparkle: {
+    // Brilho de 4 pontas: centro branco e braços finos e longos.
+    rows: [
+      '....y....',
+      '....y....',
+      '...yhy...',
+      '..yhwhy..',
+      'yyhwwwhyy',
+      '..yhwhy..',
+      '...yhy...',
+      '....y....',
+      '....y....',
+    ],
+    pal: { y: '#ffe07a', h: '#fff6c8', w: '#ffffff' },
+  },
+  trophy: {
+    // Taça dourada com alças e pedestal de madeira.
+    rows: [
+      'yhhhyyyyd',
+      'yhwhyyydy',
+      'y.hhyyd.y',
+      '.yhhyyd.y',
+      '..hyyyd..',
+      '...yyd...',
+      '....y....',
+      '..bbbbb..',
+      '.BBBBBBB.',
+    ],
+    pal: { y: '#ffcf3f', h: '#fff2a8', w: '#ffffff', d: '#d99e1f', b: '#a8723f', B: '#7a4f2a' },
+  },
+  hand_rock: {
+    // Punho fechado de frente: três nós dos dedos em cima, vincos entre os dedos e o polegar
+    // atravessado embaixo (tom mais quente).
+    rows: [
+      '.LL.LL.LL.',
+      'LsskssksSS',
+      'LsskssksSS',
+      'LssssssssS',
+      'LTTTTTsssS',
+      '.TTTTTssS.',
+      '..SSSSSS..',
+    ],
+    pal: { L: '#ffe0c4', s: '#f6c9a2', S: '#d99d72', k: '#c48660', T: '#ecb68b' },
+  },
+  hand_paper: {
+    // Mão aberta: quatro dedos esticados e separados, polegar aberto para o lado.
+    rows: [
+      '..L.L....',
+      '.LsLsL...',
+      '.LsLsLs..',
+      '.LsLsLs..',
+      'LLsssss..',
+      'sLssssss.',
+      '.sssssSS.',
+      '..ssssS..',
+      '..SSSS...',
+    ],
+    pal: { L: '#ffe0c4', s: '#f6c9a2', S: '#d99d72' },
+  },
+  hand_scissors: {
+    // Indicador e médio abertos em V; os outros dedos dobrados no punho.
+    rows: [
+      '.L...L...',
+      '.Ls..Ls..',
+      '..Ls.Ls..',
+      '..LsLs...',
+      '.LLsssk..',
+      '.LsksksS.',
+      '.sssssSS.',
+      '..SSSSS..',
+    ],
+    pal: { L: '#ffe0c4', s: '#f6c9a2', S: '#d99d72', k: '#c48660' },
+  },
 };
 
 export const ICON_NAMES = Object.keys(ICONS) as IconName[];

@@ -1,7 +1,7 @@
 // Testes das partes puras do módulo de arte (sem DOM): aparência, templates, personagens, móveis,
 // pisos, paredes, ícones, temas e os desenhos por quadro (com um contexto falso).
 import { describe, expect, it } from 'vitest';
-import { FURNITURE, TILE, type Dir, type FloorKind, type FurnitureKind, type HeldItem, type Pose, type ScreenMode, type WallPattern } from './api';
+import { FURNITURE, TILE, type Appearance, type Dir, type FloorKind, type FurnitureKind, type HeldItem, type Pose, type ScreenMode, type WallPattern } from './api';
 import { appearanceFromSeed, appearanceKey } from './character/appearance';
 import { HAIR, HEAD_BASE } from './character/hair';
 import { CHAR_AX, CHAR_AY, CHAR_H, CHAR_W, POSE_DURATION, POSE_FRAMES, isSeated, renderCharacter } from './character/render';
@@ -44,8 +44,11 @@ function compose(...layers: [BufSprite, number, number][]): PixelBuf {
   return out;
 }
 const POSES = Object.keys(POSE_FRAMES) as Pose[];
-const HELD: HeldItem[] = ['none', 'coffee', 'water', 'papers', 'laptop', 'book', 'box', 'paddle', 'popcorn'];
-const SCREEN_MODES: ScreenMode[] = ['off', 'standby', 'idle', 'code', 'terminal', 'browser', 'search', 'chat', 'docs', 'tasks', 'alert', 'progress'];
+const HELD: HeldItem[] = [
+  'none', 'coffee', 'water', 'papers', 'laptop', 'book', 'box', 'paddle', 'popcorn',
+  'controller', 'rock', 'paper', 'scissors', 'phone', 'lipstick', 'comb',
+];
+const SCREEN_MODES: ScreenMode[] = ['off', 'standby', 'idle', 'code', 'terminal', 'browser', 'search', 'chat', 'docs', 'tasks', 'alert', 'progress', 'show', 'game'];
 
 describe('appearanceFromSeed', () => {
   it('é determinística', () => {
@@ -280,6 +283,139 @@ describe("pose 'wait' (esperando o shell) e o balde de pipoca", () => {
   });
 });
 
+describe('vida social: poses, itens e gestos', () => {
+  /** Aparência fixa (pele clara, sem acessório): cores previsíveis para contar pixels. */
+  const A: Appearance = {
+    skin: '#f6cfb0',
+    hair: '#5f3c28',
+    hairStyle: 'short',
+    eyes: '#2b2236',
+    top: '#4a86d8',
+    topAccent: '#f4f4f0',
+    topStyle: 'tshirt',
+    bottom: '#3f5f8c',
+    shoes: '#2b2b33',
+    accessory: 'none',
+    accessoryColor: '#2b2b33',
+    lanyard: null,
+    look: 'm',
+    facialHair: 'none',
+    bottomStyle: 'pants',
+  };
+  const SOCIAL: Pose[] = ['cheer', 'laugh', 'game', 'rps', 'groom', 'sulk'];
+  const draw = (pose: Pose, dir: Dir, frame: number, held: HeldItem = 'none', seated = false) =>
+    renderCharacter({ appearance: A, dir, pose, frame, held, seated }).buf;
+  /** Pixels opacos numa região [x0, x1) × [y0, y1). */
+  const opaqueIn = (b: PixelBuf, x0: number, x1: number, y0: number, y1: number) => {
+    let n = 0;
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (b.alpha(x, y) > 200) n++;
+    return n;
+  };
+  /** Pixels com cor próxima da pele (luz, base e sombra do ramp). */
+  const skinIn = (b: PixelBuf, x0: number, x1: number, y0: number, y1: number) => {
+    const n = parseInt(A.skin.slice(1), 16);
+    const [sr, sg, sb] = [n >> 16, (n >> 8) & 255, n & 255];
+    let c = 0;
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
+        const i = (y * b.w + x) * 4;
+        if (b.data[i + 3] < 200) continue;
+        if (Math.abs(b.data[i] - sr) + Math.abs(b.data[i + 1] - sg) + Math.abs(b.data[i + 2] - sb) < 70) c++;
+      }
+    }
+    return c;
+  };
+
+  it('2 quadros cada, com duração própria; groom é sempre em pé, as demais sentam quando pedido', () => {
+    for (const pose of SOCIAL) {
+      expect(POSE_FRAMES[pose], pose).toBe(2);
+      expect(POSE_DURATION[pose], pose).toBeGreaterThan(100);
+      expect(isSeated(pose, false), pose).toBe(false);
+      expect(isSeated(pose, true), pose).toBe(pose !== 'groom');
+    }
+  });
+
+  it('animam (os 2 quadros diferem) em todas as direções, em pé e sentado, e são determinísticas', () => {
+    const cases: [Pose, HeldItem][] = [['cheer', 'none'], ['laugh', 'none'], ['game', 'controller'], ['rps', 'none'], ['rps', 'paper'], ['groom', 'lipstick'], ['groom', 'comb'], ['sulk', 'none']];
+    for (const [pose, held] of cases) {
+      for (const dir of DIRS) {
+        for (const seated of pose === 'groom' ? [false] : [false, true]) {
+          const f0 = digest(draw(pose, dir, 0, held, seated).data);
+          expect(digest(draw(pose, dir, 1, held, seated).data), `${pose}/${held}/${dir}/${seated}`).not.toBe(f0);
+          expect(digest(draw(pose, dir, 0, held, seated).data)).toBe(f0);
+        }
+      }
+    }
+  });
+
+  it("'cheer': punhos acima da cabeça dos dois lados e, em pé, pulinho no quadro 1 (pés saem do chão)", () => {
+    for (const dir of ['down', 'up'] as const) {
+      const b = draw('cheer', dir, 0);
+      expect(skinIn(b, 0, 5, 0, 12), dir).toBeGreaterThan(0);
+      expect(skinIn(b, 19, CHAR_W, 0, 12), dir).toBeGreaterThan(0);
+    }
+    for (const dir of DIRS) {
+      expect(opaqueIn(draw('cheer', dir, 0), CHAR_AX - 6, CHAR_AX + 6, CHAR_AY - 1, CHAR_AY), dir).toBeGreaterThan(2);
+      expect(opaqueIn(draw('cheer', dir, 1), CHAR_AX - 6, CHAR_AX + 6, CHAR_AY - 1, CHAR_AY), dir).toBe(0);
+    }
+    // De perfil, os dois braços sobem (o de trás aparece acima/atrás da cabeça).
+    expect(skinIn(draw('cheer', 'left', 0), 0, 6, 0, 12)).toBeGreaterThan(0);
+    expect(skinIn(draw('cheer', 'left', 0), 17, CHAR_W, 0, 12)).toBeGreaterThan(0);
+  });
+
+  it("'laugh': olhos de riso (sem pupila) e boca larga no quadro 0", () => {
+    const pupil = '#1d1826';
+    const open = '#7a2e35';
+    expect(countColor(draw('stand', 'down', 0), pupil)).toBeGreaterThanOrEqual(2);
+    for (const f of [0, 1]) expect(countColor(draw('laugh', 'down', f), pupil), `f${f}`).toBe(0);
+    expect(countColor(draw('laugh', 'down', 0), open)).toBeGreaterThanOrEqual(4);
+    expect(countColor(draw('laugh', 'left', 0), open)).toBeGreaterThanOrEqual(2);
+  });
+
+  it("'game': controle visível de frente e de perfil; de costas fica escondido pelo corpo", () => {
+    const red = '#e8545a';
+    expect(countColor(draw('game', 'down', 0, 'controller'), red)).toBeGreaterThan(0);
+    expect(countColor(draw('game', 'left', 0, 'controller'), red)).toBeGreaterThan(0);
+    expect(countColor(draw('game', 'up', 0, 'controller'), red)).toBe(0);
+    // Sentado também (no sofá diante da TV).
+    expect(countColor(draw('game', 'down', 1, 'controller', true), red)).toBeGreaterThan(0);
+  });
+
+  it("'rps': pedra, papel e tesoura são diferentes em todas as direções; papel é a mão maior", () => {
+    for (const dir of DIRS) {
+      const d = (['rock', 'paper', 'scissors'] as const).map((g) => digest(draw('rps', dir, 0, g).data));
+      expect(new Set(d).size, dir).toBe(3);
+      expect(d).not.toContain(digest(draw('rps', dir, 0).data));
+    }
+    expect(skinIn(draw('rps', 'left', 0, 'paper'), 0, 8, 12, 26)).toBeGreaterThan(skinIn(draw('rps', 'left', 0, 'rock'), 0, 8, 12, 26));
+    // De costas o braço abre para o lado: o gesto aparece à direita do corpo.
+    for (const g of ['rock', 'paper', 'scissors'] as const) expect(skinIn(draw('rps', 'up', 0, g), 20, CHAR_W, 10, 24), g).toBeGreaterThan(0);
+    // Na contagem (sem gesto) o punho sobe acima do ombro no quadro 0 e desce no 1.
+    expect(skinIn(draw('rps', 'down', 0), 17, CHAR_W, 8, 15)).toBeGreaterThan(skinIn(draw('rps', 'down', 1), 17, CHAR_W, 8, 15));
+  });
+
+  it("'groom': de costas o cotovelo sobe para fora e a mão fica na lateral da cabeça; batom e pente aparecem", () => {
+    expect(opaqueIn(draw('stand', 'up', 0), 20, CHAR_W, 8, 17)).toBe(0);
+    expect(opaqueIn(draw('groom', 'up', 0), 20, CHAR_W, 8, 17)).toBeGreaterThan(0);
+    expect(countColor(draw('groom', 'down', 0, 'lipstick'), '#d8365a')).toBeGreaterThan(0);
+    expect(countColor(draw('groom', 'left', 0, 'lipstick'), '#d8365a')).toBeGreaterThan(0);
+    expect(countColor(draw('groom', 'up', 0, 'comb'), '#3d4252')).toBeGreaterThan(0);
+  });
+
+  it("'sulk': cabeça mais baixa que em pé parado", () => {
+    for (const dir of DIRS) {
+      const top = (b: PixelBuf) => b.bounds()!.y;
+      expect(top(draw('sulk', dir, 0)), dir).toBeGreaterThan(top(draw('stand', dir, 0)));
+    }
+  });
+
+  it('celular com a tela acesa: lendo em pé e sentado', () => {
+    for (const [pose, seated] of [['read', false], ['read', true], ['sit', true]] as const) {
+      expect(countColor(draw(pose, 'down', 0, 'phone', seated), '#6fbdf0'), `${pose}/${seated}`).toBeGreaterThan(0);
+    }
+  });
+});
+
 describe('móveis', () => {
   const kinds = Object.keys(FURNITURE) as FurnitureKind[];
   it('todos os kinds/variantes/estados renderizam com âncora e regiões coerentes', () => {
@@ -328,6 +464,8 @@ describe('móveis', () => {
     expect(renderFurniture('sign').base.rects?.sign).toBeDefined();
     expect(renderFurniture('painting').base.rects?.art).toBeDefined();
     expect(renderFurniture('floor_lamp').base.rects?.glow).toBeDefined();
+    expect(renderFurniture('arcade').base.rects?.screen).toBeDefined();
+    expect(renderFurniture('mirror').base.rects?.glass).toBeDefined();
     const scr = renderFurniture('desk', 'white').base.rects?.screen;
     expect(scr?.w).toBe(14);
     expect(scr?.h).toBe(9);
@@ -469,9 +607,11 @@ describe('pisos e paredes', () => {
 });
 
 describe('ícones e temas', () => {
-  it('os 18 ícones existem com contorno', () => {
-    expect(ICON_NAMES.length).toBe(18);
-    for (const n of ['hourglass', 'hourglass_flip', 'cobweb', 'storm'] as const) expect(ICON_NAMES).toContain(n);
+  it('os 24 ícones existem com contorno', () => {
+    expect(ICON_NAMES.length).toBe(24);
+    for (const n of ['hourglass', 'hourglass_flip', 'cobweb', 'storm', 'coin', 'sparkle', 'trophy', 'hand_rock', 'hand_paper', 'hand_scissors'] as const) {
+      expect(ICON_NAMES).toContain(n);
+    }
     for (const n of ICON_NAMES) {
       const s = renderIcon(n);
       expect(s.buf.w, n).toBeGreaterThanOrEqual(8);
@@ -658,6 +798,40 @@ describe('desenhos por quadro', () => {
     // Escuro como um terminal (fundo é o 1º fill e cobre a tela toda).
     const bg = snap(0)[0];
     expect(bg).toMatchObject({ x: 0, y: 0, w: 14, h: 9 });
+  });
+
+  it("'show' e 'game': programa fixo pela semente (futebol/novela/desenho; corrida/luta)", () => {
+    const r = { x: 3, y: 4, w: 28, h: 15 };
+    const colors = (m: ScreenMode, seed: number, t = 1234) => {
+      const fills: string[] = [];
+      const ctx = {
+        fillStyle: '',
+        fillRect() {
+          fills.push(String((ctx as { fillStyle: string }).fillStyle));
+        },
+      } as unknown as CanvasRenderingContext2D;
+      drawScreen(ctx, r, m, t, seed);
+      return fills;
+    };
+    for (const k of [0, 3, 6]) {
+      expect(colors('show', k), `futebol ${k}`).toContain('#3f9a4a');
+      expect(colors('show', k + 1), `novela ${k + 1}`).not.toContain('#3f9a4a');
+      expect(colors('show', k + 1), `novela ${k + 1}`).not.toContain('#7fd3ff');
+      expect(colors('show', k + 2), `desenho ${k + 2}`).toContain('#7fd3ff');
+    }
+    for (const k of [0, 2, 4]) {
+      expect(colors('game', k), `corrida ${k}`).toContain('#6a7280');
+      expect(colors('game', k + 1), `luta ${k + 1}`).toContain('#3b2a6b');
+    }
+    // O "GOL" (faixa escura + letras) aparece no fim de cada lance; o "KO", no fim do round.
+    const banner = 'rgba(12,16,28,0.78)';
+    const some = (m: ScreenMode, seed: number, span: number) => {
+      for (let t = 0; t < span; t += 50) if (colors(m, seed, t).includes(banner)) return true;
+      return false;
+    };
+    expect(some('show', 0, 7000)).toBe(true);
+    expect(some('game', 1, 9000)).toBe(true);
+    expect(some('show', 1, 7000)).toBe(false);
   });
 
   it('drawWindowView, drawBoard e drawClock ficam dentro do retângulo', () => {

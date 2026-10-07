@@ -9,6 +9,7 @@ import type { Camera } from './camera';
 import type { Renderer } from './render/renderer';
 import { oldestShell } from './sim/shell';
 import type { Sim } from './sim/sim';
+import type { GatherKind } from './social/gathering';
 
 /** Um shell para os cenários de depuração: campos de ShellJob opcionais + idade relativa. */
 export interface ShellJobInput extends Partial<ShellJob> {
@@ -58,8 +59,15 @@ export interface WorldDebug {
   fastForward(): void;
   /** Faz todos os ociosos saírem para passear agora. */
   wanderNow(): void;
-  /** Junta dois ociosos numa conversa ou partida de ping-pong. Retorna os nomes ou null. */
-  socialize(kind: 'talk' | 'pingpong'): string[] | null;
+  /**
+   * Começa uma roda agora com quem estiver ocioso/esperando shell (ou com `ids`): todos voltam à mesa
+   * na hora e saem juntos. Retorna os nomes dos participantes ou null.
+   */
+  socialize(kind: GatherKind, ids?: string[]): string[] | null;
+  /** Rodas em andamento: tipo, fase, participantes, placar e aposta. */
+  gatherings(): unknown;
+  /** Soma (ou tira) moedinhas da carteira de um agente. Retorna o saldo. */
+  coins(agentId: string, delta: number): number;
   /**
    * Define os shells que um agente espera (sessão simulada ou agente real; o real fica sobreposto
    * até reset()). Algum em segundo plano -> status 'shell'; só em primeiro plano -> 'working';
@@ -324,10 +332,27 @@ export function createDebug(sim: Sim, renderer: Renderer, camera: Camera, onCame
       for (const c of sim.chars.values()) c.nextOutingAt = 1;
     },
 
-    socialize: (kind) => {
-      const idle = [...sim.chars.values()].filter((c) => c.mode === 'idle' && !c.leaving && !c.meeting && !c.arriving);
-      if (idle.length < 2) return null;
-      return sim.startMeeting(kind, idle[0], idle[1]) ? [idle[0].info.name, idle[1].info.name] : null;
+    socialize: (kind, ids) => {
+      sim.fastForward(now());
+      return sim.social.force(kind, now(), ids);
+    },
+
+    gatherings: () =>
+      [...sim.social.gatherings].map((g) => ({
+        kind: g.kind,
+        phase: g.phase,
+        program: g.program,
+        bet: g.bet,
+        score: g.score,
+        members: g.members.map((m) => ({ name: sim.chars.get(m.id)?.info.name ?? m.id, role: m.role, arrived: m.arrived, left: m.left, pose: m.pose })),
+      })),
+
+    coins: (id, delta) => {
+      const w = sim.social.wallets.get(id);
+      if (!w) return 0;
+      if (delta > 0) sim.social.wallets.credit(id, delta, '🛠️', 'Ajuste (depuração)', now());
+      else w.coins = Math.max(0, w.coins + delta);
+      return w.coins;
     },
 
     setShells: (id, jobs) => {

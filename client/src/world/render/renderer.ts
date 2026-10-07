@@ -603,8 +603,20 @@ export class Renderer {
         const o = wallItemOrigin(w, s.base);
         ctx.drawImage(s.base.canvas, o.x, o.y + rise);
         const r = s.base.rects?.tv;
-        const mode = TV_MODES[Math.floor(now / 9000) % TV_MODES.length];
-        if (r) this.safe(() => this.art.drawScreen(ctx, { x: o.x + r.x, y: o.y + rise + r.y, w: r.w, h: r.h }, mode, now, w.seed));
+        // roda na TV do lounge: o programa escolhido (futebol, novela, desenho) ou o videogame
+        const live = this.sim.social.tvScreen();
+        const mode = live ? live.mode : TV_MODES[Math.floor(now / 9000) % TV_MODES.length];
+        const seed = live ? live.seed : w.seed;
+        if (r) this.safe(() => this.art.drawScreen(ctx, { x: o.x + r.x, y: o.y + rise + r.y, w: r.w, h: r.h }, mode, now, seed));
+        return;
+      }
+      case 'mirror': {
+        const s = wallSprites(this.art, 'mirror', w.variant, 0, w.seed);
+        if (!s) return;
+        const o = wallItemOrigin(w, s.base);
+        ctx.drawImage(s.base.canvas, o.x, o.y + rise);
+        const r = s.base.rects?.glass;
+        if (r) this.drawReflection(w, o.x + r.x, o.y + rise + r.y, r.w, r.h);
         return;
       }
       default: {
@@ -726,6 +738,11 @@ export class Renderer {
         this.safe(() => this.art.drawScreen(ctx, { x: dx + r.x, y: dy + r.y, w: r.w, h: r.h }, mode, now, f.seed));
       } else if (f.kind === 'coffee_machine' && state === 1) {
         this.drawSteam(f.ax, dy + 2, now, f.seed);
+      } else if (f.kind === 'arcade' && s.rects?.screen) {
+        // duelo no fliperama: as duas máquinas mostram a partida
+        const seed = this.sim.social.arcadeSeed();
+        const r = s.rects.screen;
+        if (seed !== null) this.safe(() => this.art.drawScreen(ctx, { x: dx + r.x, y: dy + r.y, w: r.w, h: r.h }, 'game', now, seed));
       }
     }
     if (scaled) ctx.restore();
@@ -937,15 +954,69 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** Efeitos pedidos pela simulação (confete do shell concluído), sobre a cabeça de quem comemora. */
+  /**
+   * Efeitos pedidos pela simulação: confete (shell concluído) sobre quem comemora, moedinhas voando de
+   * quem perdeu a aposta para quem ganhou e o brilho de quem se arrumou no espelho.
+   */
   private drainEffects(now: number): void {
     const fx = this.sim.effects;
     for (let i = 0; i < fx.length; i++) {
       const e = fx[i];
       const head = this.heads.get(e.charId);
-      if (e.kind === 'confetti' && head && head.visible && now - e.at < 1500) this.particles.confetti(head.x, head.y - 4);
+      if (!head || !head.visible || now - e.at > 1500) continue;
+      if (e.kind === 'confetti') this.particles.confetti(head.x, head.y - 4);
+      else if (e.kind === 'sparkle') this.particles.sparkle(head.x, head.y + 4);
+      else if (e.kind === 'coins') {
+        const to = this.heads.get(e.toId);
+        if (to && to.visible) this.particles.coins(head.x, head.y + 2, to.x, to.y + 2);
+      }
     }
     fx.length = 0;
+  }
+
+  private reflectReq: CharacterFrameRequest = {
+    appearance: undefined as unknown as CharacterFrameRequest['appearance'],
+    dir: 'down',
+    pose: 'stand',
+    frame: 0,
+    held: 'none',
+    seated: false,
+  };
+
+  /**
+   * Reflexo no espelho do banheiro: quem está em pé diante da pia, virado para o espelho, aparece de
+   * frente no vidro (rosto centrado, meio transparente, com o véu azulado do vidro por cima).
+   */
+  private drawReflection(w: WallVis, gx: number, gy: number, gw: number, gh: number): void {
+    const { ctx } = this;
+    for (const ch of this.sim.chars.values()) {
+      if (ch.inside || ch.alpha < 0.5 || ch.dir !== 'up' || ch.seated) continue;
+      if (Math.abs(ch.x - w.cx) > 5) continue;
+      const dy = ch.y - w.baseY;
+      if (dy < 14 || dy > 30) continue;
+      const req = this.reflectReq;
+      req.appearance = ch.appearance;
+      req.pose = ch.pose === 'groom' ? 'groom' : 'stand';
+      req.held = ch.pose === 'groom' ? ch.held : 'none';
+      req.seated = false;
+      let s: Sprite;
+      try {
+        s = this.charSprite(req, ch.animT);
+      } catch {
+        return;
+      }
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(gx, gy, gw, gh);
+      ctx.clip();
+      ctx.globalAlpha = 0.8 * ch.alpha;
+      ctx.drawImage(s.canvas, Math.round(gx + gw / 2 - s.ax), Math.round(gy - 6));
+      ctx.globalAlpha = 0.28;
+      ctx.fillStyle = '#cfe6f2';
+      ctx.fillRect(gx, gy, gw, gh);
+      ctx.restore();
+      return;
+    }
   }
 
   private req: CharacterFrameRequest = {
@@ -1035,15 +1106,20 @@ export class Renderer {
 
   private drawPingPong(now: number): void {
     const { ctx } = this;
-    for (const m of this.sim.meetings) {
-      if (m.kind !== 'pingpong' || m.ended || !m.startAt || now > m.until) continue;
-      const a = this.sim.chars.get(m.ids[0]);
-      const b = this.sim.chars.get(m.ids[1]);
+    for (const g of this.sim.social.gatherings) {
+      if (g.kind !== 'pingpong' || g.phase !== 'run') continue;
+      let a: Character | undefined;
+      let b: Character | undefined;
+      for (const m of g.members) {
+        if (m.role !== 'player' || m.left) continue;
+        if (!a) a = this.sim.chars.get(m.id);
+        else b = this.sim.chars.get(m.id);
+      }
       if (!a || !b) continue;
       const left = a.x < b.x ? a : b;
       const right = a.x < b.x ? b : a;
       const period = 1100;
-      const ph = ((now - m.startAt) % (period * 2)) / period;
+      const ph = ((now - g.startAt) % (period * 2)) / period;
       const u = ph < 1 ? ph : 2 - ph;
       const x = left.x + 9 + (right.x - left.x - 18) * u;
       const baseY = (left.y + right.y) / 2 - 9;

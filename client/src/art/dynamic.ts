@@ -273,6 +273,18 @@ export function drawScreen(ctx: Ctx, r: Rect, mode: ScreenMode, t: number, seed:
       }
       break;
     }
+    case 'show': {
+      const prog = s % 3;
+      if (prog === 0) drawFootball(ctx, x, y, w, h, t, s);
+      else if (prog === 1) drawSoap(ctx, x, y, w, h, t, s);
+      else drawCartoon(ctx, x, y, w, h, t, s);
+      break;
+    }
+    case 'game': {
+      if (s % 2 === 0) drawRace(ctx, x, y, w, h, t, s);
+      else drawFight(ctx, x, y, w, h, t, s);
+      break;
+    }
     case 'alert': {
       const on = Math.floor(t / 380) % 2 === 0;
       fill(ctx, x, y, w, h, on ? '#f2b33d' : '#8a5a12');
@@ -288,6 +300,301 @@ export function drawScreen(ctx: Ctx, r: Rect, mode: ScreenMode, t: number, seed:
       break;
     }
   }
+}
+
+// ------------------------------------------------------------------ TV e videogame (vida social)
+
+/** Letras 3x5 para as vinhetas da TV ("GOL", "KO"): cada linha vira poucos fills (trechos contínuos). */
+const GLYPHS: Readonly<Record<string, readonly string[]>> = {
+  G: ['###', '#..', '#.#', '#.#', '###'],
+  O: ['###', '#.#', '#.#', '#.#', '###'],
+  L: ['#..', '#..', '#..', '#..', '###'],
+  K: ['#.#', '##.', '#..', '##.', '#.#'],
+};
+
+function drawWord(ctx: Ctx, word: string, x: number, y: number, c: string): void {
+  for (let i = 0; i < word.length; i++) {
+    const g = GLYPHS[word[i]];
+    if (!g) continue;
+    for (let r = 0; r < g.length; r++) {
+      const row = g[r];
+      let k = 0;
+      while (k < row.length) {
+        if (row[k] !== '#') {
+          k++;
+          continue;
+        }
+        let e = k;
+        while (e < row.length && row[e] === '#') e++;
+        fill(ctx, x + i * 4 + k, y + r, e - k, 1, c);
+        k = e;
+      }
+    }
+  }
+}
+
+/** Palavra centralizada com uma faixa escura atrás (legível sobre qualquer cena). */
+function banner(ctx: Ctx, word: string, x: number, y: number, w: number, h: number, c: string): void {
+  const ww = word.length * 4 - 1;
+  const bx = x + Math.floor((w - ww) / 2);
+  const by = y + Math.floor((h - 5) / 2);
+  fill(ctx, bx - 2, by - 1, ww + 4, 7, 'rgba(12,16,28,0.78)');
+  drawWord(ctx, word, bx, by, c);
+}
+
+/**
+ * Futebol: gramado listrado, linha do meio, gols, dois times de pontinhos que seguem a bola e
+ * placar no canto. A cada lance (7 s) a bola corre para um dos gols; no fim do lance ela entra e
+ * a tela pisca "GOL" (borda amarela).
+ */
+/** Duração de um lance do futebol da TV (a bola sai do meio e termina no gol). */
+export const FOOTBALL_LANCE_MS = 7000;
+/** A partir desta fração do lance a bola está no gol e a tela pisca "GOL". */
+export const FOOTBALL_GOAL_AT = 0.8;
+
+/**
+ * Lance do futebol da TV no instante `t` (mesmo `t`/`seed` de drawScreen('show')): número do lance,
+ * progresso (0..1) e se a bola vai para o gol da direita. Exportado para o mundo sincronizar a
+ * torcida com o "GOL" da tela.
+ */
+export function footballLance(t: number, s: number): { lance: number; progress: number; right: boolean; period: number; goalAt: number } {
+  const k = Math.floor((t + (s % 997) * 13) / FOOTBALL_LANCE_MS);
+  const p = frac((t + (s % 997) * 13) / FOOTBALL_LANCE_MS);
+  return { lance: k, progress: p, right: (h32(s, k) & 1) === 1, period: FOOTBALL_LANCE_MS, goalAt: FOOTBALL_GOAL_AT };
+}
+
+function drawFootball(ctx: Ctx, x: number, y: number, w: number, h: number, t: number, s: number): void {
+  const { lance: k, progress: p } = footballLance(t, s);
+  fill(ctx, x, y, w, h, '#3f9a4a');
+  for (let i = 0; i * 4 < w; i += 2) fill(ctx, x + i * 4, y, 4, h, '#48a855');
+  const mx = x + Math.floor(w / 2);
+  const my = y + Math.floor(h / 2);
+  fill(ctx, mx, y, 1, h, '#cfeccd');
+  if (h >= 9) {
+    fill(ctx, mx - 2, my - 1, 1, 3, '#cfeccd');
+    fill(ctx, mx + 2, my - 1, 1, 3, '#cfeccd');
+    fill(ctx, mx - 1, my - 2, 3, 1, '#cfeccd');
+    fill(ctx, mx - 1, my + 2, 3, 1, '#cfeccd');
+  }
+  const gh = Math.max(3, Math.floor(h / 3));
+  fill(ctx, x, my - Math.floor(gh / 2), 1, gh, '#ffffff');
+  fill(ctx, x + w - 1, my - Math.floor(gh / 2), 1, gh, '#ffffff');
+  // Lance: a bola parte do meio e termina dentro de um dos gols (lado sorteado por lance).
+  const right = footballLance(t, s).right;
+  const u = Math.min(1, p / 0.8);
+  const ease = u * u * (3 - 2 * u);
+  const span = Math.floor(w / 2) - 1;
+  const bx = mx + Math.round((right ? 1 : -1) * span * ease);
+  const sway = Math.round(Math.sin(u * Math.PI * 3 + (s % 7)) * Math.max(1, (h - 6) / 3) * (1 - ease));
+  const by = my + sway;
+  // Jogadores: cada um volta à posição de base e é puxado na direção da bola.
+  for (let i = 0; i < 6; i++) {
+    const red = i < 3;
+    const hh = h32(s + i * 31, 7);
+    const baseX = mx + (red ? -1 : 1) * Math.floor((w / 2) * (0.25 + (i % 3) * 0.22));
+    const baseY = y + 2 + Math.floor(((i % 3) + 0.5) * ((h - 4) / 3));
+    const pull = 0.35 + (hh % 5) * 0.08;
+    const jx = Math.round(Math.sin(t / (420 + (hh % 300)) + i) * 1.2);
+    const px = Math.round(baseX + (bx - baseX) * pull) + jx;
+    const py = Math.round(baseY + (by - baseY) * pull * 0.6);
+    fill(ctx, px, py - 1, 1, 2, red ? '#e8454a' : '#3d7ce0');
+  }
+  fill(ctx, bx, by + 1, 1, 1, 'rgba(10,40,10,0.45)');
+  fill(ctx, bx, by, 1, 1, '#ffffff');
+  // Placar no canto: marcador de cada time e um tracinho por gol (zera a cada 4 lances).
+  if (w >= 16 && h >= 9) {
+    const goals = [0, 0];
+    for (let j = k - (k % 4); j < k; j++) goals[h32(s, j) & 1]++;
+    fill(ctx, x + 1, y + 1, 11, 3, 'rgba(12,16,28,0.8)');
+    fill(ctx, x + 2, y + 2, 1, 1, '#e8454a');
+    for (let g = 0; g < goals[0]; g++) fill(ctx, x + 4 + g, y + 2, 1, 1, '#ffffff');
+    fill(ctx, x + 9, y + 2, 1, 1, '#3d7ce0');
+    for (let g = 0; g < goals[1]; g++) fill(ctx, x + 8 - g - 1, y + 2, 1, 1, '#9fc4ff');
+  }
+  if (p >= FOOTBALL_GOAL_AT) {
+    const blink = Math.floor(t / 180) % 2 === 0;
+    const c = blink ? '#ffd84d' : '#ffffff';
+    fill(ctx, x, y, w, 1, c);
+    fill(ctx, x, y + h - 1, w, 1, c);
+    fill(ctx, x, y, 1, h, c);
+    fill(ctx, x + w - 1, y, 1, h, c);
+    if (w >= 15 && h >= 9) banner(ctx, 'GOL', x, y, w, h, c);
+  }
+}
+
+/** Rosto em close (novela): `hair` cabelo, `long` cai nos ombros; `look` 0 = olhando à direita. */
+function soapFace(ctx: Ctx, cx: number, cy: number, sc: number, skin: string, hair: string, long: boolean, look: number, blush: boolean): void {
+  const fw = 6 * sc;
+  const fh = 7 * sc;
+  const fx = cx - Math.floor(fw / 2);
+  const fy = cy - Math.floor(fh / 2);
+  if (long) fill(ctx, fx - sc, fy, fw + 2 * sc, fh + 2 * sc, hair);
+  fill(ctx, fx, fy + sc, fw, fh - sc, skin);
+  fill(ctx, fx + sc, fy + fh, fw - 2 * sc, sc, skin);
+  fill(ctx, fx, fy - sc, fw, 2 * sc, hair);
+  if (!long) fill(ctx, fx, fy + sc, sc, 2 * sc, hair);
+  const ex = look === 0 ? sc : 0;
+  fill(ctx, fx + sc + ex, fy + 3 * sc, sc, sc, '#2b2236');
+  fill(ctx, fx + 4 * sc + ex - sc, fy + 3 * sc, sc, sc, '#2b2236');
+  if (blush) {
+    fill(ctx, fx + sc - (sc > 1 ? 0 : 1) + ex, fy + 4 * sc + (sc > 1 ? 1 : 0), sc, sc > 1 ? 1 : 1, '#f08a96');
+    fill(ctx, fx + 4 * sc + ex - sc + (sc > 1 ? 0 : 1), fy + 4 * sc + (sc > 1 ? 1 : 0), sc, 1, '#f08a96');
+  }
+  fill(ctx, fx + 2 * sc + ex, fy + 5 * sc, Math.max(1, sc + Math.floor(sc / 2)), Math.max(1, Math.floor(sc / 2)), '#b4475a');
+}
+
+/** Coração de 3x3 (rosa). */
+function heart(ctx: Ctx, x: number, y: number, c: string): void {
+  fill(ctx, x, y, 1, 1, c);
+  fill(ctx, x + 2, y, 1, 1, c);
+  fill(ctx, x, y + 1, 3, 1, c);
+  fill(ctx, x + 1, y + 2, 1, 1, c);
+}
+
+/** Novela: fundo quente, cortes entre os dois protagonistas em close e o casal com corações subindo. */
+function drawSoap(ctx: Ctx, x: number, y: number, w: number, h: number, t: number, s: number): void {
+  const CUT = 2600;
+  const shot = Math.floor((t + (s % 97) * 31) / CUT) % 4;
+  const wall = ['#c98a6a', '#b77a62', '#d6a27c', '#8f6f9e'][s % 4];
+  fill(ctx, x, y, w, h, wall);
+  fill(ctx, x, y + h - Math.max(2, Math.floor(h / 5)), w, Math.max(2, Math.floor(h / 5)), mix(wall, '#2b2236', 0.35));
+  // Janela com luz de fim de tarde ao fundo.
+  fill(ctx, x + w - Math.floor(w / 3), y + 1, Math.floor(w / 4), Math.floor(h / 2), '#ffd59a');
+  fill(ctx, x + w - Math.floor(w / 3) + Math.floor(w / 8), y + 1, 1, Math.floor(h / 2), mix(wall, '#2b2236', 0.2));
+  const sc = h >= 13 ? 2 : 1;
+  const her = { skin: '#f2c3a0', hair: '#5a2f24' };
+  const him = { skin: '#c98f68', hair: '#2b2530' };
+  const my = y + Math.floor(h / 2) + (sc > 1 ? 1 : 0);
+  if (shot === 0) soapFace(ctx, x + Math.floor(w / 2), my, sc, her.skin, her.hair, true, 0, true);
+  else if (shot === 1) soapFace(ctx, x + Math.floor(w / 2), my, sc, him.skin, him.hair, false, 1, false);
+  else {
+    // Os dois, um diante do outro (menores), e corações subindo entre eles.
+    const s1 = w >= 34 ? sc : 1;
+    soapFace(ctx, x + Math.floor(w * 0.3), my, s1, her.skin, her.hair, true, 0, shot === 3);
+    soapFace(ctx, x + Math.floor(w * 0.7), my, s1, him.skin, him.hair, false, 1, false);
+    if (shot === 3) {
+      for (let i = 0; i < 2; i++) {
+        const life = frac((t + i * 700) / 1400);
+        heart(ctx, x + Math.floor(w / 2) - 1 + (i ? 1 : -1), y + h - 3 - Math.floor(life * (h - 2)), i ? '#ff7aa8' : '#ff4f7e');
+      }
+    }
+  }
+}
+
+/** Desenho animado: céu, sol, nuvens passando e um bichinho rosa pulando, perseguido por um amarelo. */
+function drawCartoon(ctx: Ctx, x: number, y: number, w: number, h: number, t: number, s: number): void {
+  fill(ctx, x, y, w, h, '#7fd3ff');
+  fill(ctx, x, y, w, Math.floor(h / 3), '#9fe0ff');
+  const gh = Math.max(2, Math.floor(h / 4));
+  fill(ctx, x, y + h - gh, w, gh, '#6cc04a');
+  fill(ctx, x, y + h - gh, w, 1, '#8ee070');
+  fill(ctx, x + w - 4, y + 1, 3, 3, '#ffd84d');
+  fill(ctx, x + w - 3, y + 2, 1, 1, '#fff2a8');
+  for (let i = 0; i < 2; i++) {
+    const cx = x + w - 1 - Math.floor(frac(t / (9000 + i * 4000) + i * 0.5 + (s % 5) * 0.1) * (w + 8));
+    const cy = y + 1 + i * 3;
+    fill(ctx, cx, cy + 1, 5, 2, '#ffffff');
+    fill(ctx, cx + 1, cy, 3, 1, '#ffffff');
+  }
+  const run = frac(t / 5200 + (s % 11) * 0.09);
+  const ground = y + h - gh;
+  const hop = Math.abs(Math.sin((t / 260) % Math.PI)) * Math.max(2, h / 3);
+  const px = x + Math.floor(run * (w + 6)) - 3;
+  const py = ground - 4 - Math.round(hop);
+  fill(ctx, px, py, 4, 4, '#ff7ab8');
+  fill(ctx, px + 1, py + 1, 1, 1, '#2b2236');
+  fill(ctx, px + 3, py + 1, 1, 1, '#2b2236');
+  fill(ctx, px + 1, py + 3, 2, 1, '#d84a8a');
+  const qx = px - 7;
+  const qy = ground - 3 - Math.round(Math.abs(Math.sin((t / 260 + 1.2) % Math.PI)) * Math.max(1, h / 4));
+  fill(ctx, qx, qy, 3, 3, '#ffd84d');
+  fill(ctx, qx + 2, qy + 1, 1, 1, '#2b2236');
+}
+
+/**
+ * Corrida em tela dividida: cada metade tem pista com faixas correndo, grama nas bordas, árvores
+ * passando e o carrinho de um jogador; a posição de cada um oscila (ora um na frente, ora o outro).
+ */
+function drawRace(ctx: Ctx, x: number, y: number, w: number, h: number, t: number, s: number): void {
+  const half = Math.floor(h / 2);
+  const cars = ['#e8454a', '#3d7ce0'];
+  for (let i = 0; i < 2; i++) {
+    const hy = y + i * (h - half);
+    const hh = i === 0 ? half : h - half;
+    fill(ctx, x, hy, w, hh, '#6a7280');
+    fill(ctx, x, hy, w, 1, '#4caf50');
+    fill(ctx, x, hy + hh - 1, w, 1, '#4caf50');
+    const speed = 0.045 + i * 0.006;
+    const off = Math.floor(t * speed + (s % 13)) % 6;
+    const lane = hy + Math.floor(hh / 2);
+    for (let lx = -off; lx < w; lx += 6) fill(ctx, x + lx, lane, 3, 1, '#f4f4f0');
+    const tree = Math.floor(t * speed * 0.8 + i * 9) % (w + 6);
+    fill(ctx, x + w - tree, hy, 2, 1, '#2e7d32');
+    // Quem está na frente muda devagar.
+    const lead = Math.sin(t / 2300 + (s % 9) + i * Math.PI);
+    const cx = x + Math.floor(w * 0.3) + Math.round(lead * Math.max(1, w / 8));
+    const cy = lane - 1 + (Math.floor(t / 130 + i) % 2 === 0 ? 0 : (hh >= 6 ? 1 : 0));
+    fill(ctx, cx, cy, 4, 2, cars[i]);
+    fill(ctx, cx + 2, cy, 1, 1, '#cfe6ff');
+    fill(ctx, cx, cy + 2 <= hy + hh - 2 ? cy + 2 : cy + 1, 1, 1, '#1d2029');
+    fill(ctx, cx + 3, cy + 2 <= hy + hh - 2 ? cy + 2 : cy + 1, 1, 1, '#1d2029');
+  }
+  fill(ctx, x, y + half - (h % 2 === 0 ? 1 : 0), w, 1, '#11141c');
+}
+
+/**
+ * Luta: palco roxo, dois bonecos (vermelho e azul) se aproximando e trocando socos, barras de vida
+ * no topo diminuindo a cada golpe e "KO" piscando quando uma acaba (o round recomeça).
+ */
+function drawFight(ctx: Ctx, x: number, y: number, w: number, h: number, t: number, s: number): void {
+  const ROUND = 9000;
+  const tt = t + (s % 991) * 17;
+  const k = Math.floor(tt / ROUND);
+  const p = frac(tt / ROUND);
+  fill(ctx, x, y, w, h, '#3b2a6b');
+  fill(ctx, x, y + Math.floor(h / 3), w, Math.floor(h / 3), '#4b3784');
+  const floorH = Math.max(2, Math.floor(h / 4));
+  fill(ctx, x, y + h - floorH, w, floorH, '#7a4f2a');
+  fill(ctx, x, y + h - floorH, w, 1, '#a8723f');
+  // Barras de vida: quem perde o round é sorteado; o vencedor perde menos.
+  const loser = h32(s, k) & 1;
+  const bw = Math.max(3, Math.floor(w / 2) - 2);
+  const fight = Math.min(1, p / 0.82);
+  const lifeOf = (who: number) => Math.max(0, 1 - fight * (who === loser ? 1 : 0.55));
+  for (let who = 0; who < 2; who++) {
+    const bx = who === 0 ? x + 1 : x + w - 1 - bw;
+    fill(ctx, bx, y + 1, bw, 2, '#5a1d2a');
+    const lw = Math.round(bw * lifeOf(who));
+    if (lw > 0) fill(ctx, who === 0 ? bx : bx + bw - lw, y + 1, lw, 2, lifeOf(who) > 0.35 ? '#ffd84d' : '#ff6b4a');
+  }
+  // Lutadores: aproximam-se e recuam; nos golpes um braço estica e o outro pisca de branco.
+  const ground = y + h - floorH;
+  const gap = Math.max(3, Math.round(w * (0.18 + 0.12 * Math.abs(Math.sin(tt / 900)))));
+  const mx = x + Math.floor(w / 2);
+  // A cada batida: 0 = o vermelho soca, 1 = o azul soca, 2 = ninguém.
+  const hitter = h32(s, Math.floor(tt / 300)) % 3;
+  const ko = p >= 0.82;
+  for (let who = 0; who < 2; who++) {
+    const dir = who === 0 ? 1 : -1;
+    const fx = who === 0 ? mx - gap - 2 : mx + gap;
+    const down = ko && who === loser;
+    const body = who === 0 ? '#e8454a' : '#3d7ce0';
+    const hit = !ko && hitter === 1 - who;
+    if (down) {
+      fill(ctx, fx - 1, ground - 2, 4, 2, body);
+      fill(ctx, who === 0 ? fx - 3 : fx + 3, ground - 2, 2, 2, '#f2c3a0');
+      continue;
+    }
+    const bob = Math.floor(tt / 220 + who) % 2;
+    fill(ctx, fx, ground - 7 + bob, 2, 2, hit ? '#ffffff' : '#f2c3a0');
+    fill(ctx, fx, ground - 5 + bob, 2, 3, hit ? '#ffffff' : body);
+    fill(ctx, fx, ground - 2, 1, 2, '#2b2530');
+    fill(ctx, fx + 1, ground - 2, 1, 2, '#2b2530');
+    const punching = !ko && hitter === who;
+    const ax = dir > 0 ? fx + 2 : fx - (punching ? 3 : 1);
+    fill(ctx, ax, ground - 5 + bob, punching ? 3 : 1, 1, '#f2c3a0');
+  }
+  if (ko && Math.floor(tt / 200) % 2 === 0 && w >= 12 && h >= 9) banner(ctx, 'KO', x, y, w, h, '#ffd84d');
 }
 
 function bounce(v: number, span: number): number {

@@ -65,7 +65,7 @@ export function screenModeFor(kind: ActivityKind | undefined): ScreenMode {
   }
 }
 
-export type IdleActivity = 'coffee' | 'water' | 'bathroom' | 'lounge' | 'pingpong' | 'talk' | 'window' | 'shelf' | 'stretch' | 'arcade' | 'snack';
+export type IdleActivity = 'coffee' | 'water' | 'bathroom' | 'lounge' | 'pingpong' | 'talk' | 'window' | 'shelf' | 'stretch' | 'arcade' | 'snack' | 'mirror' | 'phone';
 
 export const IDLE_WEIGHTS: Readonly<Record<IdleActivity, number>> = {
   coffee: 18,
@@ -79,17 +79,23 @@ export const IDLE_WEIGHTS: Readonly<Record<IdleActivity, number>> = {
   stretch: 8,
   arcade: 5,
   snack: 5,
+  mirror: 3,
+  phone: 6,
 };
 
 /** Sorteio ponderado entre as atividades disponíveis (`avail[k] === false` exclui). */
-export function pickIdleActivity(rng: () => number, avail: Partial<Record<IdleActivity, boolean>> = {}): IdleActivity | null {
+export function pickIdleActivity(
+  rng: () => number,
+  avail: Partial<Record<IdleActivity, boolean>> = {},
+  weights: Readonly<Record<IdleActivity, number>> = IDLE_WEIGHTS,
+): IdleActivity | null {
   let total = 0;
-  for (const k of Object.keys(IDLE_WEIGHTS) as IdleActivity[]) if (avail[k] !== false) total += IDLE_WEIGHTS[k];
+  for (const k of Object.keys(IDLE_WEIGHTS) as IdleActivity[]) if (avail[k] !== false) total += weights[k];
   if (total <= 0) return null;
   let r = rng() * total;
   for (const k of Object.keys(IDLE_WEIGHTS) as IdleActivity[]) {
     if (avail[k] === false) continue;
-    r -= IDLE_WEIGHTS[k];
+    r -= weights[k];
     if (r < 0) return k;
   }
   return null;
@@ -165,5 +171,3 @@ export function lightLevel(on: boolean, elapsedMs: number): number {
   return Math.max(0, 0.95 * (1 - (e - 120) / 480));
 }
 
-/** Emojis dos mini-balões de conversa. */
-export const TALK_EMOJIS = ['💬', '😂', '☕', '💡', '👍', '🤔', '🎉', '😄'] as const;

@@ -10,7 +10,7 @@ import type { WallArtAsset, WorldAssets } from '../assets';
 export const WALL_MARGIN = 16;
 
 /** Itens de parede redesenhados a cada frame (o resto vai para o cache). */
-const DYNAMIC_WALL: ReadonlySet<FurnitureKind> = new Set<FurnitureKind>(['window', 'clock', 'whiteboard', 'tv', 'elevator', 'light_switch', 'sign']);
+const DYNAMIC_WALL: ReadonlySet<FurnitureKind> = new Set<FurnitureKind>(['window', 'clock', 'whiteboard', 'tv', 'elevator', 'light_switch', 'sign', 'mirror']);
 
 export interface FurnVis {
   id: string;
