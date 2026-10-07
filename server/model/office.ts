@@ -42,6 +42,8 @@ const FEED_LIMIT = 200;
 export interface OfficeDeps {
   names: NameStore;
   version: string;
+  /** Build do cliente servido (ver OfficeSnapshot.meta.build); ausente no modo dev e nos testes. */
+  build?: () => string | undefined;
   startedAt: number;
   /** Contas reais, com o nº de sessões abertas de cada uma. */
   accounts: (sessions: ReadonlyMap<string, number>) => AccountInfo[];
@@ -719,6 +721,7 @@ export class Office {
         sources: this.deps.sources(),
         startedAt: this.deps.startedAt,
         version: this.deps.version,
+        build: this.deps.build?.(),
       },
     };
   }

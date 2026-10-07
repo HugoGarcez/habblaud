@@ -235,6 +235,11 @@ export interface OfficeSnapshot {
     sources: SourceInfo[];
     startedAt: number;
     version: string;
+    /**
+     * Identificador do build do cliente que o servidor está servindo (nome do bundle, ex.: "main-BFqheOCa").
+     * Uma página aberta com outro build está desatualizada e deve se recarregar. Ausente no modo dev.
+     */
+    build?: string;
   };
 }
 

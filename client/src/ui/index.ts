@@ -24,6 +24,7 @@ import { SettingsPopover } from './settings';
 import { Sidebar } from './sidebar';
 import { Toasts } from './toasts';
 import { TopBar } from './topbar';
+import { UpdateBanner } from './update';
 import { FreeArea } from './viewport';
 
 /** Relógio dos tempos relativos ("há 5 s"). */
@@ -137,12 +138,13 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
   help = new HelpDialog();
   const empty = new EmptyState(ctx);
   const banner = new ConnectionBanner(ctx);
+  const update = new UpdateBanner(store);
   const tip = new HoverTip(ctx);
   const splash = new Splash(ctx);
   const scrim = h('div', { class: 'ui-scrim', attrs: { 'aria-hidden': 'true' }, on: { click: () => ctx.togglePanel('sidebar', false) } });
 
   root.classList.add('ui-root');
-  root.append(topbar.el, sidebar.el, scrim, feed.el, drawer.el, toasts.el, banner.el, empty.el, tip.el, settings.el, help.el, live, splash.el);
+  root.append(topbar.el, sidebar.el, scrim, feed.el, drawer.el, toasts.el, banner.el, update.el, empty.el, tip.el, settings.el, help.el, live, splash.el);
   area = new FreeArea(world, { root, topbar: topbar.el, sidebar: sidebar.el, drawer: drawer.el, feed: feed.el }, () => ({
     sidebar: panels.sidebar,
     feed: panels.feed,

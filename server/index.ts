@@ -14,6 +14,7 @@ import { errMsg, log } from './log';
 import { NameStore } from './model/names';
 import { Office } from './model/office';
 import { ClaudeWatcher } from './sources/watcher';
+import { createBuildReader } from './build';
 
 const config = loadConfig();
 const startedAt = Date.now();
@@ -33,6 +34,8 @@ const accounts = new AccountsService({
 const office = new Office({
   names,
   version: config.version,
+  // No modo dev o Vite serve o cliente direto do código-fonte: não há build para comparar.
+  build: config.dev ? undefined : createBuildReader(config.rootDir),
   startedAt,
   accounts: (sessions) => accounts.list(sessions),
   sources: () => late.watcher?.sources() ?? [],

@@ -12,6 +12,20 @@ export interface StoreEvents {
   feed: FeedItem[];
   notice: Notice;
   connection: ConnectionState;
+  /** O servidor está servindo outro build do cliente: esta página está desatualizada. Emitido uma vez. */
+  update: { build: string; current: string };
+}
+
+/**
+ * Build desta página: o nome do bundle principal (ex.: "main-BFqheOCa"), tirado da URL do próprio módulo.
+ * No modo dev (código-fonte servido pelo Vite) não há bundle e o resultado é undefined.
+ */
+export function pageBuild(moduleUrl: string = import.meta.url): string | undefined {
+  try {
+    return /\/bundle\/(main-[\w-]+)\.js$/.exec(new URL(moduleUrl).pathname)?.[1];
+  } catch {
+    return undefined;
+  }
 }
 
 type Listener<K extends keyof StoreEvents> = (value: StoreEvents[K]) => void;
@@ -184,6 +198,20 @@ export class OfficeStore {
     this.agentIndex = new Map(snap.agents.map((a) => [a.id, a]));
     this.roomIndex = new Map(snap.rooms.map((r) => [r.id, r]));
     this.emit('snapshot', snap);
+    this.checkBuild(snap.meta.build);
+  }
+
+  private updateAnnounced = false;
+  /** Build desta página (ver pageBuild); exposto para testes. */
+  pageBuildId: string | undefined = pageBuild();
+
+  /** Avisa (uma vez) quando o servidor passou a servir outro build do cliente. */
+  private checkBuild(serverBuild: string | undefined): void {
+    if (this.updateAnnounced || this.mock || !serverBuild) return;
+    const current = this.pageBuildId;
+    if (!current || current === serverBuild) return;
+    this.updateAnnounced = true;
+    this.emit('update', { build: serverBuild, current });
   }
 
   private applyFeed(items: FeedItem[]): void {

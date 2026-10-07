@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mockOptionsFrom, OfficeStore, reconnectDelay, type EventSourceLike } from './store';
+import type { OfficeSnapshot } from '../../../shared/types';
+import { mockOptionsFrom, OfficeStore, pageBuild, reconnectDelay, type EventSourceLike } from './store';
 
 /** EventSource falso: o teste dispara open/error e muda o readyState. */
 class FakeSource implements EventSourceLike {
@@ -156,5 +157,52 @@ describe('OfficeStore: reconexão', () => {
     const bad = { type: 'snapshot', data: '{quebrado' } as unknown as Event;
     expect(() => (last() as unknown as { handlers: Map<string, ((e: Event) => void)[]> }).handlers.get('snapshot')![0](bad)).not.toThrow();
     expect(store.snapshot?.rev).toBe(1);
+  });
+});
+
+const snap = (rev: number, build?: string): OfficeSnapshot => ({
+  rev,
+  serverTime: 0,
+  rooms: [],
+  agents: [],
+  accounts: [],
+  meta: { demo: false, sources: [], startedAt: 1, version: '0.1.0', build },
+});
+
+describe('detecção de versão nova', () => {
+  it('lê o build da URL do bundle e ignora o código-fonte do modo dev', () => {
+    expect(pageBuild('http://localhost:4747/bundle/main-BFqheOCa.js')).toBe('main-BFqheOCa');
+    expect(pageBuild('http://192.168.0.10:4747/bundle/main-a_b-C1.js')).toBe('main-a_b-C1');
+    expect(pageBuild('http://localhost:5173/src/net/store.ts')).toBeUndefined();
+    expect(pageBuild('não é url')).toBeUndefined();
+  });
+
+  it('avisa uma vez quando o servidor serve outro build', () => {
+    const store = new OfficeStore();
+    store.pageBuildId = 'main-velho';
+    const seen: string[] = [];
+    store.on('update', (u) => seen.push(`${u.current}->${u.build}`));
+    const apply = (s: OfficeSnapshot) => (store as unknown as { applySnapshot(s: OfficeSnapshot): void }).applySnapshot(s);
+    apply(snap(1, 'main-velho'));
+    expect(seen).toEqual([]);
+    apply(snap(2, 'main-novo'));
+    apply(snap(3, 'main-novo'));
+    expect(seen).toEqual(['main-velho->main-novo']);
+  });
+
+  it('não avisa sem build no servidor, no modo dev nem no mock', () => {
+    const dev = new OfficeStore();
+    dev.pageBuildId = undefined;
+    const mock = new OfficeStore({ mock: true });
+    mock.pageBuildId = 'main-velho';
+    const semBuild = new OfficeStore();
+    semBuild.pageBuildId = 'main-velho';
+    let count = 0;
+    for (const s of [dev, mock, semBuild]) s.on('update', () => count++);
+    const apply = (s: OfficeStore, x: OfficeSnapshot) => (s as unknown as { applySnapshot(s: OfficeSnapshot): void }).applySnapshot(x);
+    apply(dev, snap(1, 'main-novo'));
+    apply(mock, snap(1, 'main-novo'));
+    apply(semBuild, snap(1));
+    expect(count).toBe(0);
   });
 });

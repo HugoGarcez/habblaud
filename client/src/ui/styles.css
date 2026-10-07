@@ -3022,6 +3022,16 @@
   animation: ui-blink 1s steps(2, jump-none) infinite;
 }
 
+/* Aviso de versão nova (página aberta antes de uma atualização do CodeTown). */
+.ui-banner--update {
+  z-index: 46;
+  border-color: rgba(74, 168, 232, 0.55);
+}
+
+.ui-banner--update .ui-banner__dot {
+  background: #4aa8e8;
+}
+
 /* ------------------------------------------------------------------ dica do personagem */
 
 .ui-tip {
