@@ -19,6 +19,11 @@ npm run build && npm start   # produção: serve dist/client
 | Uso ao vivo (5h e semanal) | `~/.codetown/usage/<conta>.json`, gravado pelo `scripts/statusline-tap.mjs` (`npm run usage:install`) |
 | Atalho da conta (`c`, `d`...) | linhas `alias x='... claude ...'` de `~/.zshrc`, `~/.bashrc`, `~/.zprofile`, `~/.bash_profile` |
 
+**Forks** (subagentes que herdam o contexto do pai): o transcript começa com uma linha `fork-context-ref`, a
+cópia da chamada `Agent` do pai (mesmo `tool_use` id do `.meta.json`) e o resultado dela ("Fork started…") junto
+com a instrução do fork. O parser ignora essa cópia — senão o resultado herdado parece o fim do subagente e o fork
+nunca entra no escritório — e usa o texto depois de `</fork-boilerplate>` como o pedido dele.
+
 ## Esperando o shell
 
 O status `shell` (ver `shared/types.ts`) é o agente que terminou o turno com comando(s) rodando em segundo

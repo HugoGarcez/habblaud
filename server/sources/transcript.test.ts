@@ -6,6 +6,7 @@ import { FileTail } from './tail';
 import {
   applyTaskOp,
   createTranscriptState,
+  forkDirective,
   mergePrefix,
   parseLine,
   parseTaskNotification,
@@ -226,6 +227,23 @@ describe('parseLine — sinais de subagentes', () => {
     expect(r[1].signals).toEqual([{ type: 'launched', toolUseId: 'toolu_b', agentId: 'bg1' }]);
     expect(r[3].signals).toEqual([{ type: 'launched', toolUseId: 'toolu_w', runId: 'wf_1', taskId: 'w1' }]);
     expect(r[5].signals).toEqual([{ type: 'stopped', taskId: 'w1' }]);
+  });
+
+  it('fork: a cópia herdada da chamada Agent não vira spawn nem término; a instrução vira o prompt', () => {
+    const s = createTranscriptState();
+    const r = feed(s, [
+      ...L.forkStart('fk1', 'toolu_fk', 'Desenhe as poses novas', { agentId: 'fk1' }),
+      L.assistant([L.tool('r1', 'Read', { file_path: '/projetos/demo/a.ts' })], { agentId: 'fk1' }),
+    ]);
+    expect(r.flatMap((x) => x.signals)).toEqual([]);
+    expect(acts(r).map((a) => [a.activity.kind, a.activity.text])).toEqual([
+      ['prompt', expect.stringContaining('Desenhe as poses novas')],
+      ['read', 'Lendo a.ts'],
+    ]);
+    expect(s.stats).toMatchObject({ subagents: 0, toolCalls: 1 });
+    expect(s.lastPrompt).toBe('Desenhe as poses novas');
+    expect(s.pendingTools.has('toolu_fk')).toBe(false);
+    expect(forkDirective('<fork-boilerplate>\nregras\n</fork-boilerplate>\n\nYour directive: Faça X')).toBe('Faça X');
   });
 
   it('notificação enfileirada (queue-operation) também sinaliza, sem atividade', () => {

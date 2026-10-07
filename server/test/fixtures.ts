@@ -78,6 +78,18 @@ export const L = {
     const text = `<task-notification>\n<task-id>t1</task-id>\n<tool-use-id>${toolUseId}</tool-use-id>\n<status>${status}</status>\n<summary>${summary}</summary>\n</task-notification>`;
     return JSON.stringify({ ...base('user', o), origin: { kind: 'task-notification' }, message: { role: 'user', content: text } });
   },
+  /**
+   * Começo do transcript de um fork, como o Claude Code grava: a referência ao contexto do pai, a
+   * CÓPIA da chamada Agent do pai (mesmo tool_use id do meta.json) e o resultado dela ("Fork
+   * started…") com a instrução do fork depois do bloco <fork-boilerplate>.
+   */
+  forkStart(agentId: string, toolUseId: string, directive: string, o: LineOpts = {}): string[] {
+    const ref = JSON.stringify({ type: 'fork-context-ref', agentId, parentSessionId: o.sessionId ?? 'sess-teste', parentLastUuid: uuid(), contextLength: 42 });
+    const spawn = JSON.parse(L.assistant([L.tool(toolUseId, 'Agent', { description: 'x', subagent_type: 'fork', prompt: directive, run_in_background: true })], { ...o, agentId, stop: 'tool_use' })) as Record<string, unknown>;
+    spawn.parentUuid = null;
+    const text = `<fork-boilerplate>\nYou are a worker fork. Do the directive.\n</fork-boilerplate>\n\nYour directive: ${directive}`;
+    return [ref, JSON.stringify(spawn), L.result(toolUseId, 'Fork started — processing in background', { ...o, agentId, extraText: text })];
+  },
   /** Bash em segundo plano lançado: tool_result com o id da tarefa (como o Claude Code grava). */
   bgLaunched(toolUseId: string, taskId: string, o: LineOpts = {}): string {
     return L.result(toolUseId, `Command running in background with ID: ${taskId}. Output is being written to: /tmp/tasks/${taskId}.output`, {

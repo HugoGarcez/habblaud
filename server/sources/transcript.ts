@@ -139,6 +139,14 @@ export interface TranscriptState {
   skipUsage?: ReadonlySet<string>;
   current?: { id: string; toolUseId?: string; kind: Activity['kind']; at: number; msgId?: string };
   seq: number;
+  /**
+   * Transcript de um fork (subagente que herda o contexto do pai). Ele começa com uma linha
+   * 'fork-context-ref' e a CÓPIA da chamada Agent do pai seguida do resultado dela ("Fork started…")
+   * junto com a instrução do fork. 'expect-spawn' = a próxima linha de assistant é essa cópia.
+   */
+  fork?: 'expect-spawn' | 'expect-result';
+  /** tool_use id da chamada herdada (o mesmo do meta.json do fork): não é uma ferramenta do fork. */
+  inheritedSpawn?: string;
 }
 
 export function createTranscriptState(opts: { trackPrefix?: boolean } = {}): TranscriptState {
@@ -329,6 +337,9 @@ class LineParser {
       }
       case 'permission-mode':
         return this.meta('permissionMode', j.permissionMode);
+      case 'fork-context-ref':
+        this.s.fork = 'expect-spawn';
+        return;
       case 'cost-state':
         return this.cost();
       case 'queue-operation': {
@@ -390,6 +401,20 @@ class LineParser {
     const m = j.message as Record<string, unknown> | undefined;
     if (!m || typeof m !== 'object') return;
     const s = this.s;
+    if (s.fork === 'expect-spawn') {
+      // Cópia da chamada que criou o fork (vem do transcript do pai): não conta como atividade,
+      // ferramenta, uso de tokens nem disparo de subagente do próprio fork.
+      const spawn = Array.isArray(m.content)
+        ? (m.content as Array<Record<string, unknown>>).find((b) => b?.type === 'tool_use' && (b.name === 'Agent' || b.name === 'Task'))
+        : undefined;
+      const id = spawn ? str(spawn.id) : undefined;
+      if (id) {
+        s.fork = 'expect-result';
+        s.inheritedSpawn = id;
+        return;
+      }
+      s.fork = undefined;
+    }
     const model = str(m.model);
     if (model && model !== '<synthetic>' && model !== s.model) {
       s.model = model;
@@ -510,6 +535,14 @@ class LineParser {
       if (!b || typeof b !== 'object') continue;
       if (b.type === 'tool_result') results.push(b);
       else if (b.type === 'text' && typeof b.text === 'string') texts.push(b.text);
+    }
+    if (this.s.fork === 'expect-result' && results.some((r) => str(r.tool_use_id) === this.s.inheritedSpawn)) {
+      // Resultado da chamada herdada ("Fork started…"): não é o fim de nada. A instrução do fork vem
+      // no texto, depois do bloco <fork-boilerplate>: é o "prompt" dele.
+      this.s.fork = undefined;
+      const directive = forkDirective(texts.join('\n'));
+      if (directive) this.userText(directive);
+      return;
     }
     const interrupted = texts.some((t) => INTERRUPTED.test(t.trimStart()));
     for (const r of results) this.toolResult(r, interrupted);
@@ -640,6 +673,13 @@ class LineParser {
   }
 }
 
+/** Instrução de um fork: o texto depois do bloco <fork-boilerplate>, sem o rótulo "Your directive:". */
+export function forkDirective(text: string): string {
+  const end = text.lastIndexOf('</fork-boilerplate>');
+  const rest = end >= 0 ? text.slice(end + '</fork-boilerplate>'.length) : text;
+  return rest.trim().replace(/^your directive:\s*/i, '').trim();
+}
+
 /** Interpreta uma linha JSONL. Linhas inválidas ou desconhecidas não geram nada. */
 export function parseLine(state: TranscriptState, raw: string, ctx: ParseContext): LineResult {
   let j: unknown;
@@ -677,6 +717,8 @@ const PREFIX_MARKERS = [
   '"type":"last-prompt"',
   '"type":"cost-state"',
   '"type":"permission-mode"',
+  // Início de um fork: a cópia da chamada Agent do pai que vem logo depois não é dele.
+  '"type":"fork-context-ref"',
   // Lançamentos em segundo plano (para casar a notificação de término com o subagente/workflow).
   '"async_launched"',
   // Shells em segundo plano: lançamento e término (para saber quais ainda rodam).

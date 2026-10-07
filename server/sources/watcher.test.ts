@@ -191,6 +191,47 @@ describe('ClaudeWatcher', () => {
     expect(c.agent('sess-a:b1')!.status).toBe('done');
   });
 
+  it('fork em segundo plano: entra e trabalha (a cópia da chamada do pai não o conclui); a notificação conclui', () => {
+    const mainId = bootWithSession();
+    appendLines(c.transcript('sess-a'), [
+      L.assistant([L.tool('toolu_fk', 'Agent', { description: 'Arte nova', subagent_type: 'fork', run_in_background: true })]),
+      L.result('toolu_fk', 'lançado', { toolUseResult: { isAsync: true, status: 'async_launched', agentId: 'fk1' } }),
+    ]);
+    c.subFile('sess-a', 'fk1', { agentType: 'fork', isFork: true, description: 'Arte nova', toolUseId: 'toolu_fk', spawnDepth: 1, requestShape: 'background' }, [
+      ...L.forkStart('fk1', 'toolu_fk', 'Desenhe as poses', { agentId: 'fk1' }),
+      L.assistant([L.tool('r1', 'Read', { file_path: `${CWD}/src/art.ts` })], { agentId: 'fk1' }),
+    ]);
+    c.poll();
+    c.advance(2_000);
+    c.poll();
+    expect(c.agent('sess-a:fk1')).toMatchObject({ kind: 'sub', parentId: mainId, role: 'fork', title: 'Arte nova', status: 'working', background: true });
+    expect(c.agent('sess-a:fk1')!.activity?.text).toBe('Lendo art.ts');
+    expect(c.agent(mainId)!.stats.subagents).toBe(1);
+    appendLines(c.transcript('sess-a'), [L.notification('toolu_fk', 'completed', 'Poses prontas')]);
+    c.poll();
+    expect(c.agent('sess-a:fk1')!.status).toBe('done');
+  });
+
+  it('fork com transcript grande (lido pelo fim): o começo herdado também não o conclui', () => {
+    c.watcher.stop();
+    c.tmp.cleanup();
+    c = setup({ tailBytes: 600 });
+    bootWithSession();
+    appendLines(c.transcript('sess-a'), [
+      L.assistant([L.tool('toolu_fg', 'Agent', { description: 'Arte grande', subagent_type: 'fork', run_in_background: true })]),
+      L.result('toolu_fg', 'lançado', { toolUseResult: { isAsync: true, status: 'async_launched', agentId: 'fk2' } }),
+    ]);
+    const work = Array.from({ length: 12 }, (_, i) => L.assistant([L.tool(`g${i}`, 'Grep', { pattern: `padrao${i}` })], { agentId: 'fk2' }));
+    c.subFile('sess-a', 'fk2', { agentType: 'fork', description: 'Arte grande', toolUseId: 'toolu_fg', requestShape: 'background' }, [
+      ...L.forkStart('fk2', 'toolu_fg', 'Desenhe tudo', { agentId: 'fk2' }),
+      ...work,
+    ]);
+    c.poll();
+    c.advance(2_000);
+    c.poll();
+    expect(c.agent('sess-a:fk2')).toMatchObject({ status: 'working' });
+  });
+
   it('subagente conclui por end_turn + 5 s de silêncio', () => {
     bootWithSession();
     c.subFile('sess-a', 'e1', { agentType: 'Plan', description: 'Planejar', toolUseId: 'toolu_x' }, [
