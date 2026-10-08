@@ -120,7 +120,7 @@ apaga a luz, sai pelo elevador — e a sala é desmontada, virando jardim até u
 ### Requisitos
 
 - **macOS** (testado) ou Linux.
-- **[Claude Code](https://code.claude.com)** instalado, com uma ou mais contas.
+- **[Claude Code](https://code.claude.com)** instalado, com uma ou mais contas (2.1.287 ou mais novo para o mod).
 - **Node.js 22.12+** e **npm** (desenvolvido com o Node 24; o Docker já usa o Node 24).
 - **Docker Desktop** (ou Docker Engine com Compose v2), se for rodar em container.
 
@@ -157,29 +157,48 @@ Abra **http://localhost:4747**. Para desenvolver, use `npm run dev` (servidor + 
 
 Agora abra o Claude Code em qualquer projeto e veja o seu agente chegar pelo elevador. 🎉
 
-### 3. Ative o uso ao vivo das contas (opcional, recomendado)
+### 3. Instale o mod do CodeTown no Claude Code (recomendado)
 
 ```bash
-npm run usage:install
+npm run mod:install                        # o mod e o plugin de permissões, em cada conta
+npm run mod:install -- --sem-permissoes    # só o mod, sem responder permissões pelo escritório
 ```
 
-Isso coloca um pequeno "tap" na frente do statusline de cada conta (o seu statusline continua aparecendo igual) para
-capturar o **uso de 5 horas e semanal** que o próprio Claude Code envia — sem ler senhas nem tokens. Faz backup do
-`settings.json` antes; para desfazer: `npm run usage:uninstall`. Detalhes em
-[Contas e uso](#contas-e-uso-5-horas-e-semanal).
+O CodeTown traz um [mod](https://code.claude.com/docs/en/plugins/mods/overview) (um plugin que roda dentro do
+Claude Code) e o instala em cada conta, pelo próprio `claude plugin`, a partir desta pasta. Com ele:
 
-> O tap aponta para a pasta onde você clonou o CodeTown. Se mover a pasta, rode `npm run usage:install` de novo
-> (até lá, o statusline das contas mostra erro).
+- o **uso de 5 horas e semanal** de cada conta aparece ao vivo no CodeTown;
+- o terminal mostra uma linha quando **outra sessão precisa de você** (permissão ou resposta);
+- o comando **`/codetown`** passa a existir no Claude Code;
+- dá para **aprovar ou recusar pelo escritório** os pedidos de permissão ("Do you want to…"), com o plugin
+  `codetown-permissoes` (veja [Responder pelo escritório](#responder-pelo-escritório)).
 
-### 4. Responda pedidos de permissão pelo escritório (opcional)
+Precisa do **Claude Code 2.1.287 ou mais novo** (`claude --version`). O mod roda dentro de cada sessão, com as suas
+permissões, e acessa só o que está listado em [`mod/README.md`](mod/README.md); para conferir sem rodar nada,
+`claude plugin validate mod/codetown` mostra os eventos que ele trata e as chamadas que faz. Sessões já abertas
+carregam o mod com `/reload-plugins` (ou ao reabrir). Se a conta tinha o jeito antigo (abaixo), o `mod:install` tira o
+tap e o hook do `settings.json` (com backup), porque o mod faz o mesmo. Confira com `npm run mod:status`; para
+desfazer: `npm run mod:uninstall`.
+
+> O mod é lido desta pasta. Se mover a pasta, rode `npm run mod:install` de novo.
+
+<details>
+<summary><b>Claude Code anterior ao 2.1.287: o jeito antigo</b></summary>
+
+Sem mods, o uso ao vivo e o responder pelo escritório vêm de dois instaladores que editam o `settings.json` de cada
+conta (com backup antes):
 
 ```bash
-npm run hooks:install
+npm run usage:install    # põe um "tap" na frente do statusline de cada conta, que captura o uso de 5h/semanal
+npm run hooks:install    # acrescenta o hook PermissionRequest, para responder permissões pelo escritório
 ```
 
-Instala em cada conta um hook do Claude Code que deixa **aprovar ou recusar pelo CodeTown** os pedidos de
-permissão ("Do you want to…"). Faz backup do `settings.json`; para desfazer: `npm run hooks:uninstall`. Veja
-[Responder pelo escritório](#responder-pelo-escritório).
+O seu statusline continua aparecendo igual. Para desfazer: `npm run usage:uninstall` e `npm run hooks:uninstall`.
+Os dois apontam para esta pasta: se mover a pasta, rode-os de novo (até lá, o statusline das contas mostra erro).
+Quando atualizar o Claude Code, troque pelo mod: o `npm run mod:install` tira o tap e o hook antigos (com backup) para
+não ficarem dois capturando o uso ou respondendo o mesmo pedido.
+
+</details>
 
 ### Abrir no celular (opcional)
 
@@ -208,26 +227,29 @@ versão também estão no [`CHANGELOG.md`](CHANGELOG.md)). Para atualizar:
 ```bash
 git pull
 npm install
-npm run docker:up        # ou: npm run build && npm start
+npm run docker:up        # ou: npm run build && npm start (e depois npm run mod:install)
 ```
 
-Para não consultar o GitHub, use `CODETOWN_UPDATE_CHECK=0` (no `.env`, para o Docker).
+O `docker:up` também atualiza o mod nas contas em que ele já está instalado (nunca instala sozinho) e avisa:
+"Mod atualizado para 0.3.0 na Conta D; sessões abertas: /reload-plugins". No modo Node, rode `npm run mod:install`
+depois de atualizar. Para não consultar o GitHub, use `CODETOWN_UPDATE_CHECK=0` (no `.env`, para o Docker).
 
 ### Desinstalar
 
 ```bash
-npm run usage:uninstall                     # devolve o statusline original das contas
-npm run hooks:uninstall                     # tira o hook de permissão das contas
+npm run mod:uninstall                       # tira o mod, o plugin de permissões e o marketplace das contas
 npm run docker:down                         # para o container
 docker volume rm codetown_codetown-data     # apaga os dados do container (nomes, linha do tempo e estatísticas)
 docker image rm codetown:local              # apaga a imagem
 rm -rf ~/.codetown                          # apaga os dados locais (uso capturado, nomes, linha do tempo e estatísticas)
 ```
 
-Depois é só apagar a pasta do projeto — rode o `usage:uninstall` e o `hooks:uninstall` **antes**, senão o
-statusline das contas passa a dar erro (e o hook de permissão, a falhar em silêncio). Os dois instaladores
-(`usage:install` e `hooks:install`) e os dois desinstaladores deixam cópias `settings.json.codetown-backup-<data>` na
-pasta de cada conta (ex.: `~/.claude/`); apague-as se não precisar mais.
+Depois é só apagar a pasta do projeto — rode o `mod:uninstall` **antes**, senão o Claude Code das contas passa a
+reclamar do marketplace que sumiu. Se você usou o jeito antigo, rode também `npm run usage:uninstall` (devolve o
+statusline original) e `npm run hooks:uninstall` (tira o hook de permissão); sem eles, o statusline das contas passa
+a dar erro (e o hook, a falhar em silêncio). O `mod:install`, que tira o tap e o hook antigos, e os instaladores e
+desinstaladores antigos deixam cópias `settings.json.codetown-backup-<data>` na pasta de cada conta (ex.:
+`~/.claude/`); apague-as se não precisar mais.
 
 ## Como usar
 
@@ -321,8 +343,9 @@ Os personagens andam mais rápido no replay, mas nas velocidades altas quem fica
 chega à mesa; pular para outro ponto mostra todos já no lugar.
 ### Responder pelo escritório
 
-Com o hook instalado (`npm run hooks:install`), quando um agente pede permissão — rodar um comando, editar um
-arquivo, abrir uma página — o pedido aparece no escritório: o personagem levanta a mão, um aviso com **Responder**
+Com o plugin de permissões instalado (`npm run mod:install`, que o instala junto com o mod; no Claude Code anterior
+ao 2.1.287, `npm run hooks:install`), quando um agente pede permissão — rodar um comando, editar um arquivo, abrir
+uma página — o pedido aparece no escritório: o personagem levanta a mão, um aviso com **Responder**
 surge na tela e, nos detalhes do agente, o cartão **Pede permissão** mostra o comando (ou o diff da edição) com os
 botões:
 
@@ -335,14 +358,16 @@ O diálogo continua aparecendo no terminal ao mesmo tempo, e vale o que você re
 terminal, o pedido some do escritório sozinho. O contador **precisam de você** (e a tecla `P`) leva até cada pedido.
 Perguntas do agente (`AskUserQuestion`) continuam só no terminal.
 
-- O hook só desvia o pedido quando há **alguma página do CodeTown aberta** neste computador; com o CodeTown parado
-  ou sem nenhuma página, ele sai na hora e o terminal segue normal.
-- Sem resposta pelo escritório em 5 minutos, o pedido volta a valer só no terminal (`npm run hooks:install --
-  --timeout 120` muda o tempo; `--port` se o CodeTown não usa a 4747). Em **subagentes em segundo plano** o Claude
-  Code só mostra o diálogo no terminal depois que o hook termina: responda pelo escritório ou use **Responder no
-  terminal**.
+- O pedido passa por um hook `PermissionRequest` do Claude Code (o do plugin, ou o do jeito antigo), que só o desvia
+  quando há **alguma página do CodeTown aberta** neste computador; com o CodeTown parado ou sem nenhuma página, ele
+  sai na hora e o terminal segue normal.
+- Sem resposta pelo escritório em 5 minutos, o pedido volta a valer só no terminal (as opções do plugin estão em
+  [`mod/README.md`](mod/README.md); no jeito antigo, `npm run hooks:install -- --timeout 120` muda o tempo e
+  `--port`, a porta). Em **subagentes em segundo plano** o Claude Code só mostra o diálogo no terminal depois que o
+  hook termina: responda pelo escritório ou use **Responder no terminal**.
 - Funciona com a mesma trava do terminal somente leitura: só com o CodeTown acessível apenas pelo próprio
-  computador e aberto por `http://localhost`. Confira com `npm run hooks:status`.
+  computador e aberto por `http://localhost`. Confira com `npm run mod:status` (ou `npm run hooks:status`, no jeito
+  antigo).
 - No modo demonstração, os agentes fictícios também pedem permissão (de mentira), para experimentar.
 
 ### GitHub no escritório
@@ -409,16 +434,17 @@ alias d='CLAUDE_CONFIG_DIR=~/.claude-conta2 claude'
 
 vira **Conta C** e **Conta D**. Só valem atalhos de até 3 letras; contas sem atalho recebem A, B…
 
-**De onde vêm os números.** O jeito recomendado é o tap de statusline (`npm run usage:install`): o Claude Code já envia
-ao comando de statusline de cada sessão os limites do plano (`rate_limits`), e o tap guarda só esses números em
-`~/.codetown/usage/<conta>.json`. Os números chegam depois da próxima resposta de cada conta. Confira com
-`npm run usage:status`.
+**De onde vêm os números.** O jeito recomendado é o mod do CodeTown (`npm run mod:install`, Claude Code 2.1.287+):
+dentro de cada sessão, ele recebe do próprio Claude Code os limites do plano e guarda só os percentuais de 5 horas e
+da semana (e quando reiniciam) em `~/.codetown/usage/<conta>.json`. Os números chegam depois da próxima resposta de
+cada conta. Confira com `npm run mod:status`. Em versões anteriores do Claude Code, o tap de statusline
+(`npm run usage:install`) faz o mesmo pelo comando de statusline, no mesmo arquivo.
 
 <details>
 <summary><b>Detalhes do tap e do cache do /usage</b></summary>
 
-- O `usage:install` altera, em `<conta>/settings.json`, **só** o campo `statusLine.command`: o comando original
-  (ex.: `npx -y ccstatusline`) passa a rodar através de `node "<pasta do CodeTown>/scripts/statusline-tap.mjs" --
+- O `usage:install` (jeito antigo) altera, em `<conta>/settings.json`, **só** o campo `statusLine.command`: o comando
+  original (ex.: `npx -y ccstatusline`) passa a rodar através de `node "<pasta do CodeTown>/scripts/statusline-tap.mjs" --
   <comando original>`. Uma cópia do arquivo vai antes para `settings.json.codetown-backup-<data>`. Se a conta não tinha
   statusline, é criado um que só captura o uso. `npm run usage:install -- --dry-run` mostra o que mudaria sem gravar.
 - O tap repassa o mesmo JSON ao seu statusline (saída e código de saída continuam os dele) e grava **somente**
@@ -427,10 +453,11 @@ ao comando de statusline de cada sessão os limites do plano (`rate_limits`), e 
 
 | Fonte | Como funciona |
 | --- | --- |
-| **Tap de statusline** (recomendado) | Ao vivo, como descrito acima. |
+| **Mod do CodeTown** (recomendado) | Ao vivo, como descrito acima. Substitui o tap: o `mod:install` tira o tap da conta. |
+| Tap de statusline (Claude Code anterior ao 2.1.287) | Ao vivo, pelo comando de statusline, no mesmo arquivo. |
 | Cache do `/usage` (sempre ligado) | O Claude Code grava o último resultado do comando `/usage`. No modo Node, o CodeTown relê a cada 60 s; no Docker, vale o valor lido no último `npm run docker:up`. Só muda quando alguém roda `/usage`. |
 
-As duas fontes são arquivos locais: nenhuma lê senhas ou tokens, nem faz chamadas de rede. Vale sempre a fonte com os
+As fontes são arquivos locais: nenhuma lê senhas ou tokens, nem faz chamadas de rede. Vale sempre a fonte com os
 números mais recentes. Números com mais de 30 minutos aparecem como **desatualizados**; uma janela que já reiniciou
 desde a coleta aparece como **—** até chegarem números novos.
 
@@ -448,7 +475,7 @@ Tudo funciona sem configurar nada. Se precisar ajustar, use variáveis de ambien
 | `CODETOWN_CLAUDE_DIRS` | detecção automática | Pastas das contas, separadas por vírgula (ex.: `/caminho/conta1,/caminho/conta2`). |
 | `CODETOWN_DATA_DIR` | `~/.codetown` | Onde o CodeTown guarda os próprios dados (nomes dos personagens, linha do tempo do timelapse e estatísticas do Meu dia). |
 | `CODETOWN_TIMELINE` | ligado | `0` desliga a gravação da linha do tempo (os dias já gravados continuam no timelapse). No Docker fica sempre ligado. |
-| `CODETOWN_USAGE_DIR` | `~/.codetown/usage` | Onde o tap de statusline grava o uso. |
+| `CODETOWN_USAGE_DIR` | `~/.codetown/usage` | Onde o mod (ou o tap de statusline) grava o uso. |
 | `CODETOWN_DEMO` | desligado | `1` liga o modo demonstração ao iniciar. |
 | `CODETOWN_ALLOWED_HOSTS` | — | Nomes extras aceitos no endereço (ex.: `meu-mac.local`), além de `localhost` e IPs. |
 | `CODETOWN_TERMINAL` | ligado (só com acesso local) | `0` desliga o terminal somente leitura. Com a porta exposta ele já fica desligado, sem opção de ligar. |
@@ -493,8 +520,8 @@ no host); as demais ficam fixas dentro do container. Opções: `npm run docker:u
 shared/   protocolo (types.ts), atividades em PT-BR, nomes, simulador de demonstração
 server/   servidor HTTP + SSE: contas e uso, leitura das sessões e transcripts, modelo do escritório
 client/   Vite: src/art (pixel art procedural), src/world (o escritório no canvas), src/ui (interface)
-scripts/  build do servidor, docker-up, tap de statusline, instaladores (tap e hook de permissão) e screenshots
-mod/      plugins do Claude Code (marketplace em .claude-plugin/): o mod codetown e o hook de permissão
+scripts/  build do servidor, docker-up, instaladores (mod, tap de statusline e hook de permissão) e screenshots
+mod/      o mod do CodeTown e o plugin de permissões (plugins do Claude Code; marketplace em .claude-plugin/)
 ```
 
 | Rota | Descrição |
@@ -512,7 +539,7 @@ mod/      plugins do Claude Code (marketplace em .claude-plugin/): o mod codetow
 | `GET /api/health` | Saúde: versão, demonstração, Docker, terminal, responder pelo escritório, fontes e status de uso de cada conta. |
 | `POST /api/demo` | `{"enabled": true \| false}` liga ou desliga os agentes simulados. |
 | `GET /api/mod/summary` | Para o mod do Claude Code: versão, quantos agentes, quantos trabalham e quem precisa de você (sem o demo e, com `?account=&session=`, sem a própria sessão). |
-| `/api/permissions…` | Responder pelo escritório: o hook registra o pedido e espera; a página busca o detalhe e decide. Só com acesso local. |
+| `/api/permissions…` | Responder pelo escritório: o hook de permissão registra o pedido e espera; a página busca o detalhe e decide. Só com acesso local. |
 
 Mais detalhes do servidor em [`server/README.md`](server/README.md).
 
@@ -525,7 +552,7 @@ Mais detalhes do servidor em [`server/README.md`](server/README.md).
 | --- | --- | --- |
 | `<conta>/sessions/` | `/claude/<conta>/sessions` (somente leitura) | Sessões abertas e seus status. |
 | `<conta>/projects/` | `/claude/<conta>/projects` (somente leitura) | Transcripts das sessões e dos subagentes. |
-| `~/.codetown/usage/` | `/usage` (somente leitura) | Uso capturado pelo tap de statusline. |
+| `~/.codetown/usage/` | `/usage` (somente leitura) | Uso capturado pelo mod (ou pelo tap de statusline). |
 | volume `codetown-data` | `/data` | Dados do próprio CodeTown (nomes dos personagens, linha do tempo do timelapse e estatísticas do Meu dia). |
 
 A pasta da conta **nunca** é montada inteira (lá ficam credenciais e configurações). O container roda como usuário sem
@@ -536,16 +563,24 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
 
 ## Privacidade e segurança
 
-- **Só leitura:** o CodeTown nunca grava nas pastas do Claude Code. As exceções são o `npm run usage:install` /
-  `usage:uninstall`, que muda só o `statusLine.command` do `settings.json`, e o `npm run hooks:install` /
-  `hooks:uninstall`, que muda só a lista `hooks.PermissionRequest` — sempre com backup antes.
+- **Só leitura:** o CodeTown nunca grava nas pastas do Claude Code. As exceções são os instaladores, que você roda:
+  o `npm run mod:install` / `mod:uninstall` usa o próprio `claude plugin` (que registra o marketplace e os plugins
+  no `settings.json` e em `<conta>/plugins/`) e, na instalação, tira o tap e o hook antigos com backup; no jeito
+  antigo, o `npm run usage:install` / `usage:uninstall` muda só o `statusLine.command` do `settings.json` e o
+  `npm run hooks:install` / `hooks:uninstall`, só a lista `hooks.PermissionRequest` — sempre com backup antes.
+- **O mod:** roda dentro de cada sessão do Claude Code, com as suas permissões (como todo mod), e faz só o que está
+  listado em [`mod/README.md`](mod/README.md) — `claude plugin validate mod/codetown` mostra os eventos e as chamadas,
+  sem rodar nada. Grava só os percentuais de uso de 5 horas e da semana (e quando reiniciam) em
+  `~/.codetown/usage/<conta>.json`; para a linha de "precisa de você" e o `/codetown`, só fala com o CodeTown em
+  `127.0.0.1`. Não lê a conversa, não chama o modelo e não envia nada para fora do computador. Ele é lido desta
+  pasta: o que estiver nela (inclusive depois de um `git pull`) é o que roda.
 - **Só local, por padrão:** o servidor só aceita conexões do próprio computador; liberar a rede local é opcional.
   Não há telemetria. A única chamada externa é a verificação de versão nova: a cada 6 horas, uma consulta anônima,
   sem token, à API pública do GitHub (`api.github.com/repos/marmottajr/codetown/releases/latest`). Ela não envia nada
   sobre as suas sessões; o GitHub vê só o seu IP e a versão em uso, que vai no `User-Agent`.
   `CODETOWN_UPDATE_CHECK=0` desliga a consulta.
 - **Sem credenciais:** o CodeTown não lê senhas nem tokens de acesso. Do `.claude.json` de cada conta aproveita só o
-  e-mail, a organização e o cache do `/usage`; o uso ao vivo vem do tap de statusline.
+  e-mail, a organização e o cache do `/usage`; o uso ao vivo vem do mod (ou do tap de statusline).
 - **Segredos mascarados:** tokens e senhas com formato conhecido (`Bearer`, `-u usuário:senha`, `TOKEN=`, chaves
   `sk-…`, `ghp_…`, `AKIA…`, JWTs, senhas em URLs) viram `***` antes de chegar ao navegador.
 - **Protegido contra sites maliciosos:** o servidor recusa endereços que não sejam `localhost`/IP (DNS rebinding) e
@@ -560,13 +595,14 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
   uso das contas, sem e-mails, comandos completos ou conversas), gravados em `~/.codetown/timeline/` e apagados depois
   de 7 dias. `CODETOWN_TIMELINE=0` desliga a gravação.
 - **Responder pelo escritório, só local:** aprovar ou recusar age sobre as sessões, então segue a mesma trava do
-  terminal (bind local, `Host` local, nada de proxies ou túneis) e só existe com o hook instalado por você. As
-  respostas exigem JSON e origem local (um site aberto no navegador não consegue mandá-las), o hook só fala com
-  `127.0.0.1` e, na dúvida — CodeTown fora do ar, erro, tempo esgotado —, sai sem decidir: vale o terminal. O comando
-  completo ou o diff só saem do servidor para quem abriu a página pelo próprio computador. "Sempre permitir" só
-  aplica uma regra que o próprio Claude Code sugeriu para aquele pedido. Atenção: qualquer programa ou pessoa que
-  consiga abrir `http://localhost:4747` nesta máquina também consegue responder; em computadores compartilhados
-  com outros usuários, não instale o hook.
+  terminal (bind local, `Host` local, nada de proxies ou túneis) e só existe com o hook de permissão (o do plugin
+  `codetown-permissoes` ou o do jeito antigo) instalado por você. As respostas exigem JSON e origem local (um site
+  aberto no navegador não consegue mandá-las), o hook só fala com `127.0.0.1` e, na dúvida — CodeTown fora do ar,
+  erro, tempo esgotado —, sai sem decidir: vale o terminal. O comando completo ou o diff só saem do servidor para
+  quem abriu a página pelo próprio computador. "Sempre permitir" só aplica uma regra que o próprio Claude Code sugeriu
+  para aquele pedido. Atenção: qualquer programa ou pessoa que consiga abrir `http://localhost:4747` nesta máquina
+  também consegue responder; em computadores compartilhados com outros usuários, não instale o hook
+  (`npm run mod:install -- --sem-permissoes`).
 - **Estatísticas do Meu dia:** só números agregados (tempo por status, contagens, tokens, custo) com nomes de projeto,
   conta e agente, guardados em `CODETOWN_DATA_DIR/stats/` por 30 dias — nada da conversa.
 - **O que aparece na tela:** resumos das atividades (ferramenta, arquivo, comando ou consulta), títulos das sessões,
@@ -583,6 +619,10 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
 | `npm run build` / `npm start` | Compila e roda a versão de produção. |
 | `npm test` | Testes (Vitest). |
 | `npm run typecheck` | Verificação de tipos de cliente, servidor e scripts. |
+| `claude plugin test mod/codetown` | Testes do mod (sem sessão, conta nem rede). |
+| `claude plugin validate .` | Valida o marketplace (`.claude-plugin/marketplace.json`); com `mod/codetown` ou `mod/codetown-permissoes`, valida o plugin e lista os eventos e as chamadas do mod. |
+| `claude --plugin-dir mod/codetown` | Abre uma sessão com o mod desta pasta, sem instalar (edite e rode `/reload-plugins`). |
+| `npm run mod:status` | Mostra, por conta, o marketplace, os plugins e as versões instaladas. |
 | `npm run demo:timeline` | Gera uma linha do tempo fictícia (simulador do modo demonstração) para o timelapse. |
 | `npm run release` | Publica a versão do `package.json` no GitHub (tag e release com as notas do `CHANGELOG.md`). |
 
@@ -634,9 +674,21 @@ Só aparecem sessões **abertas** do Claude Code. Confira se há alguma rodando 
 <details>
 <summary><b>O uso aparece como "sem dados" ou "desatualizado"</b></summary>
 
-Rode `npm run usage:install` e confira com `npm run usage:status`. Os números chegam depois da próxima resposta numa
-sessão aberta daquela conta; se não aparecerem, reabra a sessão. Um **—** no lugar do percentual quer dizer que a
-janela reiniciou desde a última coleta.
+Rode `npm run mod:install` (ou, no Claude Code anterior ao 2.1.287, `npm run usage:install`) e confira com
+`npm run mod:status` (ou `npm run usage:status`). Os números chegam depois da próxima resposta numa sessão aberta
+daquela conta; numa sessão aberta antes da instalação, rode `/reload-plugins` ou reabra a sessão. Um **—** no lugar
+do percentual quer dizer que a janela reiniciou desde a última coleta.
+
+</details>
+
+<details>
+<summary><b>O mod não carrega numa sessão</b></summary>
+
+Rode `npm run mod:status`: ele mostra a versão do Claude Code (o mod precisa da 2.1.287 ou mais nova) e, por conta,
+se o marketplace aponta para esta pasta e se os plugins estão instalados e ligados. Numa sessão aberta antes da
+instalação, rode `/reload-plugins`; o `/plugin` mostra, embaixo das abas, os mods carregados (ex.:
+`1 mod active · codetown`). Mods não rodam com `"disableAllHooks": true` no `settings.json` da conta nem com
+`claude --safe-mode`.
 
 </details>
 
@@ -673,12 +725,13 @@ diz se o terminal está ligado e, se não estiver, por quê.
 <details>
 <summary><b>O pedido de permissão não aparece no escritório</b></summary>
 
-Rode `npm run hooks:status`: ele diz, por conta, se o hook está instalado (e apontando para esta pasta) e se o
-CodeTown está respondendo pedidos. O pedido só é desviado com alguma página do CodeTown aberta por
-`http://localhost` (ou `127.0.0.1`) e com o terminal somente leitura ligado (mesma trava). Se o CodeTown usa outra
-porta, reinstale com `npm run hooks:install -- --port <porta>`. Sessões abertas antes da instalação costumam
-recarregar o `settings.json` sozinhas; se não, reabra a sessão. Perguntas do agente (`AskUserQuestion`) não passam
-pelo hook.
+Rode `npm run mod:status`: ele diz, por conta, se o plugin `codetown-permissoes` está instalado e ligado (e se
+sobrou o hook antigo junto, o que faria dois responderem) e se o CodeTown está respondendo pedidos. No jeito antigo,
+`npm run hooks:status` diz se o hook está instalado e apontando para esta pasta. O pedido só é desviado com alguma
+página do CodeTown aberta por `http://localhost` (ou `127.0.0.1`) e com o terminal somente leitura ligado (mesma
+trava). Sessões abertas antes da instalação carregam o plugin com `/reload-plugins` (ou ao reabrir). No jeito antigo,
+se o CodeTown usa outra porta, reinstale com `npm run hooks:install -- --port <porta>`. Perguntas do agente
+(`AskUserQuestion`) não passam pelo hook.
 
 </details>
 

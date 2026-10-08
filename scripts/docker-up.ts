@@ -13,9 +13,13 @@
 //    (~/.codetown/usage, criada se faltar) em /usage, também somente leitura. Passa
 //    CODETOWN_CLAUDE_DIRS, CODETOWN_ACCOUNTS, CODETOWN_USAGE_DIR e o fuso do host (TZ) ao container.
 // 3. Roda `docker compose up -d --build`, espera o /api/health e mostra a URL.
+// 4. Atualiza o mod do CodeTown nas contas onde ele JÁ está instalado com outra versão (depois de
+//    atualizar o CodeTown): relê o marketplace desta pasta e roda `claude plugin update` com o
+//    CLAUDE_CONFIG_DIR de cada conta. Nunca instala sozinho; se o `claude` faltar ou falhar, é só um aviso.
 //
-// Uso de 5h/semanal ao vivo: tap de statusline (npm run usage:install), que grava os números na
-// pasta montada em /usage. Sem ele, vale o cache do /usage lido das contas ao subir.
+// Uso de 5h/semanal ao vivo: o mod do CodeTown (npm run mod:install; Claude Code 2.1.287+) ou, em
+// versões anteriores, o tap de statusline (npm run usage:install). Os dois gravam os números na pasta
+// montada em /usage. Sem eles, vale o cache do /usage lido das contas ao subir.
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -23,12 +27,13 @@ import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { AccountInfo, SourceInfo } from '../shared/types';
 import { detectAccounts, discoverClaudeDirs, type DetectedAccount } from '../server/accounts/detect';
+import { makeClaudeRunner, MIN_CLAUDE_VERSION, readPackageVersion, updateInstalledMods, type ModUpdateResult } from './mod-install';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const HOME = process.env.HOME || homedir();
 const STATE_DIR = join(HOME, '.codetown');
 const OVERRIDE_FILE = join(ROOT, 'docker-compose.override.yml');
-/** Uso capturado pelo tap de statusline no host (scripts/statusline-tap.mjs). */
+/** Uso capturado no host pelo mod do CodeTown ou pelo tap de statusline (scripts/statusline-tap.mjs). */
 const USAGE_DIR = process.env.CODETOWN_USAGE_DIR?.trim() ? resolve(process.env.CODETOWN_USAGE_DIR.trim()) : join(STATE_DIR, 'usage');
 /** Onde essa pasta aparece no container. */
 const CONTAINER_USAGE_DIR = '/usage';
@@ -268,6 +273,18 @@ export function renderOverride(mounts: AccountMount[], generatedAt: Date = new D
   return `${lines.join('\n')}\n`;
 }
 
+/**
+ * Dica do fim do docker:up sobre o mod: só aparece quando nenhuma conta tem o mod instalado (quem já instalou
+ * recebe a atualização automática, ou um aviso). Sem o CLI do Claude Code, não dá para saber: fica quieto.
+ */
+export function modHint(mod: Pick<ModUpdateResult, 'installed' | 'unavailable'>): string[] {
+  if (mod.installed || mod.unavailable) return [];
+  return [
+    `  Uso de 5h/semanal ao vivo e responder pelo escritório: npm run mod:install (uma vez; Claude Code ${MIN_CLAUDE_VERSION}+).`,
+    '  Em versões anteriores do Claude Code: npm run usage:install e npm run hooks:install. Sem eles, vale o cache do /usage.',
+  ];
+}
+
 // ---------------------------------------------------------------------------------------------
 // Estado no host (~/.codetown)
 // ---------------------------------------------------------------------------------------------
@@ -382,7 +399,7 @@ async function up(opts: Options, port: number): Promise<void> {
   }
 
   const usageDir = ensureUsageDir();
-  if (usageDir) say(`Uso do statusline: monta ${tildify(USAGE_DIR)} em ${CONTAINER_USAGE_DIR}, somente leitura.`);
+  if (usageDir) say(`Uso ao vivo (mod ou tap de statusline): monta ${tildify(USAGE_DIR)} em ${CONTAINER_USAGE_DIR}, somente leitura.`);
   const tmp = `${OVERRIDE_FILE}.tmp`;
   writeFileSync(tmp, renderOverride(mounts, new Date(), usageDir, hostTimeZone()), { mode: 0o600 });
   chmodSync(tmp, 0o600);
@@ -405,9 +422,24 @@ async function up(opts: Options, port: number): Promise<void> {
     const state = src.ok ? plural(src.sessions, 'sessão aberta', 'sessões abertas') : `erro ao ler (${src.error ?? 'desconhecido'})`;
     say(`  Conta ${acc.short} (${acc.id}): ${state}${usage ? ` · ${USAGE_STATUS[usage]}` : ''}`);
   }
-  say('  Uso de 5h/semanal ao vivo: npm run usage:install (uma vez; envolve o statusline de cada conta');
-  say('  com o tap do CodeTown). Sem ele, vale o cache do /usage lido agora.');
+  for (const line of modHint(updateMods(dirs, accounts))) say(line);
   say('  Logs: npm run docker:logs · Parar: npm run docker:down');
+}
+
+/** Atualiza o mod de quem já instalou (ver mod-install.ts). Nada aqui derruba o docker:up. */
+function updateMods(dirs: string[], accounts: DetectedAccount[]): Pick<ModUpdateResult, 'installed' | 'unavailable'> {
+  try {
+    const labels = dirs.map((dir, i) => ({ dir, label: `Conta ${accounts[i]?.short ?? tildify(dir)}` }));
+    const mod = updateInstalledMods(labels, { env: process.env, home: HOME, root: ROOT, version: readPackageVersion(ROOT), claude: makeClaudeRunner() });
+    for (const l of mod.lines) {
+      if (l.level === 'warn') warn(l.text);
+      else say(`  ${l.text}`);
+    }
+    return mod;
+  } catch (err) {
+    warn(`não consegui conferir o mod do CodeTown (${(err as Error).message}).`);
+    return { installed: false, unavailable: true };
+  }
 }
 
 async function main(): Promise<void> {
