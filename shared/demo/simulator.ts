@@ -7,8 +7,10 @@
 // saída, "apagar a luz" e sumiço de salas.
 import type { AccountInfo, Activity, AgentInfo, FeedItem, Notice, OfficeSnapshot, RoomInfo, ShellJob, TaskItem } from '../types';
 import { describePrompt, describeShellJob, describeTool, SHELL_DONE_TOOL, SHELL_WAIT_TOOL, SPECIAL, type ActivityDescription, type ShellOutcome } from '../activity';
+import { describeGitHubEvent, GITHUB_TOOL, RoomEffects } from '../github';
 import { hash32, mulberry32 } from '../hash';
 import { pickName } from '../names';
+import { demoGitHubEvent } from './github';
 
 interface DemoProject {
   name: string;
@@ -193,10 +195,19 @@ export class DemoSimulator {
   private pendingFeed: FeedItem[] = [];
   private pendingNotices: Notice[] = [];
   private usage = new Map<string, { five: number; week: number; fiveReset: number; weekReset: number }>();
+  /** Eventos do GitHub fictícios (festa/alarme nas salas): sorteio próprio, sem mexer no resto. */
+  private ghRng: () => number;
+  private effects = new RoomEffects();
+  private nextGitHubAt: number;
+  private prSeq: number;
 
   constructor(opts: DemoOptions = {}, now = Date.now()) {
     this.rng = mulberry32(opts.seed ?? hash32(String(now)));
     this.speed = opts.speed ?? 1;
+    // o primeiro evento do GitHub vem logo (para os prints), os outros a cada 35–80 s
+    this.ghRng = mulberry32(((opts.seed ?? hash32(String(now))) ^ 0x6a09e667) >>> 0);
+    this.nextGitHubAt = now + (10_000 + this.ghRng() * 10_000) / this.speed;
+    this.prSeq = 12 + Math.floor(this.ghRng() * 80);
     this.target = opts.sessions ?? 4;
     this.prefix = opts.idPrefix ?? '';
     this.tag = now.toString(36);
@@ -231,6 +242,11 @@ export class DemoSimulator {
       this.nextSpawnAt = now + this.ms(25_000, 70_000);
     }
     for (const a of [...this.agents.values()]) this.step(a, now);
+    if (now >= this.nextGitHubAt) {
+      this.nextGitHubAt = now + (35_000 + this.ghRng() * 45_000) / this.speed;
+      this.gitHubEvent(now);
+    }
+    if (this.effects.prune(now)) this.dirty = true;
     this.gc(now);
     const changed = this.dirty;
     if (changed) this.rev++;
@@ -246,7 +262,10 @@ export class DemoSimulator {
     return {
       rev: this.rev,
       serverTime: now,
-      rooms: [...this.rooms.values()].map((r) => ({ ...r })),
+      rooms: [...this.rooms.values()].map((r) => {
+        const effect = this.effects.get(r.id, now);
+        return effect ? { ...r, effect: { ...effect } } : { ...r };
+      }),
       agents: [...this.agents.values()].map((a) => structuredCloneAgent(a.info)),
       accounts: this.accounts.map((acc) => {
         const u = this.usage.get(acc.id)!;
@@ -588,6 +607,25 @@ export class DemoSimulator {
     else this.notice(now, 'warn', `❌ ${a.info.name}: shell falhou em ${a.project.name} — ${job.label}`, a.info.id, a.info.roomId);
   }
 
+  /**
+   * Evento do GitHub fictício (PR aberto/mergeado, CI, release) num agente principal que está trabalhando
+   * ou à toa: atividade, aviso e festa/alarme na sala. Sala com alarme tende a ver o CI voltar a passar.
+   */
+  private gitHubEvent(now: number): void {
+    const mains = [...this.agents.values()].filter((a) => a.info.kind === 'main' && (a.phase === 'working' || a.phase === 'idle'));
+    if (!mains.length) return;
+    const alarmed = mains.filter((a) => this.effects.get(a.info.roomId, now)?.kind === 'alarm');
+    const pool = alarmed.length && this.ghRng() < 0.6 ? alarmed : mains;
+    const a = pool[Math.floor(this.ghRng() * pool.length)];
+    const alarm = this.effects.get(a.info.roomId, now)?.kind === 'alarm';
+    const ev = demoGitHubEvent(this.ghRng, { branch: a.info.gitBranch, alarm, pr: this.prSeq });
+    if (ev.kind === 'pr_opened') this.prSeq++;
+    const d = describeGitHubEvent(ev, a.info.name, a.project.name);
+    this.activity(a, now, d.activity);
+    this.notice(now, d.level, d.notice, a.info.id, a.info.roomId);
+    if (this.effects.apply(a.info.roomId, ev, now, a.info.id)) this.dirty = true;
+  }
+
   /** Comando demorado em primeiro plano: o agente fica parado esperando o resultado (status continua 'working'). */
   private startForeground(a: SimAgent, now: number): void {
     const spec = this.pick(FOREGROUND_JOBS, a.rng);
@@ -655,7 +693,7 @@ export class DemoSimulator {
     a.info.activity = act;
     a.info.recent = [...a.info.recent, act].slice(-30);
     a.info.lastEventAt = now;
-    const synthetic = d.tool === SHELL_DONE_TOOL || d.tool === SHELL_WAIT_TOOL;
+    const synthetic = d.tool === SHELL_DONE_TOOL || d.tool === SHELL_WAIT_TOOL || d.tool === GITHUB_TOOL;
     if (!synthetic && d.kind !== 'prompt' && d.kind !== 'done' && d.kind !== 'wait' && d.kind !== 'think') {
       a.info.stats.toolCalls++;
     }

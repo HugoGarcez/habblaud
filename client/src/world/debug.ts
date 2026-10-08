@@ -82,6 +82,11 @@ export interface WorldDebug {
    * restantes, o status vira `opts.then` (padrão 'working': o agente acorda com a notificação).
    */
   finishShell(agentId: string, result?: 'completed' | 'failed' | 'killed', opts?: { all?: boolean; then?: AgentStatus }): void;
+  /**
+   * Liga a festa (~12 s) ou o alarme (até desligar com `null`) de uma sala (id ou nome), como um evento
+   * do GitHub; `agentId` = o responsável (estrela na festa, balão "!" no alarme).
+   */
+  roomEffect(idOrName: string, kind: 'party' | 'alarm' | null, opts?: { text?: string; agentId?: string }): void;
   readonly sim: Sim;
   readonly camera: Camera;
 }
@@ -396,6 +401,20 @@ export function createDebug(sim: Sim, renderer: Renderer, camera: Camera, onCame
         }
       });
       if (done) reapply();
+    },
+
+    roomEffect: (idOrName, kind, opts = {}) => {
+      const room = [...sim.rooms.values()].find((r) => r.id === idOrName || r.info.name === idOrName);
+      if (!room) return;
+      if (!kind) {
+        sim.roomFx.active.delete(room.id);
+        return;
+      }
+      const t = now();
+      const text = opts.text ?? (kind === 'party' ? 'PR #12 mergeado!' : 'CI falhou (main)');
+      const agentId = opts.agentId ?? [...sim.chars.values()].find((c) => c.roomId === room.id && !c.leaving)?.id;
+      const end = t + (kind === 'party' ? 12_000 : 3_600_000);
+      sim.roomFx.active.set(room.id, { roomId: room.id, kind, text, agentId, key: t, start: t, end, cheered: new Set(), sticky: true });
     },
 
     sim,

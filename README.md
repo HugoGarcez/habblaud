@@ -253,6 +253,30 @@ computador** (o padrão) e só abre por `http://localhost` ou `http://127.0.0.1`
 (`CODETOWN_BIND=0.0.0.0` ou `CODETOWN_HOST=0.0.0.0`), ele fica desligado. Detalhes em
 [Privacidade e segurança](#privacidade-e-segurança).
 
+### GitHub no escritório
+
+O que os agentes fazem no GitHub anima a sala do projeto, sem token e sem acessar a internet: o CodeTown lê nos
+transcripts as chamadas (`gh pr create`, `gh pr merge`, `git push`, `gh run watch`, `gh pr checks`, `gh run view`,
+`gh release create` e as ferramentas do MCP do GitHub) e os resultados delas.
+
+| Evento | O que acontece |
+| --- | --- |
+| 🎉 **PR aberto ou mergeado, release publicada** | Confete cai na sala, todos comemoram com pulinhos e uma faixa diz o motivo ("PR #12 mergeado!") por ~12 s. |
+| 🚨 **CI vermelho** | Giroflex piscando nos cantos da sala, chão avermelhado e um balão "!" sobre quem viu a falha, até um CI verde na sala (que vira festa) ou por 10 min. |
+| 🚀 **Push** | Só o aviso e o feed. |
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/github-party.png" alt="Sala app-mobile em festa: confete caindo, a faixa dourada 'PR #12 mergeado!' e Jéssica de pé com os braços para cima e uma estrela sobre a cabeça" /></td>
+    <td width="50%"><img src="docs/screenshots/github-alarm.png" alt="Sala data-pipeline em alarme: chão avermelhado, faixa vermelha 'CI falhou (feat/checkout)', giroflex nos cantos de cima e um balão '!' vermelho ao lado de Ícaro" /></td>
+  </tr>
+</table>
+
+Cada evento também gera um aviso ("🎉 Danilo abriu o PR #12 em codetown", "🚨 CI falhou em codetown (feat/x)") e entra
+no feed. Só o que acontece ao vivo anima a sala: o que já estava nos transcripts quando o CodeTown abriu vai só para o
+histórico. Com "reduzir movimento" ligado no sistema, nada pisca nem gira. No modo demonstração, PRs, merges e CIs
+fictícios aparecem de tempos em tempos.
+
 ### Modo demonstração
 
 Quer ver o escritório cheio sem ter sessões abertas?
@@ -350,6 +374,8 @@ no host); as demais ficam fixas dentro do container. Opções: `npm run docker:u
   estatísticas.
 - **Subagentes:** os transcripts em `<sessão>/subagents/` (inclusive os de workflows) viram personagens ligados ao
   agente que os chamou.
+- **GitHub:** PRs, pushes, CI e releases saem das mesmas linhas do transcript (o comando e a saída dele, ou o
+  `gitOperation` que o próprio Claude Code grava); nada é consultado no GitHub.
 - **O desenho:** o navegador recebe o estado por SSE e desenha tudo num canvas — personagens, móveis, pisos e paredes
   são pixel art **gerada por código**; já o logotipo, as ilustrações e os quadros das paredes foram gerados com IA.
 

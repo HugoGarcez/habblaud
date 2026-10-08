@@ -15,6 +15,7 @@ import type { RoomState } from '../sim/room-state';
 import { cobwebScale, hourglassIcon, HOURGLASS_FLIP_MS, STORM_LIFT } from '../sim/shell';
 import type { Sim } from '../sim/sim';
 import { buildAnim, duskFactor, furnitureScale, nightFactor, NO_ANIM, sweepDelay, type BuildAnim } from './anim';
+import { RoomFxRenderer } from './github-fx';
 import { Particles } from './particles';
 import { carSprite, glowSprite, propSprite, shadowSprite } from './props';
 import { countBadge, fallbackIcon } from './shell-sprites';
@@ -93,6 +94,8 @@ export class Renderer {
   private icons: { x: number; y: number; name: IconName; bounce: number; alpha: number; badge: number }[] = [];
   /** Pipoca, confete e chuva (pool fixo). */
   readonly particles = new Particles();
+  /** Festa e alarme das salas (eventos do GitHub). */
+  private readonly roomFx = new RoomFxRenderer();
   /** dt do frame atual (s), para as partículas emitidas durante o desenho. */
   private dt = 0;
   private iconCount = 0;
@@ -375,6 +378,9 @@ export class Renderer {
       const anim = vis.room ? buildAnim(vis.room.phase, vis.room.progress(now)) : NO_ANIM;
       this.drawWalls(vis, anim, now, hour);
     }
+    const view = { x0: vx0, y0: vy0, x1: vx1, y1: vy1 };
+    // alarme de CI: tom vermelho no piso (por baixo dos móveis e personagens)
+    this.roomFx.drawFloor(ctx, this.sim, now, view);
 
     // ---- entidades ordenadas por profundidade
     const ents = this.ents;
@@ -474,12 +480,15 @@ export class Renderer {
     // ---- espera de shell: teias de aranha, confete/pipoca/chuva (por cima das entidades)
     this.drawCobwebs(now);
     this.drainEffects(now);
+    this.roomFx.emit(this.particles, this.sim, now, dt, view);
     this.particles.update(dt);
     this.particles.draw(ctx, vx0, vy0, vx1, vy1, now);
 
     // ---- luz: noite, salas apagadas, brilhos
     this.night = opts.dayNight ? nightFactor(hour) : 0;
     this.drawLighting(now, vx0, vy0, vx1, vy1, hour, opts.dayNight);
+    // giroflex e balão "!" do alarme de CI (brilham também no escuro)
+    this.roomFx.drawLights(ctx, this.sim, this.heads, now, view);
 
     // ---- ícones sobre as cabeças (por cima da escuridão)
     for (let i = 0; i < this.iconCount; i++) {

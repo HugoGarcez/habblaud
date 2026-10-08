@@ -158,6 +158,25 @@ export interface RoomInfo {
   /** Semente para cores/decoração determinísticas. */
   seed: number;
   createdAt: number;
+  /** Efeito visual temporário na sala (eventos do GitHub detectados nos transcripts; ver shared/github.ts). */
+  effect?: RoomEffect;
+}
+
+/**
+ * Efeito temporário numa sala de projeto, disparado por um evento do GitHub visto ao vivo:
+ * - party: comemoração (PR aberto ou mergeado, release, CI verde depois de um alarme); dura ~12 s;
+ * - alarm: CI vermelho; dura até um CI verde naquela sala ou expira em ~10 min.
+ */
+export interface RoomEffect {
+  kind: 'party' | 'alarm';
+  /** Faixa curta em PT-BR. Ex.: "PR #12 mergeado!", "CI falhou (feat/x)". */
+  text: string;
+  /** Início (epoch ms, relógio do servidor): um efeito novo tem outro `at`. */
+  at: number;
+  /** Fim previsto (epoch ms, relógio do servidor). */
+  until: number;
+  /** Agente responsável: quem abriu/mergeou (festa) ou quem viu o CI falhar (alarme, balão "!"). */
+  agentId?: string;
 }
 
 export interface SourceInfo {
