@@ -11,6 +11,7 @@ import './styles.css';
 import type { OfficeStore } from '../net/store';
 import type { Selection, WorldApi } from '../world/api';
 import type { PanelName, UiComponent, UiContext } from './context';
+import { DayLauncher } from './daystats-launcher';
 import { h } from './dom';
 import { Drawer } from './drawer';
 import { FeedPanel } from './feed';
@@ -138,6 +139,8 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
   const toasts = new Toasts(ctx);
   settings = new SettingsPopover(ctx, notifier);
   help = new HelpDialog();
+  const day = new DayLauncher(ctx, (el) => root.append(el));
+  topbar.addPanelButton(day.button);
   const empty = new EmptyState(ctx);
   const banner = new ConnectionBanner(ctx);
   const update = new UpdateBanner(store);
@@ -154,7 +157,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
     narrow: ctx.isNarrow(),
   }));
 
-  const components: UiComponent[] = [topbar, sidebar, drawer, terminal, feed, toasts, settings, empty, banner, tip, notifier, splash];
+  const components: UiComponent[] = [topbar, sidebar, drawer, terminal, feed, toasts, settings, empty, banner, tip, notifier, splash, day];
 
   // ---------------------------------------------------------------- renderização agrupada por quadro
   let rafId = 0;
@@ -272,6 +275,11 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
       case 'O':
         e.preventDefault();
         ctx.camera('overview');
+        break;
+      case 'm':
+      case 'M':
+        e.preventDefault();
+        day.toggle();
         break;
       case '[':
         e.preventDefault();

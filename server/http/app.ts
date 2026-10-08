@@ -2,9 +2,11 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { SourceInfo } from '../../shared/types';
 import type { AccountsService } from '../accounts/service';
+import type { DayStatsService } from '../history/daystats';
 import type { Office } from '../model/office';
 import { isJsonContentType, isLoopbackHost } from './guard';
 import type { Hub } from './sse';
+import { handleStatsRoute } from './stats';
 import type { TerminalStreams } from './terminal';
 
 export interface ApiDeps {
@@ -18,6 +20,8 @@ export interface ApiDeps {
   terminal?: boolean;
   /** Streams do terminal; sem eles o recurso fica desligado mesmo com `terminal`. */
   terminals?: TerminalStreams;
+  /** Estatísticas do "Meu dia" (GET /api/stats, http/stats.ts). */
+  stats?: DayStatsService;
 }
 
 /** GET /api/agents/:id/terminal (ids nunca contêm '/'). */
@@ -164,6 +168,10 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       const detail = office.detail(id);
       if (detail) sendJson(res, 200, detail);
       else sendJson(res, 404, { error: 'agente não encontrado' });
+      return true;
+    }
+    if (path === '/api/stats' || path.startsWith('/api/stats/')) {
+      handleStatsRoute(req, res, url, deps.stats, sendJson);
       return true;
     }
     if (path === '/api/demo') {

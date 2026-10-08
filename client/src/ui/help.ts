@@ -61,6 +61,7 @@ const SHORTCUTS: [string[], string][] = [
   [['/'], 'Buscar agente, projeto ou conta'],
   [['F'], 'Seguir o agente selecionado'],
   [['T'], 'Abrir ou fechar o terminal do agente selecionado (somente leitura)'],
+  [['M'], 'Meu dia: para onde foi o tempo (trabalhando, esperando você...)'],
   [['O', '0'], 'Visão geral do prédio'],
   [['Esc'], 'Fechar o terminal; depois, a gaveta e a seleção'],
   [['['], 'Mostrar ou ocultar o painel lateral'],

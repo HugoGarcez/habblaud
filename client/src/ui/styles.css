@@ -4809,3 +4809,793 @@ button.ui-term__think:hover,
     padding: 6px 10px 10px;
   }
 }
+
+/* ---------------------------------------------------------------- meu dia (painel de métricas) */
+
+/* Cores dos status nos gráficos: os mesmos tons do escritório, escurecidos para áreas grandes de barra (OKLCH L entre
+   0,48 e 0,67 sobre o painel #141821, contraste de 3:1 ou mais). A ordem de empilhamento foi validada para daltonismo
+   (vizinhos distinguíveis): esperando você | trabalhando | ocioso (cinza de contexto) | esperando o shell. */
+.ui-dialog.ui-day {
+  --day-waiting: #c98300;
+  --day-working: #1bad69;
+  --day-idle: #5e6a83;
+  --day-shell: #00aaa5;
+  width: min(1060px, calc(100vw - 32px));
+  max-height: min(92vh, 980px);
+}
+
+.ui-day :is(.ui-day__seg, .ui-day__swatch, .ui-day__tip-key).is-waiting {
+  --sw: var(--day-waiting);
+}
+
+.ui-day :is(.ui-day__seg, .ui-day__swatch, .ui-day__tip-key).is-working {
+  --sw: var(--day-working);
+}
+
+.ui-day :is(.ui-day__seg, .ui-day__swatch, .ui-day__tip-key).is-idle {
+  --sw: var(--day-idle);
+}
+
+.ui-day :is(.ui-day__seg, .ui-day__swatch, .ui-day__tip-key).is-shell {
+  --sw: var(--day-shell);
+}
+
+.ui-day__head {
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+
+.ui-day__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ui-day__badge {
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #d3c2ff;
+  background: rgba(170, 140, 255, 0.16);
+}
+
+.ui-day__controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.ui-day__select {
+  height: 30px;
+  min-width: 132px;
+  padding: 0 30px 0 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--ui-line-strong);
+  background: rgba(0, 0, 0, 0.25)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5' shape-rendering='crispEdges'%3E%3Cpath fill='%239aa4b8' d='M0 0h2v1H0zM6 0h2v1H6zM1 1h2v1H1zM5 1h2v1H5zM2 2h4v1H2zM3 3h2v1H3z'/%3E%3C/svg%3E")
+    no-repeat right 10px center / 8px 5px;
+  color: var(--ui-text);
+  font: 500 12.5px/1 var(--font-ui);
+  appearance: none;
+  cursor: pointer;
+}
+
+.ui-day__select:hover {
+  border-color: rgba(160, 176, 210, 0.36);
+}
+
+.ui-day__select:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.ui-day__select option {
+  background: #141821;
+  color: var(--ui-text);
+}
+
+.ui-day__source {
+  min-width: 230px;
+}
+
+.ui-day__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 22px 22px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.ui-day__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: 11.5px;
+  color: var(--ui-faint);
+}
+
+.ui-day__content {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 14px;
+  transition: opacity 0.2s;
+}
+
+/* Recarregando: o gráfico anterior fica, mais apagado (sem esqueleto nem salto de layout). */
+.ui-day.is-loading .ui-day__content {
+  opacity: 0.6;
+}
+
+.ui-day__muted {
+  color: var(--ui-muted);
+}
+
+.ui-day__swatch {
+  display: inline-block;
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--sw);
+}
+
+/* Destaques */
+.ui-day__kpis {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ui-day__hero,
+.ui-day__kpi {
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--ui-line);
+  background: var(--ui-bg-soft);
+}
+
+.ui-day__hero {
+  border-color: color-mix(in srgb, var(--day-waiting) 40%, transparent);
+  background: color-mix(in srgb, var(--day-waiting) 7%, transparent);
+  box-shadow: inset 3px 0 0 var(--day-waiting);
+}
+
+.ui-day__kpi-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ui-muted);
+}
+
+.ui-day__hero-value {
+  margin: 6px 0 4px;
+  font: 700 48px/1.02 var(--font-ui);
+  letter-spacing: -0.01em;
+}
+
+.ui-day__kpi-value {
+  margin: 6px 0 3px;
+  font: 700 20px/1.15 var(--font-ui);
+}
+
+.ui-day__kpi-sub {
+  font-size: 11.5px;
+  color: var(--ui-muted);
+}
+
+.ui-day__hero .ui-day__kpi-sub + .ui-day__kpi-sub {
+  margin-top: 2px;
+}
+
+.ui-day__hero .ui-day__kpi-sub strong {
+  color: var(--ui-text);
+  font-weight: 600;
+}
+
+/* Legenda (liga e desliga cada status nos gráficos) */
+.ui-day__legend {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ui-day__key {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--ui-line);
+  background: var(--ui-bg-soft);
+  font-size: 12px;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+
+.ui-day__key:hover {
+  background: var(--ui-bg-hover);
+}
+
+.ui-day__key.is-off {
+  color: var(--ui-faint);
+}
+
+.ui-day__key.is-off .ui-day__swatch {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--sw);
+}
+
+/* Cartões */
+.ui-day__card {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: 14px 16px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--ui-line);
+  background: var(--ui-bg-soft);
+}
+
+.ui-day__card--rooms {
+  grid-column: span 7;
+}
+
+.ui-day__card--waits {
+  grid-column: span 5;
+}
+
+.ui-day__card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.ui-day__card h3 {
+  font: 700 14px/1.2 var(--font-ui);
+}
+
+.ui-day__card-sub {
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: var(--ui-muted);
+}
+
+.ui-day__table-btn {
+  flex: none;
+  font-size: 11.5px;
+}
+
+.ui-day__seg {
+  display: block;
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: 0;
+  background: var(--sw);
+}
+
+/* Por projeto: barras horizontais finas, empilhadas a partir de uma base comum (2 px de folga entre pedaços). */
+.ui-day__bars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ui-day__bar {
+  display: grid;
+  gap: 5px;
+  margin: 0 -6px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.ui-day__bar:hover,
+.ui-day__bar:focus-visible {
+  background: var(--ui-bg-hover);
+}
+
+.ui-day__bar-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  font-size: 12.5px;
+}
+
+.ui-day__bar-name {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-day__bar-value {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-day__bar-value strong {
+  font-weight: 600;
+}
+
+.ui-day__track {
+  display: flex;
+  gap: 2px;
+  height: 12px;
+}
+
+.ui-day__track .ui-day__seg:last-child {
+  border-radius: 0 4px 4px 0;
+}
+
+/* Por hora: colunas empilhadas (base embaixo), eixo com marcas redondas e linhas de grade discretas. */
+.ui-day__plot {
+  position: relative;
+  height: 170px;
+  margin-left: 46px;
+}
+
+.ui-day__grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ui-day__gridline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--ui-line);
+}
+
+.ui-day__tick {
+  position: absolute;
+  right: calc(100% + 8px);
+  top: 0;
+  transform: translateY(-50%);
+  font-size: 10.5px;
+  color: var(--ui-faint);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-day__cols {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  border-bottom: 1px solid var(--ui-line-strong);
+}
+
+.ui-day__col {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-width: 0;
+  height: 100%;
+  padding: 0 1px;
+  border-radius: 4px 4px 0 0;
+}
+
+.ui-day__col:hover,
+.ui-day__col:focus-visible {
+  background: var(--ui-bg-hover);
+}
+
+.ui-day__col:focus-visible {
+  outline-offset: -2px;
+}
+
+.ui-day__col.is-now {
+  background: var(--ui-accent-soft);
+}
+
+.ui-day__stack {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 2px;
+  width: min(100%, 22px);
+  height: 100%;
+}
+
+.ui-day__stack .ui-day__seg {
+  width: 100%;
+}
+
+.ui-day__stack .ui-day__seg:last-child {
+  border-radius: 4px 4px 0 0;
+}
+
+.ui-day__xaxis {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  margin: 6px 0 0 46px;
+  font-size: 10.5px;
+  color: var(--ui-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-day__xlabel {
+  overflow: visible;
+  white-space: nowrap;
+}
+
+.ui-day__xlabel.is-now {
+  color: var(--ui-accent);
+  font-weight: 700;
+}
+
+/* Maiores esperas */
+.ui-day__waits {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ui-day__wait {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+}
+
+.ui-day__rank {
+  font: 700 12px/1.6 var(--font-ui);
+  color: var(--ui-faint);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-day__wait-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ui-day__wait-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ui-day__wait-dur {
+  flex: none;
+  min-width: 70px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-day__wait-bar {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  height: 8px;
+}
+
+.ui-day__wait-bar .ui-day__seg {
+  border-radius: 0 4px 4px 0;
+}
+
+.ui-day__now {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 5px;
+  border: 1px solid color-mix(in srgb, var(--day-waiting) 70%, transparent);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 16px;
+}
+
+.ui-day__wait-who {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.ui-day__wait-name {
+  flex: none;
+  font-weight: 600;
+}
+
+.ui-day__wait-who .ui-day__muted {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Por conta: cada conta na própria cor (chip, fio no topo e a fatia do trabalho do dia). */
+.ui-day__accounts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 10px;
+}
+
+.ui-day__account {
+  --acc: #8b98b3;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 9px;
+  border: 1px solid var(--ui-line);
+  background: rgba(0, 0, 0, 0.14);
+  box-shadow: inset 0 3px 0 var(--acc);
+}
+
+.ui-day__account-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ui-day__account-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-day__account-head .ui-day__muted {
+  margin-left: auto;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.ui-day__meter {
+  display: block;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--acc) 22%, transparent);
+}
+
+.ui-day__meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--acc);
+}
+
+.ui-day__account-stats {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 3px 12px;
+  font-size: 12px;
+}
+
+.ui-day__account-stats dt {
+  color: var(--ui-muted);
+}
+
+.ui-day__account-stats dd {
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tabelas (o equivalente acessível de cada gráfico) */
+.ui-day__table-wrap {
+  overflow-x: auto;
+}
+
+.ui-day__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.ui-day__table :is(th, td) {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--ui-line);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.ui-day__table thead th {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ui-muted);
+}
+
+.ui-day__table tbody th {
+  max-width: 240px;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.ui-day__table .is-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Dica: o valor primeiro, o status depois, com um traço da cor do status. */
+.ui-day__tip {
+  position: absolute;
+  z-index: 5;
+  min-width: 170px;
+  max-width: 260px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--ui-line-strong);
+  background: #0e1118;
+  box-shadow: 0 10px 28px rgba(5, 7, 12, 0.55);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.ui-day__tip-title {
+  margin-bottom: 4px;
+  font-weight: 700;
+}
+
+.ui-day__tip-row {
+  display: grid;
+  grid-template-columns: 12px auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  margin: 0 -3px;
+  padding: 1px 3px;
+  border-radius: 4px;
+  color: var(--ui-muted);
+}
+
+.ui-day__tip-row strong {
+  color: var(--ui-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-day__tip-row.is-hl {
+  background: var(--ui-bg-hover);
+  color: var(--ui-text);
+}
+
+.ui-day__tip-row.is-total {
+  margin-top: 3px;
+  padding-top: 4px;
+  border-top: 1px solid var(--ui-line);
+  border-radius: 0;
+}
+
+.ui-day__tip-key {
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--sw, transparent);
+}
+
+.ui-day__empty {
+  grid-column: 1 / -1;
+  padding: 28px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--ui-line);
+  background: var(--ui-bg-soft);
+  color: var(--ui-muted);
+  text-align: center;
+}
+
+.ui-day__note {
+  max-width: 96ch;
+  font-size: 11.5px;
+  color: var(--ui-faint);
+}
+
+@media (max-width: 1000px) {
+  .ui-day__kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ui-day__hero,
+  .ui-day__card--rooms,
+  .ui-day__card--waits {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Celular: tela cheia, controles numa linha própria, gráficos mais baixos (sem rolagem horizontal). */
+@media (max-width: 600px) {
+  .ui-dialog.ui-day {
+    width: 100vw;
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .ui-day__head {
+    padding: 12px 10px 10px 14px;
+  }
+
+  .ui-day__title {
+    flex: 1;
+  }
+
+  .ui-day__head > .ui-icon-btn {
+    order: 2;
+  }
+
+  .ui-day__controls {
+    order: 3;
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .ui-day__select {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .ui-day__source {
+    flex: 1.5 1 0;
+    min-width: 0;
+  }
+
+  .ui-day__source .ui-seg__opt {
+    padding: 0 6px;
+    white-space: nowrap;
+  }
+
+  .ui-day__body {
+    padding: 12px 12px 18px;
+  }
+
+  .ui-day__kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ui-day__hero-value {
+    font-size: 40px;
+  }
+
+  .ui-day__card {
+    padding: 12px;
+  }
+
+  /* O total do projeto continua na dica e na tabela; o nome ganha espaço. */
+  .ui-day__bar-value .ui-day__muted {
+    display: none;
+  }
+
+  .ui-day__plot {
+    height: 140px;
+    margin-left: 38px;
+  }
+
+  .ui-day__xaxis {
+    margin-left: 38px;
+  }
+}
+
+/* Entre o celular e o tablet a barra superior fica apertada com o botão "Meu dia": a visão geral segue no atalho O. */
+@media (min-width: 601px) and (max-width: 760px) {
+  .ui-topbar__right .ui-btn-group:first-child {
+    display: none;
+  }
+}

@@ -35,6 +35,7 @@ export class TopBar implements UiComponent {
   private hadOpen = false;
   private sidebarBtn: HTMLButtonElement;
   private feedBtn: HTMLButtonElement;
+  private panelGroup: HTMLElement;
   readonly settingsBtn: HTMLButtonElement;
 
   constructor(private ctx: UiContext) {
@@ -103,6 +104,7 @@ export class TopBar implements UiComponent {
       this.settingsBtn,
       iconButton(ICONS.help, 'Ajuda (?)', () => ctx.openHelp()),
     );
+    this.panelGroup = panelGroup;
 
     this.el = h(
       'header',
@@ -122,6 +124,11 @@ export class TopBar implements UiComponent {
       this.usage.el,
       h('div', { class: 'ui-topbar__right' }, viewGroup, panelGroup),
     );
+  }
+
+  /** Acrescenta um botão de janela própria (ex.: Meu dia) ao começo do grupo de painéis. */
+  addPanelButton(btn: HTMLElement): void {
+    this.panelGroup.prepend(btn);
   }
 
   render(): void {

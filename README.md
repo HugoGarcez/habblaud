@@ -202,7 +202,7 @@ npm run usage:uninstall                     # devolve o statusline original das 
 npm run docker:down                         # para o container
 docker volume rm codetown_codetown-data     # apaga os dados do container (nomes dos personagens)
 docker image rm codetown:local              # apaga a imagem
-rm -rf ~/.codetown                          # apaga os dados locais (uso capturado e nomes)
+rm -rf ~/.codetown                          # apaga os dados locais (uso capturado, nomes e estatísticas)
 ```
 
 Depois é só apagar a pasta do projeto — rode o `usage:uninstall` **antes**, senão o statusline das contas passa a
@@ -234,12 +234,13 @@ um **chip colorido com a letra da conta** (C, D…).
   linha do tempo e estatísticas (ferramentas, tokens, custo, linhas alteradas, modelo, branch).
 - **Feed:** as últimas atividades de todo o escritório.
 - **Configurações (⚙):** nomes, balões, quanto os ociosos passeiam, dia e noite, som, notificações do navegador e
-  modo demonstração. **Ajuda (?):** legenda completa e atalhos.
+  modo demonstração. **Ajuda (?):** legenda completa e atalhos. **Meu dia (📊):** para onde foi o tempo do dia (veja
+  [Meu dia](#meu-dia)).
 
 **Câmera:** arraste para mover, role para dar zoom, clique duplo num personagem para segui-lo.
 
 **Atalhos:** `/` busca · `F` seguir o selecionado · `O` ou `0` visão geral · `Esc` limpar seleção ·
-`[` painel lateral · `]` feed · setas/`WASD` mover · `+` `-` zoom · `?` ajuda.
+`[` painel lateral · `]` feed · `M` meu dia · setas/`WASD` mover · `+` `-` zoom · `?` ajuda.
 
 ### Terminal somente leitura
 
@@ -252,6 +253,20 @@ Como o terminal mostra a conversa inteira, ele só existe quando o CodeTown est�
 computador** (o padrão) e só abre por `http://localhost` ou `http://127.0.0.1`. Com a porta liberada para a rede
 (`CODETOWN_BIND=0.0.0.0` ou `CODETOWN_HOST=0.0.0.0`), ele fica desligado. Detalhes em
 [Privacidade e segurança](#privacidade-e-segurança).
+
+### Meu dia
+
+O botão **Meu dia** (ou a tecla `M`) mostra para onde foi o dia: quanto tempo os agentes passaram trabalhando e,
+em destaque, quanto tempo ficaram **esperando você** (permissão, pergunta ou escolha) — com a maior espera, quem
+esperou, onde e quando. Ao lado, sessões, subagentes, pedidos, tokens e custo (quando o Claude Code grava o custo no
+transcript), e gráficos por hora, por projeto (do que mais esperou você para o que menos esperou) e por conta, além
+do ranking das maiores esperas. Escolha o dia no seletor (o CodeTown guarda os últimos 30); aberto no dia de hoje,
+o painel se atualiza a cada 30 s. Cada gráfico tem uma versão em tabela, e a legenda liga e desliga cada status.
+
+O tempo é **tempo de agente**: dois agentes trabalhando por uma hora contam duas horas. O CodeTown só conta o que
+acontece enquanto ele está rodando, e o dia segue o fuso do seu navegador. Com o modo demonstração ligado, o painel
+mostra números fictícios (com o selo "demonstração") e deixa alternar para os dados reais; os agentes do demo nunca
+entram nas estatísticas de verdade.
 
 ### Modo demonstração
 
@@ -317,7 +332,7 @@ Tudo funciona sem configurar nada. Se precisar ajustar, use variáveis de ambien
 | `CODETOWN_HOST` | `127.0.0.1` | Interface do servidor no modo Node. Fora de `127.0.0.1`/`localhost`, o terminal somente leitura fica desligado. |
 | `CODETOWN_BIND` | `127.0.0.1` | Só Docker (no `.env`): onde a porta é publicada. `0.0.0.0` libera a rede local (e desliga o terminal somente leitura). |
 | `CODETOWN_CLAUDE_DIRS` | detecção automática | Pastas das contas, separadas por vírgula (ex.: `/caminho/conta1,/caminho/conta2`). |
-| `CODETOWN_DATA_DIR` | `~/.codetown` | Onde o CodeTown guarda os próprios dados (nomes dos personagens). |
+| `CODETOWN_DATA_DIR` | `~/.codetown` | Onde o CodeTown guarda os próprios dados (nomes dos personagens e estatísticas do Meu dia). |
 | `CODETOWN_USAGE_DIR` | `~/.codetown/usage` | Onde o tap de statusline grava o uso. |
 | `CODETOWN_DEMO` | desligado | `1` liga o modo demonstração ao iniciar. |
 | `CODETOWN_ALLOWED_HOSTS` | — | Nomes extras aceitos no endereço (ex.: `meu-mac.local`), além de `localhost` e IPs. |
@@ -369,6 +384,8 @@ scripts/  build do servidor, docker-up, tap de statusline (+ instalador) e scree
 | `GET /api/snapshot` | Estado atual do escritório. |
 | `GET /api/agents/:id` | Detalhes de um agente, com até 200 atividades. |
 | `GET /api/agents/:id/terminal` | SSE do terminal somente leitura (eventos `init` e `append`); só com acesso local. |
+| `GET /api/stats?day=AAAA-MM-DD` | Estatísticas do Meu dia (tempo por status, projetos, contas, horas, esperas, tokens e custo). |
+| `GET /api/stats/days` | Dias com estatísticas (os últimos 30). |
 | `GET /api/health` | Saúde: versão, demonstração, Docker, terminal, fontes e status de uso de cada conta. |
 | `POST /api/demo` | `{"enabled": true \| false}` liga ou desliga os agentes simulados. |
 
@@ -384,7 +401,7 @@ Mais detalhes do servidor em [`server/README.md`](server/README.md).
 | `<conta>/sessions/` | `/claude/<conta>/sessions` (somente leitura) | Sessões abertas e seus status. |
 | `<conta>/projects/` | `/claude/<conta>/projects` (somente leitura) | Transcripts das sessões e dos subagentes. |
 | `~/.codetown/usage/` | `/usage` (somente leitura) | Uso capturado pelo tap de statusline. |
-| volume `codetown-data` | `/data` | Dados do próprio CodeTown (nomes dos personagens). |
+| volume `codetown-data` | `/data` | Dados do próprio CodeTown (nomes dos personagens e estatísticas do Meu dia). |
 
 A pasta da conta **nunca** é montada inteira (lá ficam credenciais e configurações). O container roda como usuário sem
 privilégios, com sistema de arquivos somente leitura, sem capabilities extras e com `no-new-privileges`. Os metadados
@@ -409,6 +426,8 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
   ligá-lo com a porta exposta — e cada pedido precisa vir por `localhost`/`127.0.0.1`: IPs da rede e nomes de
   `CODETOWN_ALLOWED_HOSTS` (proxies, túneis) são recusados. Segredos são mascarados e textos longos truncados antes
   de chegar ao navegador; no modo demonstração, a conversa é fictícia. `CODETOWN_TERMINAL=0` desliga de vez.
+- **Estatísticas do Meu dia:** só números agregados (tempo por status, contagens, tokens, custo) com nomes de projeto,
+  conta e agente, guardados em `CODETOWN_DATA_DIR/stats/` por 30 dias — nada da conversa.
 - **O que aparece na tela:** resumos das atividades (ferramenta, arquivo, comando ou consulta), títulos das sessões,
   tarefas e estatísticas (e, no terminal somente leitura, a conversa). Não exponha a porta em redes em que você não
   confia.

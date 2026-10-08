@@ -11,6 +11,7 @@ import { createRequestGuard } from './http/guard';
 import { Hub } from './http/sse';
 import { createStaticHandler } from './http/static';
 import { TerminalStreams } from './http/terminal';
+import { DayStatsService } from './history/daystats';
 import { errMsg, log } from './log';
 import { NameStore } from './model/names';
 import { Office } from './model/office';
@@ -47,6 +48,9 @@ const watcher = new ClaudeWatcher({ accounts, office, inDocker: config.inDocker 
 late.office = office;
 late.watcher = watcher;
 const hub = new Hub(office);
+// "Meu dia": amostra o escritório a cada segundo e persiste em <dataDir>/stats/ (ver history/daystats.ts).
+const stats = new DayStatsService({ dir: join(config.dataDir, 'stats'), snapshot: () => hub.current() });
+stats.load();
 // Terminal somente leitura: só existe com bind local (ver terminalOffReason em config.ts).
 const terminals = config.terminal ? new TerminalStreams({ office, transcriptPathOf: (id) => watcher.transcriptPathOf(id) }) : undefined;
 
@@ -54,6 +58,7 @@ if (config.demo) office.setDemo(true);
 watcher.start();
 accounts.start();
 hub.start();
+stats.start();
 const ticker = setInterval(() => {
   try {
     office.tick();
@@ -71,6 +76,7 @@ const api = createApiHandler({
   inDocker: config.inDocker,
   terminal: config.terminal,
   terminals,
+  stats,
 });
 
 const server = http.createServer();
@@ -143,6 +149,7 @@ function shutdown(signal: string): void {
   shuttingDown = true;
   log.info(`Encerrando (${signal})…`);
   clearInterval(ticker);
+  stats.stop();
   watcher.stop();
   accounts.stop();
   hub.stop();

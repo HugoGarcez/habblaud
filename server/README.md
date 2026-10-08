@@ -47,6 +47,8 @@ enquanto o status é `shell`, o balão é "⏳ Esperando o shell: <rótulo>" (`t
 | `GET /api/snapshot` | `OfficeSnapshot` atual |
 | `GET /api/agents/:id` | `AgentDetail` (histórico de até 200 atividades) |
 | `GET /api/agents/:id/terminal` | SSE do terminal somente leitura: eventos `init` e `append` (`TerminalMessage`); só com bind local (ver abaixo) |
+| `GET /api/stats?day=AAAA-MM-DD&tz=<IANA>&source=real\|demo` | `DayStatsResponse` do "Meu dia" (ver abaixo); padrões: hoje, fuso do servidor, demo se ligado e o dia é hoje |
+| `GET /api/stats/days?tz=<IANA>` | `StatsDaysResponse`: dias com dados reais (e do demo, se ligado), mais recente primeiro |
 | `GET /api/health` | `{ok, version, demo, docker, terminal, sources, accounts:[{id, usageStatus}]}` |
 | `POST /api/demo` | `{enabled: boolean}` liga/desliga agentes simulados (misturados aos reais) |
 
@@ -83,6 +85,34 @@ nomes de `CODETOWN_ALLOWED_HOSTS` (proxies, túneis) recebem 403. O estado sai e
 local), 404 (agente ou transcript desconhecido), 405 (método que não é `GET`), 429 (terminais demais) e 500
 (transcript ilegível).
 
+## Meu dia (estatísticas do dia)
+
+`history/daystats.ts` amostra o snapshot do escritório a cada 1 s e passa os agentes ao rastreador puro de
+`shared/daystats.ts`, que integra, por agente, o tempo desde a amostra anterior no status em que ele estava
+(`working`, `waiting`, `shell`, `idle`; `done` e `offline` não contam), partindo o intervalo em `statusSince`.
+Intervalos de mais de 2 min entre amostras (servidor parado, computador dormindo) não contam. Esperas por você são
+episódios de `waiting` contínuo (os de menos de 3 s ficam de fora do ranking); "tempo de relógio com alguém
+esperando" une os intervalos de todos os agentes.
+
+- **Contagens:** `AgentStats` é cumulativo por agente, então conta o que passa do maior valor já visto (releitura de
+  transcript regravado não conta de novo). Agente que já existia (boot, `/resume`) vira linha de base nos primeiros
+  20 s (90 s no boot, enquanto o começo dos transcripts longos é lido em segundo plano); subagente que nasce durante a
+  observação e sessão nova (ou `/clear`) contam do zero. Salto impossível numa amostra (mais de 60 ferramentas ou 5 M
+  de tokens) é tratado como releitura. Custo que aparece num agente antigo é o total da sessão: só vira referência.
+  Prompts saem das atividades `prompt` posteriores ao início do servidor; tarefas, do que sobe no nº de concluídas.
+  Agente que some e volta mantém a linha de base por 6 h.
+- **Baldes de 1 hora alinhados em UTC** (por sala, por conta e quem esteve presente: sessões e subagentes), guardados
+  por dia de arquivo no fuso do servidor. O dia pedido é montado na consulta, no fuso `tz` do navegador: no Docker
+  (UTC) o dia do painel continua começando à meia-noite do usuário.
+- **Arquivos:** `<dataDir>/stats/AAAA-MM-DD.json` (`StatsDayFile`, versão 1), gravados a cada 30 s e ao encerrar
+  (temporário + `rename`); no boot carrega ontem e hoje, indexa os demais e apaga os de mais de 30 dias (de novo a
+  cada virada do dia). Arquivo ilegível vira `.corrupt` e o dia recomeça; erros de disco só geram aviso no log.
+- **Demo:** agentes com id `demo:` nunca entram nos dados reais. Com o demo ligado há um balde separado, só em
+  memória, semeado com um histórico fictício de ontem até agora (`shared/demo/daystats.ts`) e alimentado ao vivo.
+- **Exposição:** só números agregados e nomes de projeto, conta e agente (o mesmo que o `/api/snapshot`), então a rota
+  não tem a trava de bind local do terminal. Erros: 400 (`day` fora do formato `AAAA-MM-DD`, data inexistente, dia no
+  futuro, parâmetro repetido, `tz` ou `source` inválidos), 404 (sem dados, fora da retenção ou demo desligado), 405.
+
 Estáticos (`http/static.ts`): `/bundle/*` (saída do Vite com hash, `build.assetsDir`) com cache `immutable` de
 1 ano; o resto (`index.html`, `client/public` em `/assets/*`) com `no-cache` + `ETag`/`Last-Modified` (304).
 
@@ -95,7 +125,7 @@ Estáticos (`http/static.ts`): `/bundle/*` (saída do Vite com hash, `build.asse
 | `CODETOWN_BIND` | — (Compose: `127.0.0.1`) | só Docker: interface do host onde a porta é publicada, repassada ao container; só loopback liga o terminal somente leitura |
 | `CODETOWN_TERMINAL` | — | `0` desliga o terminal somente leitura (não liga com a porta exposta) |
 | `CODETOWN_CLAUDE_DIRS` | — | config dirs separados por vírgula; substitui a detecção (`~/.claude*` com `projects/` ou `sessions/` + `CLAUDE_CONFIG_DIR`) |
-| `CODETOWN_DATA_DIR` | `~/.codetown` (Docker: `/data`) | estado do CodeTown (nomes persistidos em `names.json`) |
+| `CODETOWN_DATA_DIR` | `~/.codetown` (Docker: `/data`) | estado do CodeTown (nomes persistidos em `names.json`, estatísticas do Meu dia em `stats/`) |
 | `CODETOWN_DEMO` | desligado | `1` liga o modo demonstração ao iniciar |
 | `CODETOWN_IN_DOCKER` | auto (`/.dockerenv`) | `1` = não confere PIDs (são do host) |
 | `CODETOWN_ACCOUNTS` | — | JSON com metadados das contas vindos do host (Docker): `[{id, configDir, mountDir, short, name, email, organization, plan, color, cachedUsage}]`, casados por `id`, `mountDir` ou `configDir` |
@@ -124,7 +154,8 @@ números novos — nunca um 0% inventado.
 - `accounts/` — detecção de contas (`detect.ts`, também usado pelo `docker-up`), uso (`usage.ts`), tap de statusline (`statusline.ts`), serviço (`service.ts`).
 - `sources/` — registro de sessões, leitura incremental (`tail.ts`), parser de transcripts (atividades em `transcript.ts`; conversa do terminal em `terminal.ts`), subagentes e o orquestrador (`watcher.ts`).
 - `model/` — escritório (`office.ts`), salas/slots (`rooms.ts`), nomes persistidos (`names.ts`).
-- `http/` — proteções de borda (`guard.ts`), rotas (`app.ts`), SSE (`sse.ts`), terminal somente leitura (`terminal.ts`), estáticos (`static.ts`).
+- `history/` — estatísticas do Meu dia: amostragem, persistência e retenção (`daystats.ts`; o acumulador puro fica em `shared/daystats.ts`).
+- `http/` — proteções de borda (`guard.ts`), rotas (`app.ts`), SSE (`sse.ts`), terminal somente leitura (`terminal.ts`), Meu dia (`stats.ts`), estáticos (`static.ts`).
 
 Testes: `npx vitest run server shared` (fixtures sintéticas em `server/test/fixtures.ts`; os scripts do host —
 tap de statusline, instalador e `docker-up` — são testados em `server/test/` com HOME e config dirs falsos).
