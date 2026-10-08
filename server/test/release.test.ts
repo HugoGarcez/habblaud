@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { changelogSection, parseReleaseArgs } from '../../scripts/release';
+import { changelogSection, parseReleaseArgs, unwrapMarkdown } from '../../scripts/release';
 
 const ROOT = join(import.meta.dirname, '..', '..');
 
@@ -38,6 +38,18 @@ describe('changelogSection', () => {
     // "0.2.0" não casa com "0.2.01", e o ponto não vira curinga.
     expect(changelogSection('## [0.2.01]\n\n- não', '0.2.0')).toBeUndefined();
     expect(changelogSection('## [0x2y0]\n\n- não', '0.2.0')).toBeUndefined();
+  });
+});
+
+describe('unwrapMarkdown', () => {
+  it('junta as linhas de um mesmo item ou parágrafo', () => {
+    const md = ['Primeira versão', 'publicada.', '', '### Adicionado', '', '- **A:** uma frase', '  que continua.', '- B', '  1. sub', '     continua'].join('\n');
+    expect(unwrapMarkdown(md)).toBe(['Primeira versão publicada.', '', '### Adicionado', '', '- **A:** uma frase que continua.', '- B', '  1. sub continua'].join('\n'));
+  });
+
+  it('não mexe em títulos, tabelas, citações e blocos de código', () => {
+    const md = ['## Título', 'texto', '| a | b |', '| - | - |', '> citação', '```bash', 'git pull', 'npm install', '```', 'fim'].join('\n');
+    expect(unwrapMarkdown(md)).toBe(['## Título', 'texto', '| a | b |', '| - | - |', '> citação', '```bash', 'git pull', 'npm install', '```', 'fim'].join('\n'));
   });
 });
 

@@ -46,6 +46,30 @@ export function changelogSection(changelog: string, version: string): string | u
   return text || undefined;
 }
 
+/**
+ * Junta as linhas quebradas só para caber em 120 colunas: nas notas da release o GitHub mostra cada quebra de linha,
+ * e as frases apareceriam cortadas no meio. Títulos, itens novos, citações, tabelas e blocos de código ficam como estão.
+ */
+export function unwrapMarkdown(text: string): string {
+  const out: string[] = [];
+  let fence = false;
+  let joinable = false;
+  for (const line of text.split('\n')) {
+    const t = line.trim();
+    if (/^(```|~~~)/.test(t)) {
+      fence = !fence;
+      out.push(line);
+      joinable = false;
+      continue;
+    }
+    const startsBlock = !t || fence || /^(#{1,6}\s|[-*+]\s|\d+[.)]\s|>|\|)/.test(t);
+    if (joinable && !startsBlock) out[out.length - 1] += ` ${t}`;
+    else out.push(line);
+    joinable = !fence && !!t && !/^(#{1,6}\s|\|)/.test(t);
+  }
+  return out.join('\n');
+}
+
 function run(cmd: string, args: string[], opts: { quiet?: boolean } = {}): string {
   return execFileSync(cmd, args, { cwd: ROOT, encoding: 'utf8', stdio: opts.quiet ? ['ignore', 'pipe', 'ignore'] : ['ignore', 'pipe', 'inherit'] }).trim();
 }
@@ -69,8 +93,8 @@ function main(argv: string[]): void {
 
   const version = (JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { version: string }).version;
   const tag = `v${version}`;
-  const notes = changelogSection(readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8'), version);
-  if (!notes) fail(`o CHANGELOG.md não tem a seção "## [${version}]" (ou ela está vazia): escreva o que entrou nesta versão.`);
+  const section = changelogSection(readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8'), version);
+  if (!section) fail(`o CHANGELOG.md não tem a seção "## [${version}]" (ou ela está vazia): escreva o que entrou nesta versão.`);
 
   const branch = run('git', ['rev-parse', '--abbrev-ref', 'HEAD']);
   if (branch !== 'main') fail(`publique a partir da main (você está em ${branch}).`);
@@ -84,6 +108,7 @@ function main(argv: string[]): void {
     tagExists = false;
   }
   if (tagExists) fail(`a tag ${tag} já existe: suba a versão no package.json antes.`);
+  const notes = unwrapMarkdown(section);
 
   console.log(`CodeTown ${tag}\n\n${notes}\n`);
   if (args.dryRun) {
