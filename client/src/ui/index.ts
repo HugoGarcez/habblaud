@@ -22,6 +22,7 @@ import { ConnectionBanner, EmptyState, Splash } from './overlays';
 import { loadPrefs, safeLocalStorage, savePrefs, worldOptionsFrom, type UiPrefs } from './prefs';
 import { SettingsPopover } from './settings';
 import { Sidebar } from './sidebar';
+import { TERMINAL_UNAVAILABLE_HINT, TerminalPanel } from './terminal';
 import { Toasts } from './toasts';
 import { TopBar } from './topbar';
 import { UpdateBanner } from './update';
@@ -131,7 +132,8 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
   const notifier = new Notifier(ctx);
   topbar = new TopBar(ctx);
   sidebar = new Sidebar(ctx);
-  drawer = new Drawer(ctx);
+  const terminal = new TerminalPanel(ctx);
+  drawer = new Drawer(ctx, terminal);
   const feed = new FeedPanel(ctx);
   const toasts = new Toasts(ctx);
   settings = new SettingsPopover(ctx, notifier);
@@ -144,7 +146,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
   const scrim = h('div', { class: 'ui-scrim', attrs: { 'aria-hidden': 'true' }, on: { click: () => ctx.togglePanel('sidebar', false) } });
 
   root.classList.add('ui-root');
-  root.append(topbar.el, sidebar.el, scrim, feed.el, drawer.el, toasts.el, banner.el, update.el, empty.el, tip.el, settings.el, help.el, live, splash.el);
+  root.append(topbar.el, sidebar.el, scrim, feed.el, drawer.el, terminal.el, toasts.el, banner.el, update.el, empty.el, tip.el, settings.el, help.el, live, splash.el);
   area = new FreeArea(world, { root, topbar: topbar.el, sidebar: sidebar.el, drawer: drawer.el, feed: feed.el }, () => ({
     sidebar: panels.sidebar,
     feed: panels.feed,
@@ -152,7 +154,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
     narrow: ctx.isNarrow(),
   }));
 
-  const components: UiComponent[] = [topbar, sidebar, drawer, feed, toasts, settings, empty, banner, tip, notifier, splash];
+  const components: UiComponent[] = [topbar, sidebar, drawer, terminal, feed, toasts, settings, empty, banner, tip, notifier, splash];
 
   // ---------------------------------------------------------------- renderização agrupada por quadro
   let rafId = 0;
@@ -232,7 +234,11 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
     if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === 'Escape') {
       if (help.isOpen || settings.isOpen) return; // diálogo/popover tratam o próprio Esc
-      if (ctx.isNarrow() && panels.sidebar) {
+      // O terminal flutua sobre tudo: fecha primeiro (a gaveta continua aberta).
+      if (terminal.isOpen) {
+        terminal.close();
+        e.preventDefault();
+      } else if (ctx.isNarrow() && panels.sidebar) {
         ctx.togglePanel('sidebar', false);
         e.preventDefault();
       } else if (selection) {
@@ -257,6 +263,11 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
         if (selection?.type === 'agent') drawer.toggleFollow();
         else ctx.announce('Selecione um agente para seguir.');
         break;
+      case 't':
+      case 'T':
+        e.preventDefault();
+        toggleTerminal();
+        break;
       case 'o':
       case 'O':
         e.preventDefault();
@@ -271,6 +282,16 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
         ctx.togglePanel('feed');
         break;
     }
+  }
+
+  /** Atalho T: abre o terminal somente leitura do agente selecionado (ou fecha o que estiver aberto). */
+  function toggleTerminal(): void {
+    const id = selection?.type === 'agent' ? selection.id : null;
+    if (terminal.isOpen && (id === null || terminal.agentId === id)) terminal.close();
+    else if (id === null) ctx.announce('Selecione um agente para abrir o terminal.');
+    else if (!store.snapshot?.meta.terminal) ctx.announce(`${TERMINAL_UNAVAILABLE_HINT}.`);
+    else if (!ctx.agent(id)) ctx.announce('O agente já saiu do escritório.');
+    else terminal.open(id);
   }
 
   // ---------------------------------------------------------------- início

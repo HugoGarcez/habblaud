@@ -37,6 +37,7 @@ import {
 } from './model';
 import { createAgentRow, updateAgentRow } from './rows';
 import { SocialSection } from './social';
+import { TERMINAL_UNAVAILABLE_HINT, type TerminalControl } from './terminal';
 import { createAccountChip, createProgress, createStatusDot, updateAccountChip, updateProgress, updateStatusDot } from './widgets';
 
 const TIMELINE_LIMIT = 80;
@@ -182,6 +183,8 @@ class AgentView {
   private statusText: HTMLElement;
   private statusSince: HTMLElement;
   private followBtn: HTMLButtonElement;
+  private termBtn: HTMLButtonElement;
+  private termLabel: HTMLElement;
   private alert: HTMLElement;
   private alertText: HTMLElement;
   private shellBox: HTMLElement;
@@ -209,7 +212,10 @@ class AgentView {
   private linesPlus: HTMLElement;
   private linesMinus: HTMLElement;
 
-  constructor(private ctx: UiContext) {
+  constructor(
+    private ctx: UiContext,
+    private terminal: TerminalControl,
+  ) {
     this.avatar = createAvatarPlaceholder('lg');
     this.name = h('h2', { class: 'ui-hero__name' });
     this.role = h('span', { class: 'ui-role' });
@@ -242,6 +248,19 @@ class AgentView {
       { class: 'ui-status' },
       h('span', { class: 'ui-status__label' }, this.dot, this.statusText, this.statusSince),
       h('span', { class: 'ui-status__actions' }, this.followBtn, centerBtn),
+    );
+
+    // Terminal somente leitura: a conversa da sessão como o Claude Code mostra (só com acesso local).
+    this.termLabel = h('span', { class: 'ui-term-cta__label', text: 'Abrir terminal' });
+    const termIcon = h('span', { class: 'ui-term-cta__icon', attrs: { 'aria-hidden': 'true' } });
+    termIcon.innerHTML = ICONS.terminal;
+    this.termBtn = h(
+      'button',
+      { class: 'ui-btn ui-term-cta', type: 'button', attrs: { 'aria-pressed': 'false' }, on: { click: () => this.toggleTerminal() } },
+      termIcon,
+      this.termLabel,
+      h('span', { class: 'ui-term-cta__ro', text: 'somente leitura' }),
+      h('kbd', { class: 'ui-kbd', text: 'T', attrs: { 'aria-hidden': 'true' } }),
     );
 
     this.alertText = h('p', { class: 'ui-alert__text' });
@@ -323,6 +342,7 @@ class AgentView {
       this.title,
       this.gone,
       statusRow,
+      this.termBtn,
       this.alert,
       this.shellBox,
       this.shellsSec.el,
@@ -360,6 +380,12 @@ class AgentView {
       .catch(() => {
         // Sem histórico longo: a linha do tempo usa as atividades recentes do snapshot.
       });
+  }
+
+  /** Abre (ou fecha) o terminal somente leitura deste agente; desligado sem acesso local ou depois que ele saiu. */
+  toggleTerminal(): void {
+    if (!this.id || this.termBtn.getAttribute('aria-disabled') === 'true') return;
+    this.terminal.toggle(this.id, this.termBtn);
   }
 
   toggleFollow(): void {
@@ -408,6 +434,7 @@ class AgentView {
     const following = this.ctx.world.getOptions().followSelected;
     setAttr(this.followBtn, 'aria-pressed', String(following));
     this.followBtn.classList.toggle('is-on', following);
+    this.renderTerminalButton(!!live);
 
     // Alerta.
     const waiting = a.status === 'waiting' && !!live;
@@ -483,6 +510,28 @@ class AgentView {
     setText(this.timelineSec.extra, this.history.length ? String(this.history.length) : '');
 
     this.renderStats(a, now);
+  }
+
+  private renderTerminalButton(live: boolean): void {
+    const available = !!this.ctx.store.snapshot?.meta.terminal;
+    const open = this.terminal.agentId === this.id;
+    // aria-disabled (e não disabled): o botão continua focável e a dica do porquê aparece no hover.
+    const enabled = open || (available && live);
+    setAttr(this.termBtn, 'aria-disabled', enabled ? null : 'true');
+    this.termBtn.classList.toggle('is-disabled', !enabled);
+    setAttr(this.termBtn, 'aria-pressed', String(open));
+    this.termBtn.classList.toggle('is-on', open);
+    setText(this.termLabel, open ? 'Fechar terminal' : 'Abrir terminal');
+    setTitle(
+      this.termBtn,
+      open
+        ? 'Fechar o terminal somente leitura (T)'
+        : !available
+          ? TERMINAL_UNAVAILABLE_HINT
+          : !live
+            ? 'O agente já saiu do escritório.'
+            : 'Ver a conversa desta sessão como no terminal do Claude Code, só para leitura (T)',
+    );
   }
 
   private renderStats(a: AgentInfo, now: number): void {
@@ -674,8 +723,11 @@ export class Drawer implements UiComponent {
   private mode: 'agent' | 'room' | null = null;
   private heading: HTMLElement;
 
-  constructor(private ctx: UiContext) {
-    this.agentView = new AgentView(ctx);
+  constructor(
+    private ctx: UiContext,
+    terminal: TerminalControl,
+  ) {
+    this.agentView = new AgentView(ctx, terminal);
     this.roomView = new RoomView(ctx);
     this.heading = h('span', { class: 'ui-drawer__kind' });
     const close = iconButton(ICONS.close, 'Fechar detalhes (Esc)', () => ctx.select(null));

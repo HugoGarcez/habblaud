@@ -3981,3 +3981,831 @@
 .ui-feed__item.is-social .ui-feed__text {
   color: #ffe6a3;
 }
+
+/* ---------------------------------------------------------------- terminal somente leitura */
+
+/* Botão na gaveta do agente: uma "linha de terminal" com o prompt em pixels. */
+.ui-term-cta {
+  width: 100%;
+  height: 34px;
+  margin-top: 12px;
+  gap: 8px;
+  padding: 0 6px 0 10px;
+  background: rgba(5, 7, 12, 0.42);
+}
+
+.ui-term-cta .ui-term-cta__icon {
+  display: grid;
+}
+
+.ui-term-cta .ui-term-cta__icon .ui-px-icon {
+  width: 20px;
+  height: 18px;
+  color: var(--ui-accent);
+}
+
+.ui-term-cta__label {
+  font: 500 14px/1 var(--font-px);
+  letter-spacing: 0.02em;
+}
+
+.ui-term-cta__ro {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ui-faint);
+}
+
+.ui-term-cta .ui-kbd {
+  min-width: 18px;
+  height: 18px;
+  font-size: 10.5px;
+}
+
+.ui-term-cta.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ui-term-cta.is-disabled:hover {
+  background: rgba(5, 7, 12, 0.42);
+  border-color: var(--ui-line-strong);
+}
+
+/* Janela flutuante: centralizada na área livre (entre a barra lateral e a gaveta) quando cabe; o escritório
+   continua visível e animando em volta. Largura ≈ min(920px, 72vw), sem ficar estreita demais. */
+.ui-term {
+  --term-w: min(920px, 72vw, max(560px, calc(100vw - var(--free-left) - var(--free-right) - 16px)));
+  --term-h: min(72vh, calc(100vh - var(--top-h) - var(--gap) * 2));
+  --term-fg: #d5dceb;
+  --term-dim: #8a93a8;
+  position: fixed;
+  z-index: 30;
+  top: calc(var(--top-h) + var(--gap) + (100vh - var(--top-h) - var(--gap) * 2 - var(--term-h)) / 2);
+  left: clamp(var(--gap), calc((var(--free-left) + 100vw - var(--free-right) - var(--term-w)) / 2), calc(100vw - var(--term-w) - var(--gap)));
+  width: var(--term-w);
+  height: var(--term-h);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: rgba(10, 12, 18, 0.96);
+  -webkit-backdrop-filter: blur(14px) saturate(1.25);
+  backdrop-filter: blur(14px) saturate(1.25);
+  border: 1px solid var(--ui-line-strong);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.35),
+    0 28px 70px rgba(5, 7, 12, 0.62),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  color: var(--term-fg);
+  transition:
+    left 0.32s var(--ease),
+    width 0.32s var(--ease);
+  animation: ui-term-in 0.26s var(--ease);
+}
+
+.ui-term:focus {
+  outline: none;
+}
+
+@keyframes ui-term-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.985);
+  }
+}
+
+/* Cromo da janela: Pixelify nos rótulos fixos; nome, papel e sala na fonte do sistema (legíveis). */
+.ui-term__bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  height: 42px;
+  padding: 0 6px 2px 12px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+/* Fio segmentado em pixels sob a barra, como as barras de uso. */
+.ui-term__bar::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: repeating-linear-gradient(90deg, rgba(124, 200, 255, 0.32) 0 4px, transparent 4px 5px);
+}
+
+.ui-term__icon {
+  display: grid;
+  flex: none;
+  color: var(--ui-accent);
+}
+
+.ui-term__kind {
+  flex: none;
+  font: 500 13.5px/1 var(--font-px);
+  letter-spacing: 0.02em;
+  color: var(--ui-muted);
+}
+
+.ui-term__who {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+  margin-left: 2px;
+  padding-left: 10px;
+  border-left: 1px solid var(--ui-line);
+}
+
+.ui-term__name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 700 13.5px/1.2 var(--font-ui);
+  color: #f3f6fc;
+}
+
+.ui-term__who .ui-role {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ui-term__room {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--ui-muted);
+}
+
+.ui-term.is-gone .ui-term__who {
+  opacity: 0.6;
+}
+
+.ui-term__reconn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  font-size: 11.5px;
+  color: #ffcf8a;
+}
+
+.ui-term__reconn::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: var(--st-waiting);
+  animation: ui-blink 1s steps(2, jump-none) infinite;
+}
+
+.ui-term__ro {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 5px;
+  background: rgba(255, 181, 71, 0.1);
+  border: 1px solid rgba(255, 181, 71, 0.3);
+  font: 500 12px/1 var(--font-px);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: #ffd9a3;
+  cursor: default;
+}
+
+.ui-term__ro-icon {
+  display: grid;
+}
+
+.ui-term__ro-icon .ui-px-icon {
+  width: 8px;
+  height: 9px;
+}
+
+.ui-term__close {
+  flex: none;
+}
+
+/* Conversa */
+.ui-term__body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.ui-term__scroll {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* A compensação ao descartar linhas antigas é feita no JS: sem a ancoragem automática do navegador. */
+  overflow-anchor: none;
+  padding: 14px 16px 18px;
+  font: 12.5px/1.55 var(--font-mono);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(160, 176, 210, 0.25) transparent;
+}
+
+.ui-root .ui-term__scroll:focus-visible {
+  outline-offset: -2px;
+  border-radius: 0;
+}
+
+.ui-term__list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ui-term__row {
+  display: grid;
+  grid-template-columns: 2ch minmax(0, 1fr);
+  column-gap: 1ch;
+  align-items: start;
+}
+
+.ui-term__mark {
+  color: var(--term-dim);
+  user-select: none;
+}
+
+/* "⏺" sempre como texto (nunca emoji colorido): a cor indica o estado da ferramenta. */
+.ui-term__dot {
+  font-family: var(--font-mono), 'Apple Symbols', 'Segoe UI Symbol', 'Noto Sans Symbols 2', sans-serif;
+  font-variant-emoji: text;
+}
+
+.ui-term__col {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ui-term__pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ui-term__more {
+  display: block;
+  margin-top: 1px;
+  color: var(--term-dim);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  border-radius: 3px;
+}
+
+.ui-term__more:hover {
+  color: var(--ui-accent);
+}
+
+/* Prompt do usuário: "> texto" sobre fundo levemente destacado (alinhado às colunas das outras linhas). */
+.ui-term__row--user {
+  margin-inline: -8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.065);
+}
+
+.ui-term__row--user .ui-term__col {
+  color: #f0f3fa;
+}
+
+.ui-term__row--assistant .ui-term__dot {
+  color: #f0f3fa;
+}
+
+/* Ferramenta: ⏺ verde (ok), vermelho (erro) ou apagado (ainda sem resultado). */
+.ui-term__row--tool .ui-term__dot {
+  color: var(--st-working);
+}
+
+.ui-term__row--tool.is-pending .ui-term__dot {
+  color: var(--term-dim);
+  opacity: 0.55;
+}
+
+.ui-term__row--tool.is-error .ui-term__dot {
+  color: var(--lv-crit);
+}
+
+.ui-term__title {
+  color: #c9d1e2;
+}
+
+.ui-term__title strong {
+  font-weight: 700;
+  color: #f3f6fc;
+}
+
+.ui-term__in {
+  margin-top: 4px;
+  padding: 5px 9px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--ui-line);
+  color: #c3cbdc;
+}
+
+.ui-term__in--command {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 1ch;
+}
+
+.ui-term__in--command .ui-term__more {
+  grid-column: 2;
+}
+
+.ui-term__dollar {
+  color: var(--st-working);
+  user-select: none;
+}
+
+.ui-term__in--json,
+.ui-term__in--text {
+  color: var(--term-dim);
+}
+
+.ui-term__in--diff {
+  padding: 4px 0;
+}
+
+.ui-term__in--diff .ui-term__more {
+  margin-left: 9px;
+}
+
+.ui-term__dl {
+  display: block;
+  padding: 0 9px;
+}
+
+.ui-term__dl.is-add {
+  background: rgba(79, 209, 139, 0.13);
+  color: #a6ecc4;
+}
+
+.ui-term__dl.is-del {
+  background: rgba(255, 107, 107, 0.13);
+  color: #ffb3aa;
+}
+
+.ui-term__dl.is-hunk {
+  color: #8fb8ff;
+}
+
+/* "  ⎿  resultado" */
+.ui-term__result {
+  display: grid;
+  grid-template-columns: 3ch minmax(0, 1fr);
+  margin-top: 2px;
+  color: #a9b2c4;
+}
+
+.ui-term__result.is-error {
+  color: #ff9b8f;
+}
+
+.ui-term__elbow {
+  padding-left: 0.5ch;
+  color: var(--term-dim);
+  user-select: none;
+}
+
+.ui-term__out {
+  min-width: 0;
+}
+
+.ui-term__empty,
+.ui-term__cut {
+  font-style: italic;
+  color: var(--term-dim);
+}
+
+.ui-term__cut {
+  display: block;
+}
+
+.ui-term__row--orphan .ui-term__result {
+  margin-top: 0;
+}
+
+/* Raciocínio e eventos da sessão: apagados. */
+.ui-term__think {
+  font-style: italic;
+  color: var(--term-dim);
+}
+
+button.ui-term__think:hover,
+.ui-term__sys-more:hover {
+  color: var(--ui-muted);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.ui-term__think-text {
+  margin-top: 4px;
+  padding-left: 1ch;
+  border-left: 2px solid var(--ui-line-strong);
+  white-space: pre-wrap;
+  font-style: italic;
+  color: var(--term-dim);
+}
+
+.ui-term__row--thinking .ui-term__mark {
+  color: #c08a6e;
+}
+
+.ui-term__row--system {
+  color: var(--term-dim);
+}
+
+.ui-term__row--system.is-warn {
+  color: #ffcf8a;
+}
+
+.ui-term__row--system.is-error {
+  color: #ff9b8f;
+}
+
+.ui-term__row--system.is-warn .ui-term__mark,
+.ui-term__row--system.is-error .ui-term__mark {
+  color: inherit;
+}
+
+.ui-term__sys-text {
+  white-space: pre-wrap;
+}
+
+.ui-term__sys-more {
+  color: inherit;
+  opacity: 0.85;
+}
+
+.ui-term__sys-detail {
+  margin-top: 4px;
+  white-space: pre-wrap;
+  opacity: 0.85;
+}
+
+/* Estados: conversa anterior cortada, carregando/vazio, erro, reconexão. */
+.ui-term__note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  font: 11.5px/1 var(--font-ui);
+  color: var(--ui-faint);
+  white-space: nowrap;
+}
+
+.ui-term__note::before,
+.ui-term__note::after {
+  content: '';
+  flex: 1;
+  height: 2px;
+  background: repeating-linear-gradient(90deg, var(--ui-line-strong) 0 4px, transparent 4px 6px);
+}
+
+.ui-term__placeholder {
+  padding: 18% 12px 0;
+  text-align: center;
+  font: 13px/1.4 var(--font-ui);
+  color: var(--ui-faint);
+}
+
+.ui-term__alert {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  margin: 12px 12px 0;
+  padding: 8px 8px 8px 12px;
+  border-radius: 8px;
+  background: rgba(255, 107, 107, 0.1);
+  border: 1px solid rgba(255, 107, 107, 0.45);
+  font-size: 12.5px;
+  color: #ffd1cb;
+  animation: ui-alert-in 0.3s var(--ease);
+}
+
+.ui-term__alert-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.ui-term__new {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 6px;
+  background: #2f7fd1;
+  border: 1px solid #58a6f2;
+  font: 500 13px/1 var(--font-px);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: #fff;
+  box-shadow:
+    inset 0 -2px 0 rgba(0, 0, 0, 0.22),
+    0 6px 16px rgba(5, 7, 12, 0.5);
+  animation: ui-term-new 0.2s var(--ease);
+}
+
+.ui-root .ui-term__new {
+  color: #fff;
+}
+
+.ui-term__new:hover {
+  background: #3a8ee3;
+}
+
+@keyframes ui-term-new {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 6px);
+  }
+}
+
+/* Rodapé: linha de estado do Claude Code e a caixa de entrada (desabilitada). */
+.ui-term__foot {
+  flex: none;
+  padding: 8px 12px 12px;
+  border-top: 1px solid var(--ui-line);
+  background: rgba(255, 255, 255, 0.02);
+  font: 12.5px/1.5 var(--font-mono);
+}
+
+.ui-term__status {
+  display: flex;
+  align-items: baseline;
+  gap: 1ch;
+  min-width: 0;
+  padding: 0 4px 8px;
+  color: var(--term-dim);
+}
+
+.ui-term__glyph {
+  flex: none;
+  width: 2ch;
+  text-align: center;
+  font-variant-emoji: text;
+}
+
+.ui-term__status-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-term__status-time {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  color: var(--term-dim);
+}
+
+.ui-term__status.is-working .ui-term__glyph {
+  color: #e8875b;
+}
+
+.ui-term__status.is-working .ui-term__status-text {
+  color: #f2b394;
+}
+
+.ui-term__status.is-waiting .ui-term__status-text {
+  color: var(--st-waiting);
+}
+
+.ui-term__status.is-shell .ui-term__status-text,
+.ui-term__status.is-shell .ui-term__status-time {
+  color: var(--st-shell);
+}
+
+.ui-term__status.is-ended {
+  color: var(--ui-faint);
+}
+
+.ui-term__prompt {
+  display: grid;
+  grid-template-columns: 2ch minmax(0, 1fr);
+  column-gap: 1ch;
+  align-items: center;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--ui-line-strong);
+  cursor: not-allowed;
+}
+
+.ui-term__caret {
+  color: var(--term-dim);
+}
+
+.ui-term__input {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  font: inherit;
+  color: var(--ui-muted);
+  text-overflow: ellipsis;
+  cursor: not-allowed;
+}
+
+.ui-term__input::placeholder {
+  color: var(--ui-faint);
+  opacity: 1;
+}
+
+/* Markdown das respostas (ui/markdown.ts). */
+.ui-md > * + * {
+  margin-top: 8px;
+}
+
+.ui-md__p,
+.ui-md__h,
+.ui-md__item {
+  white-space: pre-wrap;
+}
+
+.ui-md__h {
+  font-weight: 700;
+  color: #f3f6fc;
+}
+
+.ui-md__h1 {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.ui-md__h2 {
+  color: #cfe9ff;
+}
+
+.ui-md strong {
+  font-weight: 700;
+  color: #f3f6fc;
+}
+
+.ui-md em {
+  font-style: italic;
+}
+
+.ui-md__code {
+  font: inherit;
+  color: #b9b4ff;
+}
+
+.ui-md__link {
+  color: var(--ui-accent);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: help;
+}
+
+.ui-md__block {
+  position: relative;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--ui-line);
+}
+
+.ui-md__lang {
+  position: absolute;
+  top: 3px;
+  right: 8px;
+  font-size: 10.5px;
+  color: var(--ui-faint);
+  user-select: none;
+  pointer-events: none;
+}
+
+/* Blocos de código e tabelas rolam por dentro (a página nunca ganha rolagem horizontal). */
+.ui-md__pre,
+.ui-md__table {
+  margin: 0;
+  overflow-x: auto;
+  white-space: pre;
+  overflow-wrap: normal;
+  font: inherit;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(160, 176, 210, 0.25) transparent;
+}
+
+.ui-md__pre {
+  padding: 7px 10px;
+  color: #d0d8e8;
+}
+
+.ui-md__lang + .ui-md__pre {
+  padding-top: 18px;
+}
+
+.ui-md__table {
+  color: #c9d1e2;
+}
+
+.ui-md__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ui-md__li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 1ch;
+  padding-left: calc(var(--d, 0) * 2ch);
+}
+
+.ui-md__mark {
+  min-width: 1ch;
+  color: var(--term-dim);
+}
+
+.ui-md__item {
+  min-width: 0;
+}
+
+.ui-md__quote {
+  margin: 0;
+  padding-left: 1.2ch;
+  border-left: 2px solid var(--ui-line-strong);
+  white-space: pre-wrap;
+  font-style: italic;
+  color: var(--ui-muted);
+}
+
+.ui-md__rule {
+  height: 2px;
+  margin: 10px 0;
+  border: 0;
+  background: repeating-linear-gradient(90deg, var(--ui-line-strong) 0 4px, transparent 4px 6px);
+}
+
+/* Telas estreitas: ocupa a área abaixo da barra superior, sobre a gaveta. Celular: tela cheia. */
+@media (max-width: 900px) {
+  .ui-term {
+    z-index: 42;
+    top: calc(var(--top-h) + var(--gap));
+    right: var(--gap);
+    bottom: var(--gap);
+    left: var(--gap);
+    width: auto;
+    height: auto;
+  }
+}
+
+@media (max-width: 600px) {
+  .ui-term {
+    z-index: 58;
+    inset: 0;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .ui-term__kind,
+  .ui-term__room,
+  .ui-term-cta__ro {
+    display: none;
+  }
+
+  .ui-term__ro {
+    padding: 0 6px;
+    font-size: 11px;
+  }
+
+  .ui-term__scroll {
+    padding: 12px 12px 16px;
+    font-size: 12px;
+  }
+
+  .ui-term__foot {
+    padding: 6px 10px 10px;
+  }
+}

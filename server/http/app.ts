@@ -3,8 +3,9 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { SourceInfo } from '../../shared/types';
 import type { AccountsService } from '../accounts/service';
 import type { Office } from '../model/office';
-import { isJsonContentType } from './guard';
+import { isJsonContentType, isLoopbackHost } from './guard';
 import type { Hub } from './sse';
+import type { TerminalStreams } from './terminal';
 
 export interface ApiDeps {
   office: Office;
@@ -13,7 +14,14 @@ export interface ApiDeps {
   sources: () => SourceInfo[];
   version: string;
   inDocker: boolean;
+  /** Terminal somente leitura ligado (ServerConfig.terminal: só com bind local). */
+  terminal?: boolean;
+  /** Streams do terminal; sem eles o recurso fica desligado mesmo com `terminal`. */
+  terminals?: TerminalStreams;
 }
+
+/** GET /api/agents/:id/terminal (ids nunca contêm '/'). */
+const TERMINAL_ROUTE = /^\/api\/agents\/([^/]+)\/terminal$/;
 
 const MAX_BODY = 256 * 1024;
 
@@ -71,6 +79,7 @@ function readJson(req: IncomingMessage): Promise<unknown> {
 /** Devolve um handler que trata /api/* e responde false para o resto. */
 export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: ServerResponse, url: URL) => boolean {
   const { office, hub, accounts } = deps;
+  const terminals = deps.terminal ? deps.terminals : undefined;
 
   const methodNotAllowed = (res: ServerResponse, allow: string) => {
     res.setHeader('Allow', allow);
@@ -114,9 +123,29 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
           version: deps.version,
           demo: office.isDemo(),
           docker: deps.inDocker,
+          terminal: !!terminals,
           sources: deps.sources(),
           accounts: accounts.entries().map((a) => ({ id: a.id, usageStatus: accounts.usageView(a.id).status })),
         });
+      }
+      return true;
+    }
+    const terminalMatch = TERMINAL_ROUTE.exec(path);
+    if (terminalMatch) {
+      if (method !== 'GET') methodNotAllowed(res, 'GET');
+      else if (!terminals) {
+        sendJson(res, 403, { error: 'terminal somente leitura desligado: ele só funciona com o CodeTown acessível apenas pelo próprio computador' });
+      } else if (!isLoopbackHost(req.headers.host)) {
+        sendJson(res, 403, { error: 'o terminal somente leitura só abre pelo próprio computador (http://localhost ou http://127.0.0.1)' });
+      } else {
+        let id: string;
+        try {
+          id = decodeURIComponent(terminalMatch[1]);
+        } catch {
+          sendJson(res, 400, { error: 'id inválido' });
+          return true;
+        }
+        terminals.attach(req, res, id);
       }
       return true;
     }

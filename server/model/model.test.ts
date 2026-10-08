@@ -290,4 +290,11 @@ describe('Office', () => {
     expect(off.meta.demo).toBe(false);
     expect(off.agents.map((a) => a.id)).toEqual(['acc:1']);
   });
+
+  it('meta.terminal: só com o terminal somente leitura ligado', () => {
+    expect(makeOffice().office.commit().snapshot.meta.terminal).toBe(false);
+    const deps = { names: new NameStore(null), version: 't', startedAt: 0, accounts: () => [], sources: () => [], accountName: () => undefined };
+    expect(new Office({ ...deps, terminal: true }).commit().snapshot.meta.terminal).toBe(true);
+    expect(new Office({ ...deps, terminal: false }).commit().snapshot.meta.terminal).toBe(false);
+  });
 });

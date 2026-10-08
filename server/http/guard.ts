@@ -46,6 +46,16 @@ function isLoopbackName(name: string): boolean {
 }
 
 /**
+ * Cabeçalho Host local (`localhost`, `*.localhost`, 127.x ou `[::1]`; porta ignorada)? Usado pelo terminal
+ * somente leitura, que só atende quem abriu o CodeTown pelo próprio computador: um IP da rede ou um nome
+ * de CODETOWN_ALLOWED_HOSTS (proxy, túnel) não serve. Ausente ou inválido: false.
+ */
+export function isLoopbackHost(host: string | undefined): boolean {
+  const name = hostnameOf(host);
+  return !!name && isLoopbackName(name);
+}
+
+/**
  * Host aceito? IP literal (não há DNS envolvido, logo não há rebinding), `localhost`/`*.localhost`
  * (os navegadores resolvem sempre para o loopback) ou um nome de CODETOWN_ALLOWED_HOSTS.
  * Sem cabeçalho Host (HTTP/1.0, ferramentas de linha de comando): aceito — navegadores sempre enviam.

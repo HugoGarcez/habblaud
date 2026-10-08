@@ -5,11 +5,12 @@
 import http from 'node:http';
 import { join } from 'node:path';
 import { AccountsService } from './accounts/service';
-import { loadConfig } from './config';
+import { loadConfig, terminalOffReason } from './config';
 import { createApiHandler, sendJson } from './http/app';
 import { createRequestGuard } from './http/guard';
 import { Hub } from './http/sse';
 import { createStaticHandler } from './http/static';
+import { TerminalStreams } from './http/terminal';
 import { errMsg, log } from './log';
 import { NameStore } from './model/names';
 import { Office } from './model/office';
@@ -40,11 +41,14 @@ const office = new Office({
   accounts: (sessions) => accounts.list(sessions),
   sources: () => late.watcher?.sources() ?? [],
   accountName: (id) => accounts.find(id)?.detected.name,
+  terminal: config.terminal,
 });
 const watcher = new ClaudeWatcher({ accounts, office, inDocker: config.inDocker });
 late.office = office;
 late.watcher = watcher;
 const hub = new Hub(office);
+// Terminal somente leitura: só existe com bind local (ver terminalOffReason em config.ts).
+const terminals = config.terminal ? new TerminalStreams({ office, transcriptPathOf: (id) => watcher.transcriptPathOf(id) }) : undefined;
 
 if (config.demo) office.setDemo(true);
 watcher.start();
@@ -65,6 +69,8 @@ const api = createApiHandler({
   sources: () => watcher.sources(),
   version: config.version,
   inDocker: config.inDocker,
+  terminal: config.terminal,
+  terminals,
 });
 
 const server = http.createServer();
@@ -127,6 +133,8 @@ server.listen(config.port, config.host, () => {
     log.info(`   Conta ${a.detected.short} (${a.id}): ${src?.sessions ?? 0} sessão(ões) aberta(s) · uso: ${usage} · ${a.dir}`);
   }
   if (office.isDemo()) log.info('   Modo demonstração ligado (agentes simulados misturados aos reais).');
+  if (config.terminal) log.info('   Terminal somente leitura: ligado (acesso só local).');
+  else log.info(`   Terminal somente leitura: desligado (${terminalOffReason(process.env, config.host, config.inDocker)}).`);
 });
 
 let shuttingDown = false;
@@ -138,6 +146,7 @@ function shutdown(signal: string): void {
   watcher.stop();
   accounts.stop();
   hub.stop();
+  terminals?.stop();
   names.flush();
   void closeVite?.();
   server.close(() => process.exit(0));

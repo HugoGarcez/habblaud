@@ -184,7 +184,8 @@ Depois abra `http://<ip-do-computador>:4747` no celular (no macOS: `ipconfig get
 `ipconfig getifaddr en1`). No modo Node, use `CODETOWN_HOST=0.0.0.0 npm start`.
 
 > ⚠️ Com isso, qualquer aparelho da rede vê a atividade dos agentes (comandos, arquivos, títulos das sessões). Use
-> só em redes de confiança. Para voltar: apague o `.env` e rode `npm run docker:up -- --no-build`.
+> só em redes de confiança. O [terminal somente leitura](#terminal-somente-leitura) fica desligado enquanto a porta
+> estiver exposta. Para voltar: apague o `.env` e rode `npm run docker:up -- --no-build`.
 
 ### Atualizar
 
@@ -239,6 +240,18 @@ um **chip colorido com a letra da conta** (C, D…).
 
 **Atalhos:** `/` busca · `F` seguir o selecionado · `O` ou `0` visão geral · `Esc` limpar seleção ·
 `[` painel lateral · `]` feed · setas/`WASD` mover · `+` `-` zoom · `?` ajuda.
+
+### Terminal somente leitura
+
+Clique num agente e use **Abrir terminal** para ver a conversa da sessão como o Claude Code mostra: os prompts, as
+respostas, cada ferramenta chamada (com o comando ou o diff) e o resultado, atualizados ao vivo. É só para ler: não
+dá para digitar nem interferir no agente. Vale para agentes principais e subagentes; no modo demonstração, a conversa
+é fictícia.
+
+Como o terminal mostra a conversa inteira, ele só existe quando o CodeTown está acessível **apenas pelo próprio
+computador** (o padrão) e só abre por `http://localhost` ou `http://127.0.0.1`. Com a porta liberada para a rede
+(`CODETOWN_BIND=0.0.0.0` ou `CODETOWN_HOST=0.0.0.0`), ele fica desligado. Detalhes em
+[Privacidade e segurança](#privacidade-e-segurança).
 
 ### Modo demonstração
 
@@ -301,18 +314,19 @@ Tudo funciona sem configurar nada. Se precisar ajustar, use variáveis de ambien
 | Variável | Padrão | Para quê |
 | --- | --- | --- |
 | `CODETOWN_PORT` | `4747` | Porta HTTP (no Docker, a porta publicada no host). |
-| `CODETOWN_HOST` | `127.0.0.1` | Interface do servidor no modo Node. |
-| `CODETOWN_BIND` | `127.0.0.1` | Só Docker (no `.env`): onde a porta é publicada. `0.0.0.0` libera a rede local. |
+| `CODETOWN_HOST` | `127.0.0.1` | Interface do servidor no modo Node. Fora de `127.0.0.1`/`localhost`, o terminal somente leitura fica desligado. |
+| `CODETOWN_BIND` | `127.0.0.1` | Só Docker (no `.env`): onde a porta é publicada. `0.0.0.0` libera a rede local (e desliga o terminal somente leitura). |
 | `CODETOWN_CLAUDE_DIRS` | detecção automática | Pastas das contas, separadas por vírgula (ex.: `/caminho/conta1,/caminho/conta2`). |
 | `CODETOWN_DATA_DIR` | `~/.codetown` | Onde o CodeTown guarda os próprios dados (nomes dos personagens). |
 | `CODETOWN_USAGE_DIR` | `~/.codetown/usage` | Onde o tap de statusline grava o uso. |
 | `CODETOWN_DEMO` | desligado | `1` liga o modo demonstração ao iniciar. |
 | `CODETOWN_ALLOWED_HOSTS` | — | Nomes extras aceitos no endereço (ex.: `meu-mac.local`), além de `localhost` e IPs. |
+| `CODETOWN_TERMINAL` | ligado (só com acesso local) | `0` desliga o terminal somente leitura. Com a porta exposta ele já fica desligado, sem opção de ligar. |
 | `CODETOWN_ACCOUNTS` | — | JSON para personalizar nome, letra ou cor, casado pelo nome da pasta da conta. Ex.: `[{"id":".claude-conta2","name":"Trabalho","short":"T","color":"#5cc97b"}]`. |
 
-**No Docker**, valem `CODETOWN_PORT`, `CODETOWN_BIND`, `CODETOWN_ALLOWED_HOSTS` e `CODETOWN_DEMO` (no `.env` ou no
-ambiente) e `CODETOWN_CLAUDE_DIRS`, `CODETOWN_USAGE_DIR` e `CODETOWN_ACCOUNTS` (lidas pelo `docker:up` no host); as
-demais ficam fixas dentro do container. Opções: `npm run docker:up -- --no-build` (sobe sem reconstruir),
+**No Docker**, valem `CODETOWN_PORT`, `CODETOWN_BIND`, `CODETOWN_ALLOWED_HOSTS`, `CODETOWN_DEMO` e `CODETOWN_TERMINAL`
+(no `.env` ou no ambiente) e `CODETOWN_CLAUDE_DIRS`, `CODETOWN_USAGE_DIR` e `CODETOWN_ACCOUNTS` (lidas pelo `docker:up`
+no host); as demais ficam fixas dentro do container. Opções: `npm run docker:up -- --no-build` (sobe sem reconstruir),
 `npm run docker:down` (para) e `npm run docker:logs` (acompanha os logs).
 
 ## Como funciona
@@ -354,7 +368,8 @@ scripts/  build do servidor, docker-up, tap de statusline (+ instalador) e scree
 | `GET /api/stream` | SSE com os eventos `snapshot`, `feed` e `notice` (formato em `shared/types.ts`). |
 | `GET /api/snapshot` | Estado atual do escritório. |
 | `GET /api/agents/:id` | Detalhes de um agente, com até 200 atividades. |
-| `GET /api/health` | Saúde: versão, demonstração, Docker, fontes e status de uso de cada conta. |
+| `GET /api/agents/:id/terminal` | SSE do terminal somente leitura (eventos `init` e `append`); só com acesso local. |
+| `GET /api/health` | Saúde: versão, demonstração, Docker, terminal, fontes e status de uso de cada conta. |
 | `POST /api/demo` | `{"enabled": true \| false}` liga ou desliga os agentes simulados. |
 
 Mais detalhes do servidor em [`server/README.md`](server/README.md).
@@ -389,8 +404,14 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
   `sk-…`, `ghp_…`, `AKIA…`, JWTs, senhas em URLs) viram `***` antes de chegar ao navegador.
 - **Protegido contra sites maliciosos:** o servidor recusa endereços que não sejam `localhost`/IP (DNS rebinding) e
   `POST` vindos de outras origens (CSRF), e não deixa a página ser embutida em outros sites.
+- **Terminal somente leitura só local:** a conversa completa das sessões só sai do servidor com o CodeTown acessível
+  apenas pelo próprio computador (`CODETOWN_HOST` local no Node; `CODETOWN_BIND` local no Docker) — não há como
+  ligá-lo com a porta exposta — e cada pedido precisa vir por `localhost`/`127.0.0.1`: IPs da rede e nomes de
+  `CODETOWN_ALLOWED_HOSTS` (proxies, túneis) são recusados. Segredos são mascarados e textos longos truncados antes
+  de chegar ao navegador; no modo demonstração, a conversa é fictícia. `CODETOWN_TERMINAL=0` desliga de vez.
 - **O que aparece na tela:** resumos das atividades (ferramenta, arquivo, comando ou consulta), títulos das sessões,
-  tarefas e estatísticas. Não exponha a porta em redes em que você não confia.
+  tarefas e estatísticas (e, no terminal somente leitura, a conversa). Não exponha a porta em redes em que você não
+  confia.
 
 ## Desenvolvimento
 
@@ -449,6 +470,17 @@ Confira se criou o `.env` com `CODETOWN_BIND=0.0.0.0` e recriou o container (`np
 o celular está no mesmo Wi-Fi e se o firewall do computador permite conexões na porta 4747. Por IP funciona direto;
 para abrir por um nome (ex.: `meu-mac.local`), acrescente `CODETOWN_ALLOWED_HOSTS=meu-mac.local` (no Docker, no mesmo
 `.env`).
+
+</details>
+
+<details>
+<summary><b>O terminal somente leitura não abre</b></summary>
+
+O terminal só existe com o CodeTown acessível apenas pelo próprio computador. Confira se o `.env` não tem
+`CODETOWN_BIND=0.0.0.0` (ou, no modo Node, se não usou `CODETOWN_HOST=0.0.0.0`) nem `CODETOWN_TERMINAL=0`, e abra por
+`http://localhost:4747` (pelo IP da rede ou por um nome de `CODETOWN_ALLOWED_HOSTS` ele é recusado). No Docker, um container
+criado antes desse recurso precisa ser recriado: `npm run docker:up`. O log de inicialização (`npm run docker:logs`)
+diz se o terminal está ligado e, se não estiver, por quê.
 
 </details>
 

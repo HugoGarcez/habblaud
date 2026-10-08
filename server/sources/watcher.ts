@@ -206,6 +206,21 @@ export class ClaudeWatcher {
     );
   }
 
+  /**
+   * Caminho do transcript de um agente presente (terminal somente leitura): principal = "<conta>:<pid>"
+   * (depois de /clear ou /resume, o transcript novo); subagente = "<sessionId>:<agentId>". Undefined se o
+   * agente não é acompanhado (ou o transcript do principal ainda não foi achado).
+   */
+  transcriptPathOf(agentId: string): string | undefined {
+    const main = this.sessions.get(agentId);
+    if (main) return main.transcriptPath;
+    for (const t of this.sessions.values()) {
+      if (!agentId.startsWith(`${t.sessionId}:`)) continue;
+      for (const sub of t.subs.values()) if (sub.id === agentId) return sub.file.path;
+    }
+    return undefined;
+  }
+
   /** Espera as leituras de prefixo pendentes (testes). */
   idle(): Promise<void> {
     return this.prefixChain;

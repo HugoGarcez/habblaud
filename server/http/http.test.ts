@@ -10,7 +10,7 @@ import { NameStore } from '../model/names';
 import { Office } from '../model/office';
 import { tempDir } from '../test/fixtures';
 import { createApiHandler } from './app';
-import { createRequestGuard, hostAllowed, hostnameOf, originAllowed, parseAllowedHosts } from './guard';
+import { createRequestGuard, hostAllowed, hostnameOf, isLoopbackHost, originAllowed, parseAllowedHosts } from './guard';
 import { Hub } from './sse';
 import { createStaticHandler, IMMUTABLE, REVALIDATE } from './static';
 
@@ -136,7 +136,14 @@ describe('API HTTP', () => {
     expect(await ok.json()).toMatchObject({ agent: { id: '.claude:1' }, history: [] });
     expect((await fetch(`${env.base}/api/agents/nao-existe`)).status).toBe(404);
     const health = await (await fetch(`${env.base}/api/health`)).json();
-    expect(health).toMatchObject({ ok: true, version: '9.9.9', demo: false, docker: false, accounts: [{ id: '.claude', usageStatus: 'disabled' }] });
+    expect(health).toMatchObject({ ok: true, version: '9.9.9', demo: false, docker: false, terminal: false, accounts: [{ id: '.claude', usageStatus: 'disabled' }] });
+  });
+
+  it('terminal somente leitura desligado: 403 JSON e meta.terminal false', async () => {
+    const res = await fetch(`${env.base}/api/agents/${encodeURIComponent('.claude:1')}/terminal`);
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: string }).error).toMatch(/desligado/);
+    expect((await snapshotOf(env.base)).meta.terminal).toBe(false);
   });
 
   it('POST /api/demo liga e desliga', async () => {
@@ -238,6 +245,13 @@ describe('guarda de Host/Origin', () => {
     expect(hostAllowed(undefined, allowed)).toBe(true);
     for (const h of ['localhost:4747', 'app.localhost', '127.0.0.1:4747', '[::1]:1', '10.0.0.5:4747', 'meu-mac.local:4747']) expect(hostAllowed(h, allowed)).toBe(true);
     for (const h of ['attacker.example:4747', 'localhost.attacker.example', '127.0.0.1.nip.io', '', 'x y']) expect(hostAllowed(h, allowed)).toBe(false);
+  });
+
+  it('isLoopbackHost: só localhost, *.localhost, 127.x e ::1 (terminal somente leitura)', () => {
+    for (const h of ['localhost:4747', 'LOCALHOST', 'app.localhost:1', '127.0.0.1:4747', '127.8.9.10', '[::1]:4747']) expect(isLoopbackHost(h)).toBe(true);
+    for (const h of [undefined, '', '10.0.0.5:4747', '192.168.0.10', '0.0.0.0:4747', 'codetown.lan', 'meu-mac.local:4747', '[::]:4747', 'localhost.attacker.example', '127.0.0.1.nip.io', 'x y']) {
+      expect(isLoopbackHost(h)).toBe(false);
+    }
   });
 
   it('Origin: ausente, mesma origem ou local', () => {

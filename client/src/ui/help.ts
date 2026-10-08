@@ -60,8 +60,9 @@ const INTRO =
 const SHORTCUTS: [string[], string][] = [
   [['/'], 'Buscar agente, projeto ou conta'],
   [['F'], 'Seguir o agente selecionado'],
+  [['T'], 'Abrir ou fechar o terminal do agente selecionado (somente leitura)'],
   [['O', '0'], 'Visão geral do prédio'],
-  [['Esc'], 'Fechar a gaveta e limpar a seleção'],
+  [['Esc'], 'Fechar o terminal; depois, a gaveta e a seleção'],
   [['['], 'Mostrar ou ocultar o painel lateral'],
   [[']'], 'Mostrar ou ocultar o feed de atividade'],
   [['?'], 'Abrir esta ajuda'],
@@ -115,6 +116,9 @@ export class HelpDialog {
             h('li', { text: 'Arraste o escritório para mover a câmera e use a rolagem do mouse (ou pinça) para dar zoom.' }),
             h('li', { text: 'Clique em um personagem ou sala para ver os detalhes; duplo clique aproxima a câmera.' }),
             h('li', { text: 'Passe o mouse sobre um personagem para ver o que ele está fazendo.' }),
+            h('li', {
+              text: 'Nos detalhes de um agente, “Abrir terminal” mostra a conversa da sessão como no Claude Code, ao vivo e só para leitura (precisa do acesso local, bind 127.0.0.1).',
+            }),
           ),
           shortcuts,
         ),

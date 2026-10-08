@@ -25,6 +25,9 @@ services:
     environment:
       CODETOWN_ALLOWED_HOSTS: ${CODETOWN_ALLOWED_HOSTS:-}
       CODETOWN_DEMO: ${CODETOWN_DEMO:-}
+      # O mesmo valor da porta publicada acima: o terminal somente leitura só liga com bind local.
+      CODETOWN_BIND: ${CODETOWN_BIND:-127.0.0.1}
+      CODETOWN_TERMINAL: ${CODETOWN_TERMINAL:-}
     # Endurecimento: sistema de arquivos só leitura (exceto /data e /tmp), sem capabilities extras.
     read_only: true
     tmpfs:

@@ -46,7 +46,8 @@ enquanto o status é `shell`, o balão é "⏳ Esperando o shell: <rótulo>" (`t
 | `GET /api/stream` | SSE: eventos `snapshot`, `feed`, `notice` (ver `shared/types.ts`); ping a cada 15 s |
 | `GET /api/snapshot` | `OfficeSnapshot` atual |
 | `GET /api/agents/:id` | `AgentDetail` (histórico de até 200 atividades) |
-| `GET /api/health` | `{ok, version, demo, docker, sources, accounts:[{id, usageStatus}]}` |
+| `GET /api/agents/:id/terminal` | SSE do terminal somente leitura: eventos `init` e `append` (`TerminalMessage`); só com bind local (ver abaixo) |
+| `GET /api/health` | `{ok, version, demo, docker, terminal, sources, accounts:[{id, usageStatus}]}` |
 | `POST /api/demo` | `{enabled: boolean}` liga/desliga agentes simulados (misturados aos reais) |
 
 O snapshot (SSE e `GET /api/snapshot`) leva só as últimas 8 atividades de cada agente em `recent`; o histórico
@@ -57,6 +58,31 @@ ou um nome de `CODETOWN_ALLOWED_HOSTS` (contra DNS rebinding) → senão 403; `P
 `Content-Type: application/json` (415) e `Origin` da mesma origem ou local (403), contra CSRF. Respostas JSON
 saem com `nosniff` e `Cross-Origin-Resource-Policy: same-origin`, sem CORS.
 
+## Terminal somente leitura
+
+`GET /api/agents/:id/terminal` (`http/terminal.ts`) transmite a conversa da sessão — prompts, respostas,
+ferramentas e resultados, como o Claude Code mostra — montada do transcript por `sources/terminal.ts`, com
+segredos mascarados e textos truncados. Ao conectar (e a cada reconexão) vem um `init` com as últimas 500
+entradas dos ~4 MB finais do transcript (`truncated: true` se ficou conversa de fora); depois, polling de 400 ms
+manda `append` com as entradas novas. Transcript truncado/substituído ou trocado (`/clear` no mesmo processo) =
+`init` de novo; arquivo sumido = continua tentando. Agentes do demo não têm transcript: a conversa fictícia sai
+de `shared/demo/terminal.ts` (atualizada a cada 500 ms). Ping a cada 15 s, no máximo 8 terminais ao mesmo tempo,
+cliente com mais de 8 MB acumulados é desconectado.
+
+O recurso só existe com **bind local** (`config.ts`, `terminalOffReason`), já que mostra a conversa inteira:
+
+- Node: `CODETOWN_HOST` loopback (127.0.0.0/8, `::1`, `localhost`); `0.0.0.0`, `::` ou IP de rede desligam;
+- Docker: o processo sempre escuta em `0.0.0.0` dentro do container, então vale a porta publicada no host,
+  `CODETOWN_BIND` (o `docker-compose.yml` repassa o mesmo valor ao container): loopback liga; ausente, vazia ou
+  qualquer outra desliga;
+- `CODETOWN_TERMINAL=0` desliga sempre; nenhuma variável liga o terminal com a porta exposta.
+
+Além disso, cada requisição precisa de `Host` local (`localhost`, `*.localhost`, 127.x ou `[::1]`): IPs da rede e
+nomes de `CODETOWN_ALLOWED_HOSTS` (proxies, túneis) recebem 403. O estado sai em `meta.terminal` do snapshot e em
+`terminal` no `/api/health`. Erros antes do stream respondem JSON `{error}`: 403 (desligado ou acesso que não é
+local), 404 (agente ou transcript desconhecido), 405 (método que não é `GET`), 429 (terminais demais) e 500
+(transcript ilegível).
+
 Estáticos (`http/static.ts`): `/bundle/*` (saída do Vite com hash, `build.assetsDir`) com cache `immutable` de
 1 ano; o resto (`index.html`, `client/public` em `/assets/*`) com `no-cache` + `ETag`/`Last-Modified` (304).
 
@@ -65,7 +91,9 @@ Estáticos (`http/static.ts`): `/bundle/*` (saída do Vite com hash, `build.asse
 | Variável | Padrão | Uso |
 | --- | --- | --- |
 | `CODETOWN_PORT` | `4747` | porta HTTP |
-| `CODETOWN_HOST` | `127.0.0.1` | interface (o Docker usa `0.0.0.0`) |
+| `CODETOWN_HOST` | `127.0.0.1` | interface (o Docker usa `0.0.0.0`); fora do loopback, o terminal somente leitura fica desligado |
+| `CODETOWN_BIND` | — (Compose: `127.0.0.1`) | só Docker: interface do host onde a porta é publicada, repassada ao container; só loopback liga o terminal somente leitura |
+| `CODETOWN_TERMINAL` | — | `0` desliga o terminal somente leitura (não liga com a porta exposta) |
 | `CODETOWN_CLAUDE_DIRS` | — | config dirs separados por vírgula; substitui a detecção (`~/.claude*` com `projects/` ou `sessions/` + `CLAUDE_CONFIG_DIR`) |
 | `CODETOWN_DATA_DIR` | `~/.codetown` (Docker: `/data`) | estado do CodeTown (nomes persistidos em `names.json`) |
 | `CODETOWN_DEMO` | desligado | `1` liga o modo demonstração ao iniciar |
@@ -94,9 +122,9 @@ números novos — nunca um 0% inventado.
 
 - `config.ts`, `log.ts`, `index.ts` — configuração, logs curtos (nunca conteúdo de conversas) e entrada.
 - `accounts/` — detecção de contas (`detect.ts`, também usado pelo `docker-up`), uso (`usage.ts`), tap de statusline (`statusline.ts`), serviço (`service.ts`).
-- `sources/` — registro de sessões, leitura incremental (`tail.ts`), parser de transcripts, subagentes e o orquestrador (`watcher.ts`).
+- `sources/` — registro de sessões, leitura incremental (`tail.ts`), parser de transcripts (atividades em `transcript.ts`; conversa do terminal em `terminal.ts`), subagentes e o orquestrador (`watcher.ts`).
 - `model/` — escritório (`office.ts`), salas/slots (`rooms.ts`), nomes persistidos (`names.ts`).
-- `http/` — proteções de borda (`guard.ts`), rotas (`app.ts`), SSE (`sse.ts`), estáticos (`static.ts`).
+- `http/` — proteções de borda (`guard.ts`), rotas (`app.ts`), SSE (`sse.ts`), terminal somente leitura (`terminal.ts`), estáticos (`static.ts`).
 
 Testes: `npx vitest run server shared` (fixtures sintéticas em `server/test/fixtures.ts`; os scripts do host —
 tap de statusline, instalador e `docker-up` — são testados em `server/test/` com HOME e config dirs falsos).

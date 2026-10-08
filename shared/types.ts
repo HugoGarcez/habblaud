@@ -240,6 +240,11 @@ export interface OfficeSnapshot {
      * Uma página aberta com outro build está desatualizada e deve se recarregar. Ausente no modo dev.
      */
     build?: string;
+    /**
+     * Terminal somente leitura (GET /api/agents/:id/terminal) disponível: só quando o CodeTown não fica
+     * exposto além do próprio computador (bind local). Ausente/false = recurso desligado.
+     */
+    terminal?: boolean;
   };
 }
 
@@ -281,3 +286,52 @@ export interface AgentDetail {
   /** Histórico mais longo (máx. ~200), do mais antigo para o mais recente. */
   history: Activity[];
 }
+
+// ------------------------------------------------------------------ terminal somente leitura
+
+/**
+ * Como exibir o `input` de uma chamada de ferramenta:
+ * - command: comando de shell; diff: linhas "- antiga" / "+ nova" (Edit/Write); json: argumentos brutos; text: texto livre.
+ */
+export type TerminalInputKind = 'command' | 'diff' | 'json' | 'text';
+
+/**
+ * Uma entrada do terminal somente leitura: a conversa da sessão reconstruída do transcript JSONL,
+ * no formato em que o Claude Code a mostra. Todo texto já vem com segredos mascarados e truncado.
+ * Entradas só são acrescentadas (nunca editadas): o resultado de uma ferramenta chega depois, numa
+ * entrada 'result' que aponta para a 'tool' pelo `toolUseId`.
+ */
+export type TerminalEntry =
+  /** Prompt do usuário ou comando de barra (ex.: "/model"). */
+  | { kind: 'user'; id: string; at: number; text: string }
+  /** Texto da resposta do agente (markdown). */
+  | { kind: 'assistant'; id: string; at: number; text: string }
+  /** Bloco de raciocínio; `text` ausente quando o transcript só guarda a assinatura. */
+  | { kind: 'thinking'; id: string; at: number; text?: string }
+  /**
+   * Chamada de ferramenta. `id` = id do tool_use. `title` no estilo do Claude Code: "Bash(npm test)",
+   * "Read(server/index.ts)". `input` = argumentos relevantes (comando, diff...), quando houver.
+   */
+  | { kind: 'tool'; id: string; at: number; tool: string; title: string; input?: string; inputKind?: TerminalInputKind }
+  /** Resultado de uma ferramenta. `truncated` = o texto foi cortado (resultado longo demais). */
+  | { kind: 'result'; id: string; at: number; toolUseId: string; text: string; error?: boolean; truncated?: boolean }
+  /** Evento da sessão: compactação, interrupção, resultado em segundo plano, erro da API... */
+  | { kind: 'system'; id: string; at: number; text: string; detail?: string; level?: 'info' | 'warn' | 'error' };
+
+/** Evento `init` do stream do terminal: a conversa recente (substitui tudo o que o cliente tiver). */
+export interface TerminalInit {
+  agentId: string;
+  /** Da mais antiga para a mais recente. */
+  entries: TerminalEntry[];
+  /** Há conversa anterior que não foi carregada (o transcript é maior do que a janela lida). */
+  truncated: boolean;
+}
+
+/**
+ * Stream do terminal somente leitura (Server-Sent Events) em GET /api/agents/:id/terminal.
+ * Ao conectar (e a cada reconexão, ou se o transcript for truncado/substituído) chega um `init`;
+ * depois, `append` com as entradas novas. Erros antes do stream respondem JSON `{error}`:
+ * 403 (recurso desligado ou acesso que não é local), 404 (agente/transcript desconhecido),
+ * 429 (terminais abertos demais).
+ */
+export type TerminalMessage = { type: 'init'; data: TerminalInit } | { type: 'append'; data: TerminalEntry[] };
