@@ -46,6 +46,13 @@ const SOCIAL_HELP: [string, string][] = [
   ['🪙', 'Carteira: entram com 🪙100 (subagentes 🪙30), ganham 🪙10 por tarefa concluída, 🪙5 por pedido atendido e 🪙15 por entrega de subagente.'],
 ];
 
+/** Eventos do GitHub vistos ao vivo nas sessões (gh, git push, MCP do GitHub). */
+const GITHUB_HELP: [string, string][] = [
+  ['🎉', 'Festa: PR aberto ou mergeado, release publicada (ou CI verde depois de um alarme). Confete cai na sala, todos comemoram e uma faixa diz o motivo (~12 s).'],
+  ['🚨', 'Alarme: o CI ficou vermelho. Giroflex nos cantos da sala, chão avermelhado e um balão “!” sobre quem viu a falha, até um CI verde na sala (ou 10 min).'],
+  ['🚀', 'Push: só o aviso e o feed, sem mexer na sala.'],
+];
+
 /** O fim da espera (o servidor marca com uma atividade ✅ ou ❌). */
 const SHELL_END_HELP: [string, string][] = [
   ['🎉', 'Terminou bem: levanta, comemora com confete e uma estrela.'],
@@ -109,6 +116,7 @@ export class HelpDialog {
         h('section', {}, h('h3', { text: 'Atividades' }), iconList),
         this.shellSection(),
         this.socialSection(),
+        this.githubSection(),
         h(
           'section',
           {},
@@ -189,6 +197,24 @@ export class HelpDialog {
           'Os detalhes do agente mostram a personalidade, a carteira e o extrato; as partidas e apostas aparecem no feed.',
       }),
       h('ul', { class: 'ui-shell-legend' }, ...SOCIAL_HELP.map(([e, t]) => item(e, t))),
+    );
+  }
+
+  /** Legenda do GitHub no escritório: festa e alarme nas salas. */
+  private githubSection(): HTMLElement {
+    const item = (emoji: string, text: string) =>
+      h('li', {}, h('span', { class: 'ui-icon-legend__icon', text: emoji, attrs: { 'aria-hidden': 'true' } }), h('span', { text }));
+    return h(
+      'section',
+      { class: 'ui-help__shell' },
+      h('h3', { text: 'GitHub no escritório' }),
+      h('p', {
+        class: 'ui-help__lead',
+        text:
+          'O que os agentes fazem no GitHub (gh pr create/merge, git push, gh run watch, gh pr checks, gh release create e o MCP do GitHub) vira aviso, ' +
+          'entra no feed e anima a sala do projeto. Só o que acontece ao vivo: o que já estava nos transcripts quando o CodeTown abriu fica só no histórico.',
+      }),
+      h('ul', { class: 'ui-shell-legend' }, ...GITHUB_HELP.map(([e, t]) => item(e, t))),
     );
   }
 

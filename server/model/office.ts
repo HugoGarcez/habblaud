@@ -21,6 +21,7 @@ import type {
 } from '../../shared/types';
 import { SHELL_WAIT_TOOL, SPECIAL, type ShellOutcome } from '../../shared/activity';
 import { DemoSimulator } from '../../shared/demo/simulator';
+import { describeGitHubEvent, githubEventKey, RoomEffects, type GitHubEvent } from '../../shared/github';
 import { hash32 } from '../../shared/hash';
 import { applyPermission } from '../permissions/registry';
 import type { NameStore } from './names';
@@ -32,6 +33,8 @@ export const SLOT_COOLDOWN_MS = 30_000;
 export const NOTICE_DEDUPE_MS = 10_000;
 /** Aviso "está esperando o shell": no máximo um a cada 10 min por agente. */
 export const SHELL_NOTICE_DEDUPE_MS = 600_000;
+/** Evento do GitHub mais velho que isto (linha antiga relida) não anima a sala nem gera aviso. */
+export const GITHUB_LIVE_MS = 120_000;
 const RECENT_LIMIT = 30;
 /**
  * Atividades de cada agente que vão no snapshot (SSE). O snapshot inteiro sai a cada mudança, e o
@@ -124,7 +127,7 @@ export interface CommitResult {
   notices: Notice[];
 }
 
-type NoticeKind = 'arrive' | 'room' | 'wait' | 'deliver' | 'done' | 'leave' | 'shell' | 'shellDone';
+type NoticeKind = 'arrive' | 'room' | 'wait' | 'deliver' | 'done' | 'leave' | 'shell' | 'shellDone' | 'github';
 
 /** Pergunta ainda sem resposta (o balão dela já diz que o agente espera você). */
 function isOpenQuestion(a: Activity | undefined): boolean {
@@ -160,6 +163,8 @@ export class Office {
   private demoSnap: OfficeSnapshot | null = null;
   private booting = false;
   private bootFeed: FeedItem[] = [];
+  /** Festa/alarme das salas (eventos do GitHub). */
+  private effects = new RoomEffects();
   private seq = 0;
   private readonly now: () => number;
 
@@ -424,6 +429,26 @@ export class Office {
     const text =
       outcome === 'ok' ? `✅ ${info.name}: shell terminou em ${room} — ${job.label}` : `❌ ${info.name}: shell falhou em ${room} — ${job.label}`;
     this.notice('shellDone', id, outcome === 'ok' ? 'success' : 'warn', text, info.roomId, { dedupeKey: `${id}|shellDone|${job.id}` });
+  }
+
+  /**
+   * Evento do GitHub visto no transcript (PR aberto/mergeado, push, CI, release; ver shared/github.ts):
+   * atividade no histórico e, ao vivo, aviso e efeito na sala (festa ou alarme). `key` (o tool_use)
+   * torna a atividade idempotente numa releitura; `live: false` ou linha antiga = só histórico.
+   */
+  githubEvent(id: string, ev: GitHubEvent, opts: { key: string; at: number; live?: boolean }): void {
+    const rec = this.agents.get(id);
+    if (!rec) return;
+    const info = rec.info;
+    const now = this.now();
+    const live = opts.live !== false && !this.booting && now - opts.at < GITHUB_LIVE_MS;
+    const d = describeGitHubEvent(ev, info.name, this.roomName(info.roomId));
+    this.addActivity(id, { id: `${id}#gh:${opts.key}:${ev.kind}`, at: opts.at, ...d.activity }, true, { feed: live });
+    if (!live) return;
+    // o mesmo CI visto de novo (gh run view depois do watch) não repete o aviso por 2 min
+    const ci = ev.kind === 'ci_failed' || ev.kind === 'ci_passed';
+    this.notice('github', id, d.level, d.notice, info.roomId, { dedupeKey: `${info.roomId}|gh|${githubEventKey(ev)}`, dedupeMs: ci ? 120_000 : NOTICE_DEDUPE_MS });
+    if (this.effects.apply(info.roomId, ev, now, id)) this.markDirty();
   }
 
   /** Rótulo do shell mais antigo (Bash antes de Monitor), quantos são e o detalhe (comando). */
@@ -700,6 +725,8 @@ export class Office {
         removed = true;
       }
     }
+    // festa acabou / alarme expirou: o snapshot sai sem o efeito
+    if (this.effects.prune(now)) this.markDirty();
     if (removed) {
       const occupied = new Set([...this.agents.values()].map((r) => r.info.roomId));
       for (const id of [...this.rooms.keys()]) if (!occupied.has(id)) this.rooms.delete(id);
@@ -738,6 +765,11 @@ export class Office {
         createdAt: r.createdAt,
       }))
       .sort((a, b) => a.slot - b.slot);
+    // festa/alarme (eventos do GitHub): das salas reais ou do demo
+    for (const room of rooms) {
+      const effect = this.effects.get(room.id, now) ?? this.demoSnap?.rooms.find((r) => r.id === room.id)?.effect;
+      if (effect) room.effect = { ...effect };
+    }
     const perms = this.deps.permissions?.();
     const real = [...this.agents.values()].map((r) => applyPermission(cloneAgent(r.info), perms?.get(r.info.id)));
     const trim = (a: AgentInfo): AgentInfo => (a.recent.length > SNAPSHOT_RECENT ? { ...a, recent: a.recent.slice(-SNAPSHOT_RECENT) } : a);

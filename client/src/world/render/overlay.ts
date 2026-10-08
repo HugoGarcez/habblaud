@@ -12,6 +12,7 @@ import type { Character } from '../sim/character';
 import { shellAgeKey, shellBubbleAlpha, shellBubbleText, STORM_LIFT, unitHash } from '../sim/shell';
 import type { Sim } from '../sim/sim';
 import { buildAnim } from './anim';
+import { drawFxBanner } from './github-fx';
 import type { HeadInfo, Renderer } from './renderer';
 
 // A Pixelify Sans tem o "C" maiúsculo quase fechado (lê-se "Oopa" em vez de "Copa") em qualquer
@@ -263,6 +264,7 @@ export class Overlay {
 
     // placas e pílulas primeiro: são fixas e grandes; balões e etiquetas desviam delas
     this.drawRoomTexts(now, zoom);
+    this.drawFxBanners(now, zoom);
 
     // ---- coleta balões e etiquetas dos personagens visíveis
     const items = this.items;
@@ -396,6 +398,29 @@ export class Overlay {
       } else if (CORE_NAMES[vis.id]) {
         this.drawCorePill(CORE_NAMES[vis.id], cx, cy, colW - 8);
       }
+    }
+  }
+
+  /** Altura dos ícones sobre a cabeça, contando o balão "!" de quem viu o CI falhar (render/github-fx.ts). */
+  private iconLift(ch: Character): number {
+    const lift = headIconLift(ch);
+    return this.sim.roomFx.active.size && this.sim.roomFx.alarmOwner(ch.id, this.sim.now) ? Math.max(lift, 13) : lift;
+  }
+
+  /** Faixa da festa/alarme (eventos do GitHub) no alto do piso de cada sala com efeito. */
+  private drawFxBanners(now: number, zoom: number): void {
+    const fxs = this.sim.roomFx.active;
+    if (!fxs.size) return;
+    const { camera } = this;
+    for (const fx of fxs.values()) {
+      const room = this.sim.rooms.get(fx.roomId);
+      if (!room || !room.present || now >= fx.end) continue;
+      const r = room.layout.rect;
+      const cx = this.sx((r.x + r.w / 2) * TILE);
+      const top = this.sy((r.y + 2) * TILE) + 4;
+      if (cx < -200 || cx > camera.viewW + 200 || top < -40 || top > camera.viewH + 40) continue;
+      const b = drawFxBanner(this.ctx, fx, cx, top, r.w * TILE * zoom - 12, now, (f, t, w) => this.fit(f, t, w), (f, t) => this.measure(f, t));
+      if (b) this.place(b.x, b.y, b.w, b.h);
     }
   }
 
@@ -614,7 +639,7 @@ export class Overlay {
   private layoutBubble(b: Bubble): void {
     const { camera } = this;
     // acima do ícone da cabeça (quando houver), que é desenhado em espaço de mundo
-    const lift = Math.max(1, headIconLift(b.ch)) * this.zoom + b.extraLift;
+    const lift = Math.max(1, this.iconLift(b.ch)) * this.zoom + b.extraLift;
     const headX = this.sx(b.head.x);
     const headY = this.sy(b.head.y);
     const say = b.tone === 'say';
@@ -818,7 +843,7 @@ export class Overlay {
     const h = LABEL_H;
     const x = Math.round(this.sx(l.head.x) - w / 2);
     const below = Math.round(this.sy(l.head.feetY) + 3);
-    const iconLift = headIconLift(l.ch) * this.zoom;
+    const iconLift = this.iconLift(l.ch) * this.zoom;
     const over = Math.round(this.sy(l.head.y) - iconLift - h - 3);
     const first = l.above ? over : below;
     const second = l.above ? below : over;

@@ -29,6 +29,7 @@ import {
 } from './behavior';
 import { Character, dirOf, facing } from './character';
 import { Elevator } from './elevator';
+import { RoomFxState } from './github';
 import { RoomState } from './room-state';
 import { countShells, latestShellDone, shellLabel, shellStage, shellWaitSince, spinDir, spinPhase, yawnPhase } from './shell';
 import { SpotRegistry } from './spots';
@@ -103,6 +104,8 @@ export class Sim {
   readonly agentPatches = new Map<string, Partial<AgentInfo>>();
   /** Efeitos pontuais (confete) para o render desenhar; o render esvazia a lista. */
   readonly effects: WorldEffect[] = [];
+  /** Festa e alarme das salas (eventos do GitHub; sim/github.ts). */
+  readonly roomFx = new RoomFxState();
   private lastSnapshot: OfficeSnapshot | null = null;
   private shrinkPending = false;
   private nextHousekeeping = 0;
@@ -169,6 +172,7 @@ export class Sim {
       }
     }
     if (layoutDirty) this.relayout();
+    this.roomFx.sync(snap.rooms, input.serverTime, now);
 
     // ---- agentes
     const seen = new Set<string>();
@@ -519,6 +523,7 @@ export class Sim {
     for (const e of this.elevators) e.update(dt, now);
     this.updateRooms(now);
     this.social.update(now);
+    if (this.roomFx.active.size) this.roomFx.update(this, now);
     for (const ch of this.chars.values()) {
       if (ch.missingSince !== null && !ch.leaving && now - ch.missingSince >= MISSING_DEBOUNCE_MS) this.refreshMode(ch);
       this.runCharacter(ch, dt, now);

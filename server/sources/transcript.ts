@@ -5,6 +5,8 @@
 import { createReadStream } from 'node:fs';
 import type { Activity, AgentStats, TaskItem, TaskStatus } from '../../shared/types';
 import { describePrompt, describeShellJob, describeTool, maskSecrets, SPECIAL, truncate, type ActivityDescription } from '../../shared/activity';
+import type { GitHubEvent } from '../../shared/github';
+import { detectGitHubNotification, detectGitHubResult, githubCallOf, type GitHubCall } from './github';
 import type { ShellStart } from './shells';
 
 // ------------------------------------------------------------------ tarefas
@@ -89,7 +91,9 @@ export type TranscriptSignal =
   /** tool_result de um Bash/Monitor: `taskId` = id da tarefa em segundo plano, quando houver. */
   | { type: 'shellResult'; toolUseId: string; taskId?: string; error: boolean }
   /** Fim de turno ou interrupção: nenhum comando em primeiro plano segue rodando. */
-  | { type: 'turnEnd' };
+  | { type: 'turnEnd' }
+  /** Evento do GitHub (PR, merge, push, CI, release) no resultado de uma ferramenta; ver github.ts. */
+  | { type: 'github'; event: GitHubEvent; toolUseId: string };
 
 /** Sinais que interessam ao rastreador de shells (inclusive no começo do arquivo, lido em segundo plano). */
 const SHELL_SIGNALS = new Set<TranscriptSignal['type']>(['shellStart', 'shellResult', 'notification', 'stopped', 'turnEnd']);
@@ -131,6 +135,8 @@ export interface TranscriptState {
   toolNames: Map<string, string>;
   /** TaskStop/KillShell: tool_use id -> id da tarefa parada. */
   stopRequests: Map<string, string>;
+  /** Chamadas que podem virar evento do GitHub (gh/git push, MCP do GitHub), até o resultado. */
+  github: Map<string, GitHubCall>;
   /** Uso de tokens já contado por mensagem (as linhas de uma mensagem trazem o uso parcial). */
   usageByMsg: Map<string, { tin: number; tout: number }>;
   /** Ids das primeiras mensagens da janela lida (para não contar duas vezes ao mesclar o prefixo). */
@@ -162,6 +168,7 @@ export function createTranscriptState(opts: { trackPrefix?: boolean } = {}): Tra
     pendingTools: new Map(),
     toolNames: new Map(),
     stopRequests: new Map(),
+    github: new Map(),
     usageByMsg: new Map(),
     firstMsgIds: opts.trackPrefix ? new Set() : null,
     seq: 0,
@@ -454,6 +461,8 @@ class LineParser {
     remember(s.pendingTools, id, name, 128);
     this.changed();
     this.push(describeTool(name, input), { suffix, tool: name, toolUseId: id, msgId });
+    const gh = githubCallOf(name, input);
+    if (gh) remember(s.github, id, gh, 64);
 
     switch (name) {
       case 'Agent':
@@ -584,6 +593,13 @@ class LineParser {
     if (n.summary) sig.summary = n.summary;
     this.out.signals.push(sig);
     if (withActivity) this.push(SPECIAL.backgroundResult(n.summary));
+    // CI lançado em segundo plano: o desfecho é o código de saída da notificação
+    const gh = n.toolUseId ? this.s.github.get(n.toolUseId) : undefined;
+    if (gh?.background && n.toolUseId) {
+      this.s.github.delete(n.toolUseId);
+      const event = detectGitHubNotification(gh, n.status, n.summary, this.s.gitBranch);
+      if (event) this.out.signals.push({ type: 'github', event, toolUseId: n.toolUseId });
+    }
   }
 
   private toolResult(b: Record<string, unknown>, interrupted: boolean): void {
@@ -647,6 +663,17 @@ class LineParser {
       const sig: TranscriptSignal = { type: 'shellResult', toolUseId: id, error: isError };
       if (bgId && !isError) sig.taskId = bgId;
       this.out.signals.push(sig);
+    }
+
+    // Eventos do GitHub: em segundo plano, o desfecho chega na notificação de término.
+    const gh = s.github.get(id);
+    if (gh) {
+      s.github.delete(id);
+      if (bgId && !isError) remember(s.github, id, { ...gh, background: true }, 64);
+      else {
+        const event = detectGitHubResult(gh, { content: b.content, tur, isError, branch: s.gitBranch });
+        if (event) this.out.signals.push({ type: 'github', event, toolUseId: id });
+      }
     }
   }
 
