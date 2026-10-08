@@ -7,6 +7,7 @@ import { computeCounters, shellLine, shellWaitIn, shellWaitingAgents, waitingAge
 import { TIMELAPSE_ICONS } from './timelapse';
 import { focusPermission, nextPermissionAgent, permissionAgents } from './permission';
 import { UsageCards } from './usage';
+import { VersionChip } from './version';
 import { wordmark } from './widgets';
 
 interface CounterRefs {
@@ -35,6 +36,7 @@ export class TopBar implements UiComponent {
   /** Próximo agente do botão de shells (cliques seguidos passam por todos, do que espera há mais tempo). */
   private shellCursor = 0;
   private usage: UsageCards;
+  private version: VersionChip;
   private hadOpen = false;
   private sidebarBtn: HTMLButtonElement;
   private feedBtn: HTMLButtonElement;
@@ -96,6 +98,7 @@ export class TopBar implements UiComponent {
     this.timelapseBtn = iconButton(TIMELAPSE_ICONS.timelapse, 'Timelapse: reproduzir o dia (L)', () => ctx.toggleTimelapse(), 'ui-btn-timelapse');
     this.settingsBtn = iconButton(ICONS.settings, 'Configurações', () => ctx.toggleSettings());
     this.settingsBtn.setAttribute('aria-haspopup', 'dialog');
+    this.version = new VersionChip(ctx, this.settingsBtn);
     const viewGroup = h(
       'div',
       { class: 'ui-btn-group', role: 'group', attrs: { 'aria-label': 'Câmera' } },
@@ -124,7 +127,7 @@ export class TopBar implements UiComponent {
           'div',
           { class: 'ui-brand' },
           mark,
-          h('div', { class: 'ui-brand__text' }, wordmark(), h('div', { class: 'ui-topbar__status' }, this.pill, this.demoBadge)),
+          h('div', { class: 'ui-brand__text' }, wordmark(), h('div', { class: 'ui-topbar__status' }, this.pill, this.version.el, this.demoBadge)),
         ),
       ),
       counterWrap,
@@ -184,6 +187,7 @@ export class TopBar implements UiComponent {
     this.renderShells(c.shells, now);
 
     this.usage.render();
+    this.version.render();
 
     this.sidebarBtn.setAttribute('aria-pressed', String(this.ctx.isPanelOpen('sidebar')));
     this.feedBtn.setAttribute('aria-pressed', String(this.ctx.isPanelOpen('feed')));

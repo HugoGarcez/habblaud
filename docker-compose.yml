@@ -28,6 +28,8 @@ services:
       # O mesmo valor da porta publicada acima: o terminal somente leitura só liga com bind local.
       CODETOWN_BIND: ${CODETOWN_BIND:-127.0.0.1}
       CODETOWN_TERMINAL: ${CODETOWN_TERMINAL:-}
+      # 0 desliga a verificação de versão nova (consulta às releases no GitHub a cada 6 h).
+      CODETOWN_UPDATE_CHECK: ${CODETOWN_UPDATE_CHECK:-}
     # Endurecimento: sistema de arquivos só leitura (exceto /data e /tmp), sem capabilities extras.
     read_only: true
     tmpfs:

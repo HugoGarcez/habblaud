@@ -179,6 +179,13 @@ export class OfficeStore {
     return res.ok;
   }
 
+  /** "Verificar agora": pede ao servidor uma consulta ao GitHub (o resultado chega no snapshot). */
+  async checkUpdates(): Promise<boolean> {
+    if (this.mock) return false;
+    const res = await fetch('/api/updates/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    return res.ok;
+  }
+
   // ---------------------------------------------------------------- timelapse
 
   /** Snapshots vêm de uma fonte alternativa (o timelapse), não do SSE. */

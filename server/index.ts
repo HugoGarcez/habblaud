@@ -22,6 +22,7 @@ import { createPermissionRoutes } from './permissions/http';
 import { PermissionRegistry } from './permissions/registry';
 import { ClaudeWatcher } from './sources/watcher';
 import { createBuildReader } from './build';
+import { UpdateChecker } from './updates/checker';
 
 const config = loadConfig();
 const startedAt = Date.now();
@@ -31,6 +32,15 @@ names.load();
 
 // Office, contas e watcher se referenciam (avisos de mudança / fontes): ligação tardia.
 const late: { office?: Office; watcher?: ClaudeWatcher; permissions?: PermissionRegistry } = {};
+// Versão nova: consulta a release mais recente no GitHub a cada 6 h (CODETOWN_UPDATE_CHECK=0 desliga).
+const updates = new UpdateChecker({
+  current: config.version,
+  repo: config.repo,
+  enabled: config.updateCheck,
+  file: join(config.dataDir, 'updates.json'),
+  onChange: () => late.office?.markDirty(),
+});
+updates.load();
 const accounts = new AccountsService({
   dirs: config.claudeDirs,
   home: config.home,
@@ -49,6 +59,7 @@ const office = new Office({
   accountName: (id) => accounts.find(id)?.detected.name,
   terminal: config.terminal,
   permissions: () => late.permissions?.snapshot() ?? new Map(),
+  updates: () => updates.status(),
 });
 const watcher = new ClaudeWatcher({ accounts, office, inDocker: config.inDocker });
 late.office = office;
@@ -89,6 +100,7 @@ if (timeline) {
 }
 permissions?.start();
 stats.start();
+updates.start();
 const ticker = setInterval(() => {
   try {
     office.tick();
@@ -110,6 +122,7 @@ const api = createApiHandler({
   timeline: createTimelineHandler({ dir: timelineDir, recording: !!timeline }),
   permissions: permissions ? createPermissionRoutes(permissions) : undefined,
   stats,
+  updates,
 });
 
 const server = http.createServer();
@@ -176,6 +189,11 @@ server.listen(config.port, config.host, () => {
   else log.info(`   Terminal somente leitura: desligado (${terminalOffReason(process.env, config.host, config.inDocker)}).`);
   log.info(timeline ? `   Linha do tempo (timelapse): gravando em ${timelineDir}.` : '   Linha do tempo (timelapse): gravação desligada (CODETOWN_TIMELINE).');
   log.info(`   Responder pelo escritório: ${config.terminal ? 'ligado (precisa do hook: npm run hooks:install)' : 'desligado (mesma trava do terminal)'}.`);
+  log.info(
+    updates.enabled
+      ? `   Versão nova: verificando as releases de github.com/${config.repo} a cada 6 h.`
+      : `   Versão nova: verificação desligada (${config.repo ? 'CODETOWN_UPDATE_CHECK' : 'package.json sem repositório no GitHub'}).`,
+  );
 });
 
 let shuttingDown = false;
@@ -191,6 +209,7 @@ function shutdown(signal: string): void {
   terminals?.stop();
   timeline?.stop();
   permissions?.stop();
+  updates.stop();
   names.flush();
   void closeVite?.();
   server.close(() => process.exit(0));
