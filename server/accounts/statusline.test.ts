@@ -33,6 +33,7 @@ describe('arquivo do tap de statusline', () => {
       configDir: '/Users/fulano/.claude-conta2',
       usage: {
         source: 'statusline',
+        via: 'tap',
         fetchedAt: NOW - 60_000,
         fiveHour: { utilization: 42, resetsAt: Date.parse('2026-10-06T14:00:00Z') },
         sevenDay: { utilization: 15, resetsAt: Date.parse('2026-10-09T23:00:00Z') },
@@ -50,6 +51,43 @@ describe('arquivo do tap de statusline', () => {
     expect(parseStatuslineFile(JSON.stringify(record({ five_hour: { utilization: 'muito' }, seven_day: null })), 'x', NOW)).toBeUndefined();
     const clamped = parseStatuslineFile(JSON.stringify(record({ five_hour: { utilization: 250 } })), 'x', NOW)!;
     expect(clamped.usage.fiveHour).toEqual({ utilization: 100 });
+  });
+
+  it('arquivo do mod do Claude Code: o mesmo formato com "source": "mod", que vira usage.via', () => {
+    const fromMod = parseStatuslineFile(JSON.stringify(record({ source: 'mod' })), 'x.json', NOW);
+    const fromTap = parseStatuslineFile(JSON.stringify(record()), 'x.json', NOW)!;
+    expect(fromMod).toEqual({ ...fromTap, usage: { ...fromTap.usage, via: 'mod' } });
+    expect(fromMod?.usage.fiveHour).toEqual({ utilization: 42, resetsAt: Date.parse('2026-10-06T14:00:00Z') });
+  });
+
+  it('leitor: leitura pela metade (o $.fs.write do mod não é atômico) mantém o último registro bom e relê depois', () => {
+    const tmp = tempDir();
+    try {
+      const file = join(tmp.dir, '.claude-conta2.json');
+      const r = new StatuslineUsageReader(tmp.dir);
+      const touch = (ms: number) => utimesSync(file, new Date(NOW), new Date(NOW + ms));
+      writeFileSync(file, JSON.stringify(record({ source: 'mod' })));
+      touch(1_000);
+      expect(r.read(NOW)[0].usage.fiveHour?.utilization).toBe(42);
+      // truncado (vazio) e depois no meio da escrita: continua o 42
+      writeFileSync(file, '');
+      touch(2_000);
+      expect(r.read(NOW).map((f) => f.usage.fiveHour?.utilization)).toEqual([42]);
+      writeFileSync(file, JSON.stringify(record({ five_hour: { utilization: 50 } })).slice(0, 40));
+      touch(2_000);
+      expect(r.read(NOW).map((f) => f.usage.fiveHour?.utilization)).toEqual([42]);
+      // a escrita termina com a MESMA data (resolução do relógio): relido mesmo assim
+      writeFileSync(file, JSON.stringify(record({ source: 'mod', five_hour: { utilization: 50 } })));
+      touch(2_000);
+      expect(r.read(NOW).map((f) => f.usage.fiveHour?.utilization)).toEqual([50]);
+      // arquivo que nunca foi bom: nada (e relido a cada ciclo até ficar bom)
+      writeFileSync(join(tmp.dir, 'outra.json'), '{"accountId":');
+      expect(r.read(NOW)).toHaveLength(1);
+      writeFileSync(join(tmp.dir, 'outra.json'), JSON.stringify(record({ accountId: 'outra', configDir: '/x/outra' })));
+      expect(r.read(NOW).map((f) => f.accountId).sort()).toEqual(['.claude-conta2', 'outra']);
+    } finally {
+      tmp.cleanup();
+    }
   });
 
   it('leitor: só *.json, cache por arquivo, some quando o arquivo some', () => {

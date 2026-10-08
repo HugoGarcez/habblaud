@@ -1,8 +1,9 @@
 // Fonte 'statusline' de uso: arquivos <usageDir>/<conta>.json gravados por scripts/statusline-tap.mjs
-// a partir do JSON que o próprio Claude Code envia ao comando de statusline (campo rate_limits).
+// a partir do JSON que o próprio Claude Code envia ao comando de statusline (campo rate_limits), ou
+// pelo mod do Claude Code (mod/codetown, a partir de `$.session.usage()`), no mesmo formato.
 // Não lê credenciais nem chama API nenhuma: só arquivos pequenos, relidos a cada ~5 s.
 //
-// Formato (o tap grava SÓ isto):
+// Formato (o tap grava SÓ isto; o mod acrescenta "source": "mod", que vira AccountUsage.via):
 //   {"accountId": ".claude-conta2", "configDir": "/Users/x/.claude-conta2", "fetchedAt": 1790000000000,
 //    "five_hour": {"utilization": 42, "resets_at": 1790003600}, "seven_day": {"utilization": 15, "resets_at": 1790500000}}
 // `resets_at` vem em segundos (como o Claude Code envia); `fetchedAt` em ms.
@@ -43,6 +44,7 @@ export function parseStatuslineFile(raw: string, file: string, now: number, mtim
   if (fetched === undefined) return undefined;
   const usage = usageFromWindows({ five_hour: r.five_hour, seven_day: r.seven_day }, 'statusline', Math.min(now, fetched));
   if (!usage) return undefined;
+  usage.via = r.source === 'mod' ? 'mod' : 'tap';
   const out: StatuslineUsage = { file, usage };
   const accountId = str(r.accountId);
   const configDir = str(r.configDir);
@@ -87,16 +89,25 @@ export class StatuslineUsageReader {
         if (cached.parsed) out.push(cached.parsed);
         continue;
       }
-      let parsed: StatuslineUsage | undefined;
-      if (size > 0 && size <= MAX_FILE_BYTES) {
-        try {
-          parsed = parseStatuslineFile(readFileSync(path, 'utf8'), path, now, mtimeMs);
-        } catch {
-          parsed = undefined; // sumiu entre o stat e a leitura: tenta no próximo ciclo
-        }
+      if (size > MAX_FILE_BYTES) {
+        this.cache.set(path, { size, mtimeMs }); // grande demais: não é do tap nem do mod
+        continue;
       }
-      this.cache.set(path, { size, mtimeMs, parsed });
-      if (parsed) out.push(parsed);
+      let parsed: StatuslineUsage | undefined;
+      try {
+        parsed = parseStatuslineFile(readFileSync(path, 'utf8'), path, now, mtimeMs);
+      } catch {
+        parsed = undefined; // sumiu entre o stat e a leitura
+      }
+      if (parsed) {
+        this.cache.set(path, { size, mtimeMs, parsed });
+        out.push(parsed);
+        continue;
+      }
+      // Vazio, JSON pela metade ou ilegível: o mod grava com $.fs.write, que NÃO é atômico (o tap usa tmp +
+      // rename), então dá para pegar o arquivo no meio da escrita. Vale o último registro bom deste arquivo,
+      // e a assinatura nova não entra no cache: o arquivo é relido no próximo ciclo (são poucos bytes).
+      if (cached?.parsed) out.push(cached.parsed);
     }
     for (const path of [...this.cache.keys()]) if (!seen.has(path)) this.cache.delete(path);
     return out;

@@ -3,11 +3,11 @@ import type { AddressInfo } from 'node:net';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { OfficeSnapshot, UpdateStatus } from '../../shared/types';
+import type { ModSummary, OfficeSnapshot, PermissionRequestInfo, UpdateStatus } from '../../shared/types';
 import { AccountsService } from '../accounts/service';
 import { setQuiet } from '../log';
 import { NameStore } from '../model/names';
-import { Office } from '../model/office';
+import { Office, type OfficeDeps } from '../model/office';
 import { tempDir } from '../test/fixtures';
 import { createApiHandler, type ApiDeps } from './app';
 import { createRequestGuard, hostAllowed, hostnameOf, isLoopbackHost, originAllowed, parseAllowedHosts } from './guard';
@@ -22,7 +22,7 @@ interface Env {
   close: () => Promise<void>;
 }
 
-async function start(extra: Partial<ApiDeps> = {}): Promise<Env & { cleanup: () => void }> {
+async function start(extra: Partial<ApiDeps> = {}, officeExtra: Partial<OfficeDeps> = {}): Promise<Env & { cleanup: () => void }> {
   const tmp = tempDir();
   const dir = join(tmp.dir, '.claude');
   mkdirSync(join(dir, 'sessions'), { recursive: true });
@@ -42,6 +42,7 @@ async function start(extra: Partial<ApiDeps> = {}): Promise<Env & { cleanup: () 
     accounts: (s) => accounts.list(s),
     sources: () => [],
     accountName: () => undefined,
+    ...officeExtra,
   });
   late.office = office;
   const hub = new Hub(office, { throttleMs: 10 });
@@ -251,6 +252,71 @@ describe('API HTTP', () => {
     // Tentativa de sair da pasta cai no index.html, nunca em arquivos de fora.
     const escape = await fetch(`${env.base}/..%2F..%2Fetc%2Fpasswd`);
     expect(await escape.text()).toContain('<title>CodeTown</title>');
+  });
+});
+
+describe('GET /api/mod/summary (mod do Claude Code)', () => {
+  let env: Awaited<ReturnType<typeof start>>;
+  const perms = new Map<string, PermissionRequestInfo>();
+  const summary = async (query = ''): Promise<ModSummary> => (await (await fetch(`${env.base}/api/mod/summary${query}`)).json()) as ModSummary;
+
+  beforeEach(async () => {
+    perms.clear();
+    env = await start({}, { permissions: () => perms });
+    const now = Date.now();
+    // .claude:1 (sessão s1, /p/loja, trabalhando) vem do start(); um subagente dela espera em segundo plano.
+    env.office.addSub({ id: 's1:a1', parentId: '.claude:1', sessionId: 's1', role: 'Explore', background: true, startedAt: now });
+    env.office.setStatus('s1:a1', 'waiting', 'aprovar uma permissão');
+    // Outra sessão da mesma conta, esperando há mais tempo, e uma da outra conta com o mesmo id de sessão.
+    env.office.addMain({ id: '.claude:2', account: '.claude', sessionId: 's2', cwd: '/p/app', role: 'Agente principal', startedAt: now, status: 'waiting', waitingFor: 'responder no terminal' });
+    env.office.addMain({ id: '.claude-conta2:3', account: '.claude-conta2', sessionId: 's1', cwd: '/p/site', role: 'Agente principal', startedAt: now, status: 'idle' });
+  });
+  afterEach(async () => {
+    await env.close();
+    env.cleanup();
+  });
+
+  it('sem parâmetros: o escritório inteiro (presentes, trabalhando, quem espera do mais antigo ao mais novo)', async () => {
+    const s = await summary();
+    expect(s).toMatchObject({ version: '9.9.9', agents: 4, working: 1 });
+    expect(s.waiting.map((w) => w.id).sort()).toEqual(['.claude:2', 's1:a1']);
+    const app = s.waiting.find((w) => w.id === '.claude:2')!;
+    expect(app).toEqual({ id: '.claude:2', name: app.name, room: 'app', account: '.claude', waitingFor: 'responder no terminal', since: app.since, answerable: false });
+    expect(typeof app.since).toBe('number');
+    expect(s.waiting.map((w) => w.since)).toEqual([...s.waiting.map((w) => w.since!)].sort((a, b) => a - b));
+  });
+
+  it('?account&session: tira a própria sessão (principal e subagentes); a mesma sessão em outra conta fica', async () => {
+    const s = await summary('?account=.claude&session=s1');
+    expect(s).toMatchObject({ agents: 2, working: 0 });
+    expect(s.waiting.map((w) => w.id)).toEqual(['.claude:2']);
+    // Só a sessão (sem conta) também basta; só a conta não exclui nada.
+    expect((await summary('?session=s1')).agents).toBe(1);
+    expect((await summary('?account=.claude')).agents).toBe(4);
+  });
+
+  it('answerable = há pedido de permissão para responder pelo escritório', async () => {
+    perms.set('.claude:2', { id: 'p1', tool: 'Bash', title: 'Bash(npm test)', text: 'Rodando os testes', icon: '🧪', createdAt: Date.now(), expiresAt: Date.now() + 300_000 });
+    env.office.markDirty();
+    const s = await summary('?account=.claude&session=s1');
+    expect(s.waiting).toMatchObject([{ id: '.claude:2', answerable: true, waitingFor: 'responder no terminal' }]);
+  });
+
+  it('agentes do demo ficam de fora (mesmo esperando); quem encerrou também', async () => {
+    await fetch(`${env.base}/api/demo`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ enabled: true }) });
+    const snap = await snapshotOf(env.base);
+    expect(snap.agents.some((a) => a.id.startsWith('demo:'))).toBe(true);
+    env.office.closeMain('.claude-conta2:3');
+    const s = await summary();
+    expect(s.agents).toBe(3);
+    expect(s.waiting.every((w) => !w.id.startsWith('demo:'))).toBe(true);
+  });
+
+  it('só GET/HEAD (405 com Allow)', async () => {
+    const res = await fetch(`${env.base}/api/mod/summary`, { method: 'POST', headers: JSON_HEADERS, body: '{}' });
+    expect(res.status).toBe(405);
+    expect(res.headers.get('allow')).toBe('GET');
+    expect((await fetch(`${env.base}/api/mod/summary`, { method: 'HEAD' })).status).toBe(200);
   });
 });
 

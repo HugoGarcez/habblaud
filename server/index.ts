@@ -188,7 +188,7 @@ server.listen(config.port, config.host, () => {
   if (config.terminal) log.info('   Terminal somente leitura: ligado (acesso só local).');
   else log.info(`   Terminal somente leitura: desligado (${terminalOffReason(process.env, config.host, config.inDocker)}).`);
   log.info(timeline ? `   Linha do tempo (timelapse): gravando em ${timelineDir}.` : '   Linha do tempo (timelapse): gravação desligada (CODETOWN_TIMELINE).');
-  log.info(`   Responder pelo escritório: ${config.terminal ? 'ligado (precisa do hook: npm run hooks:install)' : 'desligado (mesma trava do terminal)'}.`);
+  log.info(`   Responder pelo escritório: ${config.terminal ? 'ligado (precisa do mod: npm run mod:install; ou do hook antigo: npm run hooks:install)' : 'desligado (mesma trava do terminal)'}.`);
   log.info(
     updates.enabled
       ? `   Versão nova: verificando as releases de github.com/${config.repo} a cada 6 h.`

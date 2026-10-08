@@ -239,11 +239,13 @@ export interface AccountUsage {
   sevenDaySonnet?: UsageWindow;
   /**
    * Origem dos números (as duas são arquivos locais gravados a partir do próprio Claude Code):
-   * - 'statusline': capturado ao vivo do JSON que o Claude Code envia ao statusline (campo rate_limits),
-   *   gravado em ~/.codetown/usage/<conta>.json pelo scripts/statusline-tap.mjs (recomendado);
+   * - 'statusline': capturado ao vivo e gravado em ~/.codetown/usage/<conta>.json pelo mod do CodeTown
+   *   (mod/codetown, recomendado) ou pelo scripts/statusline-tap.mjs (campo rate_limits do statusline);
    * - 'cache': `cachedUsageUtilization` gravado pelo próprio Claude Code (atualiza quando alguém roda /usage).
    */
   source: 'cache' | 'statusline';
+  /** Quem gravou o arquivo ao vivo ('statusline'): o mod do CodeTown no Claude Code ou o tap de statusline. */
+  via?: 'mod' | 'tap';
   /** Quando os números foram obtidos na origem (epoch ms). */
   fetchedAt: number;
 }
@@ -339,6 +341,40 @@ export interface AgentDetail {
   agent: AgentInfo;
   /** Histórico mais longo (máx. ~200), do mais antigo para o mais recente. */
   history: Activity[];
+}
+
+// ------------------------------------------------------------------ mod do Claude Code
+
+/**
+ * Resposta de GET /api/mod/summary: o mínimo que o mod do Claude Code (mod/codetown) precisa para a linha
+ * "precisa de você" embaixo do prompt e para o comando /codetown. Só agentes reais (o demo fica de fora)
+ * e presentes (sem quem já encerrou ou entregou); com `?session=` (e `?account=`), sem a própria sessão
+ * de quem pergunta: o agente principal dela e os subagentes.
+ */
+export interface ModSummary {
+  /** Versão do CodeTown em uso. */
+  version: string;
+  /** Agentes presentes e quantos estão trabalhando. */
+  agents: number;
+  working: number;
+  /** Quem precisa de você, de quem espera há mais tempo para quem espera há menos. */
+  waiting: ModWaitingAgent[];
+}
+
+export interface ModWaitingAgent {
+  /** = AgentInfo.id. */
+  id: string;
+  name: string;
+  /** Nome exibido da sala (projeto). */
+  room: string;
+  /** = AccountInfo.id. */
+  account: string;
+  /** Motivo em PT-BR (AgentInfo.waitingFor), ex.: "aprovar uma permissão". */
+  waitingFor: string;
+  /** Desde quando espera (epoch ms). */
+  since?: number;
+  /** Há pedido de permissão para responder pelo escritório (AgentInfo.permission). */
+  answerable: boolean;
 }
 
 // ------------------------------------------------------------------ terminal somente leitura
@@ -437,7 +473,7 @@ export interface PermissionSuggestionInfo {
 
 /**
  * Pedido de permissão pendente que dá para responder pelo CodeTown: o hook PermissionRequest do Claude Code
- * (scripts/permission-hook.mjs) o registra e fica esperando a decisão. Só existe com bind local (a mesma
+ * (mod/codetown-permissoes/hooks/permission-hook.mjs) o registra e fica esperando a decisão. Só existe com bind local (a mesma
  * trava do terminal somente leitura) e com alguma página do CodeTown aberta.
  * No snapshot vai sem `input` (os argumentos completos só saem por GET /api/permissions/:id, com acesso
  * local); os pedidos fictícios do demo já vêm com ele.

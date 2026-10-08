@@ -1,6 +1,6 @@
 {
   "name": "codetown",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Escritório virtual animado que mostra, em tempo real, o que seus agentes do Claude Code estão fazendo.",
   "license": "MIT",
@@ -33,6 +33,9 @@
     "hooks:install": "tsx scripts/hooks-install.ts install",
     "hooks:uninstall": "tsx scripts/hooks-install.ts uninstall",
     "hooks:status": "tsx scripts/hooks-install.ts status",
+    "mod:install": "tsx scripts/mod-install.ts install",
+    "mod:uninstall": "tsx scripts/mod-install.ts uninstall",
+    "mod:status": "tsx scripts/mod-install.ts status",
     "release": "tsx scripts/release.ts"
   },
   "devDependencies": {

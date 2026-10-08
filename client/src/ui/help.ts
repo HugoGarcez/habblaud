@@ -135,7 +135,7 @@ export class HelpDialog {
               text: 'No terminal: busca (lupa ou Ctrl/⌘+F), filtro “Tudo / Só prompts / Sem ferramentas” e um botão de copiar em cada entrada. O relógio da barra superior abre o histórico das sessões dos últimos 7 dias, inclusive as já encerradas.',
             }),
             h('li', {
-              text: 'Com o hook de permissão instalado (npm run hooks:install), quem “pede permissão” mostra nos detalhes o comando ou a edição e os botões Aprovar, Recusar e Responder no terminal. O diálogo continua no terminal: vale o que você responder primeiro.',
+              text: 'Com o mod do CodeTown instalado (npm run mod:install, que inclui o plugin de permissões), quem “pede permissão” mostra nos detalhes o comando ou a edição e os botões Aprovar, Recusar e Responder no terminal. O diálogo continua no terminal: vale o que você responder primeiro.',
             }),
           ),
           shortcuts,

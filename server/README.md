@@ -16,7 +16,7 @@ npm run build && npm start   # produção: serve dist/client
 | Atividades, tarefas, título, números | `<config>/projects/<cwd>/<sessionId>.jsonl` (lê o último ~1 MB no boot; o começo em segundo plano) |
 | Subagentes (inclusive de workflows) | `<config>/projects/<cwd>/<sessionId>/subagents/**/agent-*.jsonl` + `.meta.json` |
 | Conta (e-mail, organização) e cache de uso | `~/.claude.json` (conta padrão) ou `<config>/.claude.json` — só esses campos |
-| Uso ao vivo (5h e semanal) | `~/.codetown/usage/<conta>.json`, gravado pelo `scripts/statusline-tap.mjs` (`npm run usage:install`) |
+| Uso ao vivo (5h e semanal) | `~/.codetown/usage/<conta>.json`, gravado pelo mod do CodeTown (`npm run mod:install`) ou pelo `scripts/statusline-tap.mjs` (`npm run usage:install`) |
 | Atalho da conta (`c`, `d`...) | linhas `alias x='... claude ...'` de `~/.zshrc`, `~/.bashrc`, `~/.zprofile`, `~/.bash_profile` |
 
 **Forks** (subagentes que herdam o contexto do pai): o transcript começa com uma linha `fork-context-ref`, a
@@ -77,6 +77,7 @@ festa) ou 10 min. Push só avisa. O mesmo CI visto de novo em 2 min não repete 
 | `GET /api/timeline/:dia` | o arquivo do dia (`AAAA-MM-DD`) em JSONL (`application/x-ndjson`, gzip se aceito); 400 para dia inválido, 404 sem gravação |
 | `GET /api/health` | `{ok, version, demo, docker, terminal, permissions, updates:{state, latest, available}, sources, accounts:[{id, usageStatus}]}` |
 | `POST /api/demo` | `{enabled: boolean}` liga/desliga agentes simulados (misturados aos reais) |
+| `GET /api/mod/summary?account=&session=` | `ModSummary` para o mod do Claude Code: `{version, agents, working, waiting:[{id, name, room, account, waitingFor, since, answerable}]}`, sem o demo e sem a sessão de quem pergunta (ver abaixo) |
 | `GET /api/updates` | `{version, ...UpdateStatus}`: versão em uso e o resultado da verificação de versão nova (ver abaixo) |
 | `POST /api/updates/check` | "Verificar agora": consulta o GitHub (no máximo uma vez a cada 30 s) e devolve `{version, ...UpdateStatus}` |
 | `POST /api/permissions` | (hook) registra um pedido de permissão: `201 {id, expiresAt}` ou `200 {skip}`; só com bind local (ver abaixo) |
@@ -210,8 +211,9 @@ dentro da pasta `projects/` da conta (404); segmentos que não decodificam respo
 trava do terminal (recurso ligado e `Host` local, senão 403) e só aceitam `GET` (a lista, também `HEAD`; senão 405).
 ## Responder pelo escritório
 
-O hook `PermissionRequest` do Claude Code (`scripts/permission-hook.mjs`, instalado em `<conta>/settings.json` por
-`npm run hooks:install`, com `matcher: "*"`) roda **junto** com o diálogo de permissão do terminal: vale o que
+O hook `PermissionRequest` do Claude Code (`mod/codetown-permissoes/hooks/permission-hook.mjs`, com `matcher: "*"`:
+pelo plugin `codetown-permissoes` no Claude Code 2.1.287+ ou instalado em `<conta>/settings.json` por
+`npm run hooks:install`) roda **junto** com o diálogo de permissão do terminal: vale o que
 responder primeiro. Em subagentes em segundo plano o Claude Code roda o hook antes e só mostra o diálogo depois que
 ele sai. O hook manda o pedido (`session_id`, `agent_id`/`agent_type`, `cwd`, `tool_name`, `tool_input` com textos
 cortados, `permission_suggestions` e o próprio `timeout_ms`) e espera; com `decided` imprime
@@ -253,7 +255,7 @@ sugestão inválidos), 404 (pedido desconhecido, já entregue ou expirado), 405,
 | `CODETOWN_DEMO` | desligado | `1` liga o modo demonstração ao iniciar |
 | `CODETOWN_IN_DOCKER` | auto (`/.dockerenv`) | `1` = não confere PIDs (são do host) |
 | `CODETOWN_ACCOUNTS` | — | JSON com metadados das contas vindos do host (Docker): `[{id, configDir, mountDir, short, name, email, organization, plan, color, cachedUsage}]`, casados por `id`, `mountDir` ou `configDir` |
-| `CODETOWN_USAGE_DIR` | `~/.codetown/usage` (Docker: `/usage`) | pasta do uso capturado pelo tap de statusline, relida a cada 5 s |
+| `CODETOWN_USAGE_DIR` | `~/.codetown/usage` (Docker: `/usage`) | pasta do uso capturado pelo tap de statusline ou pelo mod do Claude Code, relida a cada 5 s |
 | `CODETOWN_ALLOWED_HOSTS` | — | nomes extras aceitos no `Host`/`Origin` (vírgula); `localhost`, `*.localhost` e IPs sempre valem |
 
 No hook de permissão (ambiente do Claude Code; os argumentos `--port`/`--timeout` gravados pelo instalador têm
@@ -269,12 +271,30 @@ Duas fontes, ambas arquivos locais (nada de credenciais nem chamadas de rede); v
   com `rate_limits` (`five_hour`/`seven_day`: `used_percentage` e `resets_at` em segundos). O
   `scripts/statusline-tap.mjs`, instalado na frente do statusline de cada conta por `npm run usage:install`,
   grava só esses números em `~/.codetown/usage/<conta>.json` (casado com a conta pelo `configDir`; senão pelo
-  `accountId`);
+  `accountId`). No Claude Code 2.1.287+ o mod do CodeTown grava o mesmo arquivo (ver abaixo);
 - `cache`: o `cachedUsageUtilization` que o próprio Claude Code grava ao rodar `/usage`, relido a cada 60 s.
 
 Sem nenhuma das duas, a conta fica `disabled` ("sem dados de uso"). Números com mais de 30 min aparecem como
 `stale`. Uma janela cujo reinício já passou desde a coleta é omitida (a interface mostra "—") até chegarem
 números novos — nunca um 0% inventado.
+
+## Mod do Claude Code
+
+O repositório é também um marketplace de plugins do Claude Code (`.claude-plugin/marketplace.json`, detalhes em
+[`mod/README.md`](../mod/README.md)). Do lado do servidor, o mod `codetown` usa duas coisas:
+
+- **o arquivo de uso:** em cada `session.start` e `session.measure` ele grava `<CODETOWN_USAGE_DIR>/<conta>.json`
+  no formato do tap (`{accountId, configDir, fetchedAt, five_hour, seven_day}`, `resets_at` em segundos, a partir de
+  `$.session.usage().rateLimits`) mais `source: "mod"`, que o leitor ignora: para o servidor continua sendo a fonte
+  `statusline`. O mod escreve com `$.fs.write`, que não é atômico; por isso `StatuslineUsageReader` ignora uma
+  leitura vazia ou pela metade, fica com o último registro bom daquele arquivo e o relê no ciclo seguinte;
+- **`GET /api/mod/summary`** (`modSummary` em `http/app.ts`), perguntado a cada 5 s por sessão que desenha (30 s com
+  o CodeTown fora do ar) e pelo comando `/codetown`: só contagens e quem espera, montado do snapshot atual. Ficam de
+  fora os agentes do demo (que vivem só no snapshot, não no `Office`), quem já encerrou ou entregou e, com
+  `?session=` (e `?account=`, se vier), a sessão de quem pergunta: o principal com esse `sessionId` e os subagentes
+  dela (o `sessionId` deles é o da sessão que os disparou; por garantia, também quem tem um ancestral dela).
+  `answerable` = há pedido de permissão para responder pelo escritório (`AgentInfo.permission`). Sem parâmetros,
+  nada é excluído (é o que o `/codetown` usa, para os números baterem com a tela). Só `GET`/`HEAD` (senão 405).
 
 ## Estrutura
 
