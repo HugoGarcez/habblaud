@@ -150,7 +150,7 @@ describe('PermissionRegistry: decisões e esperas do hook', () => {
     expect(a.status).toBe('working');
     expect(registry.wait(id, 10)).toBeUndefined();
     expect(registry.decide(id, { behavior: 'deny' })).toBe('not-found');
-    expect(office.detail(MAIN)!.history.map((h) => h.text)).toContain('Aprovado no Habblaud (sempre permitir)');
+    expect(office.detail(MAIN)!.history.map((h) => h.text)).toContain('Aprovado no Promp IA (sempre permitir)');
   });
 
   it('recusa com motivo e interrupção; decisão sem ninguém esperando fica guardada para a próxima espera', async () => {

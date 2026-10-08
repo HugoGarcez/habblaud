@@ -1,8 +1,8 @@
 {
   "name": "habblaud",
-  "displayName": "Habblaud",
+  "displayName": "Promp IA",
   "version": "0.4.0",
-  "description": "Liga a sessão ao Habblaud: grava o uso do plano (5h e semanal) para o escritório, avisa embaixo do prompt quando outra sessão precisa de você e adiciona o comando /habblaud.",
+  "description": "Liga a sessão ao Promp IA: grava o uso do plano (5h e semanal) para o escritório, avisa embaixo do prompt quando outra sessão precisa de você e adiciona o comando /habblaud.",
   "author": { "name": "Márcio Junior", "url": "https://github.com/marmottajr" },
   "homepage": "https://github.com/marmottajr/habblaud#readme",
   "repository": "https://github.com/marmottajr/habblaud",

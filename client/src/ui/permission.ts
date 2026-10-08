@@ -135,13 +135,13 @@ export class PermissionCard {
     this.preview = h('div', { class: 'ui-perm__preview' });
     this.note = h('p', { class: 'ui-perm__note', hidden: true });
     this.queue = h('p', { class: 'ui-perm__queue', hidden: true });
-    this.remote = h('p', { class: 'ui-perm__note', hidden: true, text: 'Para responder por aqui, abra o Habblaud por http://localhost (ou 127.0.0.1). Por enquanto, responda no terminal.' });
+    this.remote = h('p', { class: 'ui-perm__note', hidden: true, text: 'Para responder por aqui, abra o Promp IA por http://localhost (ou 127.0.0.1). Por enquanto, responda no terminal.' });
 
     this.approveBtn = h('button', { class: 'ui-btn ui-perm__btn ui-perm__btn--allow', type: 'button', on: { click: () => this.send({ behavior: 'allow' }) } }, '✓ Aprovar');
     this.denyBtn = h('button', { class: 'ui-btn ui-perm__btn ui-perm__btn--deny', type: 'button', attrs: { 'aria-expanded': 'false' }, on: { click: () => this.toggleDeny() } }, '✕ Recusar…');
     this.terminalBtn = h(
       'button',
-      { class: 'ui-btn ui-perm__btn', type: 'button', title: 'O Habblaud deixa este pedido de lado: vale o que você responder no terminal', on: { click: () => this.send({ behavior: 'terminal' }) } },
+      { class: 'ui-btn ui-perm__btn', type: 'button', title: 'O Promp IA deixa este pedido de lado: vale o que você responder no terminal', on: { click: () => this.send({ behavior: 'terminal' }) } },
       'Responder no terminal',
     );
 
@@ -224,7 +224,7 @@ export class PermissionCard {
 
     setText(this.what, `${p.icon} ${p.text}${p.subagent ? ` · subagente ${p.subagent}` : ''}`);
     setText(this.timer, expiryText(p.expiresAt, now));
-    setTitle(this.timer, `Pedido feito às ${formatClock(p.createdAt)}. Sem resposta aqui até ${formatClock(p.expiresAt)}, o Habblaud devolve o pedido ao terminal.`);
+    setTitle(this.timer, `Pedido feito às ${formatClock(p.createdAt)}. Sem resposta aqui até ${formatClock(p.expiresAt)}, o Promp IA devolve o pedido ao terminal.`);
     const { name, args } = splitToolTitle(p.title);
     const shown = commandPreview(full) ? '' : args;
     if (this.tool.dataset.title !== `${p.title}|${shown}`) {
@@ -309,7 +309,7 @@ export class PermissionCard {
     try {
       error = await this.ctx.store.decidePermission(id, d);
     } catch {
-      error = 'Não foi possível falar com o Habblaud. Responda no terminal.';
+      error = 'Não foi possível falar com o Promp IA. Responda no terminal.';
     }
     if (this.id !== id) return;
     if (error) {

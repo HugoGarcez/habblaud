@@ -158,7 +158,7 @@ export class TopBar implements UiComponent {
         ? 'Dados simulados no navegador (?mock=1)'
         : conn === 'open'
           ? 'Recebendo eventos do servidor em tempo real'
-          : 'Sem conexão com o servidor do Habblaud',
+          : 'Sem conexão com o servidor do Promp IA',
     );
     setHidden(this.demoBadge, !(conn === 'open' && snap?.meta.demo));
 

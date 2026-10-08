@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Hook PermissionRequest do Habblaud: deixa aprovar ou recusar pelo escritório os pedidos de permissão
+// Hook PermissionRequest do Promp IA: deixa aprovar ou recusar pelo escritório os pedidos de permissão
 // do Claude Code ("Do you want to…"). Chega à sessão de um destes jeitos (este arquivo é a fonte única
 // dos dois):
 //
@@ -14,7 +14,7 @@
 // O Claude Code mostra o diálogo no terminal e roda este hook AO MESMO TEMPO (vale o que responder
 // primeiro); em subagentes em segundo plano o diálogo só aparece depois que o hook termina. O hook:
 // 1. lê do stdin o JSON do pedido (session_id, tool_name, tool_input, permission_suggestions...);
-// 2. manda para POST http://127.0.0.1:<porta>/api/permissions. Se o Habblaud não responder, recusar
+// 2. manda para POST http://127.0.0.1:<porta>/api/permissions. Se o Promp IA não responder, recusar
 //    (recurso desligado) ou disser que não há página aberta ou que não conhece a sessão, sai na hora,
 //    sem decidir: o terminal segue normal;
 // 3. senão, espera a decisão em GET /api/permissions/:id/wait (respostas de até 25 s, em laço) até o
@@ -33,11 +33,11 @@ const MIN_TIMEOUT_S = 5;
 const MAX_TIMEOUT_S = 1_800;
 /** Espera máxima de cada long-poll (o servidor responde "pending" e o hook pergunta de novo). */
 const WAIT_S = 25;
-/** Registrar o pedido: se o Habblaud não responder nisso, ele está fora do ar (ou travado). */
+/** Registrar o pedido: se o Promp IA não responder nisso, ele está fora do ar (ou travado). */
 const REGISTER_TIMEOUT_MS = 2_000;
 const STDIN_TIMEOUT_MS = 5_000;
 const MAX_STDIN = 8 * 1024 * 1024;
-/** Textos dos argumentos mandados ao Habblaud (o servidor só mostra uma prévia). */
+/** Textos dos argumentos mandados ao Promp IA (o servidor só mostra uma prévia). */
 const MAX_STRING = 8_000;
 /** Corpo do pedido (o servidor recusa acima de 256 KB). */
 const MAX_BODY = 200_000;
@@ -71,7 +71,7 @@ export function trimInput(v, max = MAX_STRING, depth = 0) {
 }
 
 /**
- * Corpo mandado ao Habblaud: só o que ele usa (nada de transcript_path nem do resto do stdin). Se ainda
+ * Corpo mandado ao Promp IA: só o que ele usa (nada de transcript_path nem do resto do stdin). Se ainda
  * ficar grande (muitas edições de uma vez), os textos são cortados mais curtos.
  */
 export function requestBody(input, timeoutMs) {
@@ -86,7 +86,7 @@ export function requestBody(input, timeoutMs) {
 }
 
 /**
- * Saída do hook para uma decisão do Habblaud (undefined = sair sem decidir). Uma regra "sempre permitir"
+ * Saída do hook para uma decisão do Promp IA (undefined = sair sem decidir). Uma regra "sempre permitir"
  * escolhida na página volta só como a POSIÇÃO: aplica-se a sugestão original que o Claude Code mandou.
  */
 export function decisionOutput(result, input) {
@@ -100,7 +100,7 @@ export function decisionOutput(result, input) {
   }
   if (result.behavior === 'deny') {
     const reason = typeof result.message === 'string' && result.message.trim() ? result.message.trim().slice(0, 1_000) : '';
-    const decision = { behavior: 'deny', message: reason ? `Recusado pelo usuário no Habblaud: ${reason}` : 'Recusado pelo usuário no Habblaud.' };
+    const decision = { behavior: 'deny', message: reason ? `Recusado pelo usuário no Promp IA: ${reason}` : 'Recusado pelo usuário no Promp IA.' };
     if (result.interrupt === true) decision.interrupt = true;
     return { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision } };
   }
@@ -126,7 +126,7 @@ function readStdin() {
   });
 }
 
-/** Requisição ao Habblaud local; null = fora do ar, tempo esgotado ou resposta ilegível. */
+/** Requisição ao Promp IA local; null = fora do ar, tempo esgotado ou resposta ilegível. */
 async function call(base, method, path, body, timeoutMs) {
   try {
     const res = await fetch(`${base}${path}`, {
@@ -169,7 +169,7 @@ export async function run(argv = process.argv.slice(2), env = process.env, stdin
     const deadline = Date.now() + opts.timeoutMs;
     const reg = await call(base, 'POST', '/api/permissions', requestBody(input, opts.timeoutMs), REGISTER_TIMEOUT_MS);
     if (!reg || reg.status !== 201 || typeof reg.json?.id !== 'string') {
-      debug(`sem desvio (${reg ? `${reg.status} ${JSON.stringify(reg.json ?? null)}` : 'Habblaud fora do ar'})`);
+      debug(`sem desvio (${reg ? `${reg.status} ${JSON.stringify(reg.json ?? null)}` : 'Promp IA fora do ar'})`);
       return undefined;
     }
     const id = encodeURIComponent(reg.json.id);

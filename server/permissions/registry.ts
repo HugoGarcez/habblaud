@@ -135,7 +135,7 @@ function ruleText(raw: unknown): string | undefined {
 }
 
 /**
- * Sugestões "sempre permitir" que o Habblaud oferece: só `addRules` com `behavior: "allow"` num destino
+ * Sugestões "sempre permitir" que o Promp IA oferece: só `addRules` com `behavior: "allow"` num destino
  * conhecido. A página escolhe pela posição e o hook aplica a sugestão ORIGINAL que recebeu do Claude Code
  * (o servidor nunca inventa regras).
  */
@@ -366,8 +366,8 @@ export class PermissionRegistry {
     const now = this.now();
     const act: Activity =
       d.behavior === 'allow'
-        ? { id: `${p.agentId}#perm-ok:${id}`, at: now, kind: 'other', icon: '✅', text: d.suggestion !== undefined ? 'Aprovado no Habblaud (sempre permitir)' : 'Aprovado no Habblaud', detail: p.info.title, tool: 'PermissionRequest' }
-        : { id: `${p.agentId}#perm-no:${id}`, at: now, kind: 'wait', icon: '🚫', text: 'Recusado no Habblaud', detail: d.message ? `${p.info.title} — ${d.message}` : p.info.title, tool: 'PermissionRequest' };
+        ? { id: `${p.agentId}#perm-ok:${id}`, at: now, kind: 'other', icon: '✅', text: d.suggestion !== undefined ? 'Aprovado no Promp IA (sempre permitir)' : 'Aprovado no Promp IA', detail: p.info.title, tool: 'PermissionRequest' }
+        : { id: `${p.agentId}#perm-no:${id}`, at: now, kind: 'wait', icon: '🚫', text: 'Recusado no Promp IA', detail: d.message ? `${p.info.title} — ${d.message}` : p.info.title, tool: 'PermissionRequest' };
     this.opts.office.addActivity(p.agentId, act, false);
     return 'ok';
   }
@@ -410,7 +410,7 @@ export class PermissionRegistry {
   /** O tool_result da chamada apareceu no transcript (respondido no terminal)? Nunca lança. */
   private answeredInTerminal(p: Pending, now: number): boolean {
     p.lastScanAt = now;
-    // Subagente que o Habblaud não acompanha (pedido mostrado no principal): o transcript dele não é
+    // Subagente que o Promp IA não acompanha (pedido mostrado no principal): o transcript dele não é
     // conhecido e o do principal não tem a chamada; sobram a expiração e o órfão.
     if (p.hookAgentId && p.agentId !== `${p.sessionId}:${p.hookAgentId}`) return false;
     const path = this.opts.transcriptPathOf?.(p.agentId);

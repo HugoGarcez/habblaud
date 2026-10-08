@@ -40,7 +40,7 @@ export const DEFAULT_PORT = 4747;
 export const DEFAULT_TIMEOUT_S = 300;
 /** Folga do tempo limite do Claude Code sobre o do hook (o hook sempre desiste antes). */
 const TIMEOUT_SLACK_S = 30;
-export const STATUS_MESSAGE = 'Aguardando resposta no Habblaud';
+export const STATUS_MESSAGE = 'Aguardando resposta no Promp IA';
 
 const USAGE = `Uso: npm run hooks:<install|uninstall|status> [-- opções]
 

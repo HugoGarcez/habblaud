@@ -39,13 +39,13 @@ export class UpdateBanner {
       this.reload();
       return;
     }
-    setText(this.text, `O Habblaud foi atualizado. Recarregando em ${this.left} s…`);
+    setText(this.text, `O Promp IA foi atualizado. Recarregando em ${this.left} s…`);
     this.left--;
   }
 
   private postpone(): void {
     this.stop();
-    setText(this.text, 'O Habblaud foi atualizado. Recarregue a página quando quiser.');
+    setText(this.text, 'O Promp IA foi atualizado. Recarregue a página quando quiser.');
   }
 
   private stop(): void {
