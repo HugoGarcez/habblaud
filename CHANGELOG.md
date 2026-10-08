@@ -10,6 +10,24 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+## [0.5.0] - 2026-10-08
+
+### Adicionado
+
+- **Agentes do Orca no escritório:** Codex, OpenCode, Antigravity e Gemini rodando nos terminais do Orca viram
+  personagens na sala do projeto, com status (trabalhando, esperando você, à toa), prompt e ferramenta atual. Cada
+  tipo ganha o seu chip (CX, OC, AG, GM). `HABBLAUD_ORCA=0` desliga; `HABBLAUD_ORCA_IDLE_MIN` diz quanto tempo um
+  agente parado continua no escritório (padrão 180 min).
+- **Uso de 5 h e semanal do Codex**, lido dos rollouts que o próprio Codex grava (`~/.codex` e as contas do Orca).
+- **Cotas do Antigravity** (Gemini e Claude/GPT, 5 h e semanal) pelo `agy -p /usage`, a cada 5 min (0 tokens).
+  `HABBLAUD_ANTIGRAVITY=0` desliga.
+
+### Alterado
+
+- **Marca Promp IA:** logotipo em pixels "promp" com o selo laranja "IA" no topo, na abertura e na placa da recepção,
+  e "Promp IA" em todos os textos da interface e do mod. Os nomes técnicos (`HABBLAUD_*`, `~/.habblaud`, plugins
+  `habblaud`, `/habblaud`) continuam iguais. Rode `npm run mod:install` para o Claude Code pegar o mod novo.
+
 ## [0.4.0] - 2026-10-08
 
 ### Alterado
