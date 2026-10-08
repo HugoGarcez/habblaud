@@ -10,6 +10,17 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+## [0.3.2] - 2026-10-08
+
+### Corrigido
+
+- Quando um terminal fechava e a sala dele era desmontada, ficava um jardim no meio do prédio, entre salas. Agora a
+  sala mais distante se muda para a vaga: é montada lá, ainda apagada; o primeiro a chegar acende a luz e cada um
+  volta para a mesma mesa. O endereço antigo apaga e é desmontado, e o prédio encolhe. Uma sala que abre ocupa a
+  primeira vaga livre, e a carga inicial já vem sem buracos.
+- Quem estava a caminho de algo que deixou de existir, como o bebedouro de uma coluna do corredor que sumiu quando o
+  prédio encolheu, era teletransportado. Agora muda de plano e segue andando.
+
 ## [0.3.1] - 2026-10-08
 
 ### Corrigido

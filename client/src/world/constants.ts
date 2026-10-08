@@ -43,5 +43,7 @@ export const ZOOM_MAX = 6;
 export const BUILD_MS = 2600;
 export const DISMANTLE_MS = 2200;
 export const DISMANTLE_DELAY_MS = 1500;
+/** Uma vaga livre antes da última sala espera isto antes de a sala mais distante se mudar para lá. */
+export const COMPACT_DELAY_MS = 1200;
 /** Debounce para agentes que somem do snapshot. */
 export const MISSING_DEBOUNCE_MS = 3000;

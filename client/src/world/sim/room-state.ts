@@ -6,16 +6,18 @@ import type { AreaLayout } from '../layout/types';
 import { lightLevel } from './behavior';
 
 /**
- * - pending: aguardando o slot (outra sala ainda desmontando ali);
  * - building: animação de construção;
  * - ready: sala pronta;
  * - dismantling: animação de desmontagem;
  * - gone: desmontada (será removida).
  */
-export type RoomPhase = 'pending' | 'building' | 'ready' | 'dismantling' | 'gone';
+export type RoomPhase = 'building' | 'ready' | 'dismantling' | 'gone';
 
 export class RoomState {
   info: RoomInfo;
+  /** Semente com que o tema e o layout foram gerados (fixa desde a criação, mesmo se info.seed mudar). */
+  readonly seed: number;
+  /** Vaga no prédio escolhida pelo cliente (sem buracos; ver Sim.compact). Pode diferir de info.slot. */
   slot: number;
   theme: RoomTheme;
   layout: AreaLayout;
@@ -35,10 +37,16 @@ export class RoomState {
   board: { status: 'pending' | 'in_progress' | 'completed' }[] = [];
   /** Incrementa quando algo do cache estático muda (nome, tema). */
   version = 0;
+  /**
+   * Endereço antigo de uma sala que se mudou: fica no lugar só até quem estava nela sair, apagar
+   * e ser desmontado. Ninguém pertence a ela e ela não aparece no snapshot.
+   */
+  ghost = false;
 
-  constructor(info: RoomInfo, theme: RoomTheme, layout: AreaLayout, phase: RoomPhase, now: number, lit: boolean) {
+  constructor(info: RoomInfo, theme: RoomTheme, layout: AreaLayout, phase: RoomPhase, now: number, lit: boolean, slot: number) {
     this.info = info;
-    this.slot = info.slot;
+    this.seed = info.seed;
+    this.slot = slot;
     this.theme = theme;
     this.layout = layout;
     this.phase = phase;
