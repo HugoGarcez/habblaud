@@ -4,6 +4,7 @@ import { h, iconButton, setAttr, setHidden, setText, setTitle, setVariant } from
 import { formatDuration, formatInt } from './format';
 import { FALLBACK_MARK, ICONS } from './icons';
 import { computeCounters, shellLine, shellWaitIn, shellWaitingAgents, waitingAgents, type Counters } from './model';
+import { TIMELAPSE_ICONS } from './timelapse';
 import { UsageCards } from './usage';
 import { wordmark } from './widgets';
 
@@ -35,6 +36,7 @@ export class TopBar implements UiComponent {
   private hadOpen = false;
   private sidebarBtn: HTMLButtonElement;
   private feedBtn: HTMLButtonElement;
+  private timelapseBtn: HTMLButtonElement;
   readonly settingsBtn: HTMLButtonElement;
 
   constructor(private ctx: UiContext) {
@@ -87,6 +89,7 @@ export class TopBar implements UiComponent {
 
     this.sidebarBtn = iconButton(ICONS.sidebar, 'Painel lateral ( [ )', () => ctx.togglePanel('sidebar'), 'ui-btn-sidebar');
     this.feedBtn = iconButton(ICONS.feed, 'Feed de atividade ( ] )', () => ctx.togglePanel('feed'));
+    this.timelapseBtn = iconButton(TIMELAPSE_ICONS.timelapse, 'Timelapse: reproduzir o dia (L)', () => ctx.toggleTimelapse(), 'ui-btn-timelapse');
     this.settingsBtn = iconButton(ICONS.settings, 'Configurações', () => ctx.toggleSettings());
     this.settingsBtn.setAttribute('aria-haspopup', 'dialog');
     const viewGroup = h(
@@ -99,6 +102,7 @@ export class TopBar implements UiComponent {
     const panelGroup = h(
       'div',
       { class: 'ui-btn-group', role: 'group', attrs: { 'aria-label': 'Painéis' } },
+      this.timelapseBtn,
       this.feedBtn,
       this.settingsBtn,
       iconButton(ICONS.help, 'Ajuda (?)', () => ctx.openHelp()),
@@ -164,6 +168,8 @@ export class TopBar implements UiComponent {
 
     this.sidebarBtn.setAttribute('aria-pressed', String(this.ctx.isPanelOpen('sidebar')));
     this.feedBtn.setAttribute('aria-pressed', String(this.ctx.isPanelOpen('feed')));
+    this.timelapseBtn.setAttribute('aria-pressed', String(this.ctx.isTimelapseOpen()));
+    setHidden(this.timelapseBtn, store.mock);
   }
 
   private renderShells(n: number, now: number): void {

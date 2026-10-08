@@ -18,6 +18,8 @@ export interface ApiDeps {
   terminal?: boolean;
   /** Streams do terminal; sem eles o recurso fica desligado mesmo com `terminal`. */
   terminals?: TerminalStreams;
+  /** Rotas do timelapse (/api/timeline/*, ver http/timeline.ts); devolve false para o resto. */
+  timeline?: (req: IncomingMessage, res: ServerResponse, url: URL) => boolean;
 }
 
 /** GET /api/agents/:id/terminal (ids nunca contêm '/'). */
@@ -171,6 +173,7 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       else handleDemo(req, res).catch((err) => fail(res, err));
       return true;
     }
+    if (deps.timeline?.(req, res, url)) return true;
     sendJson(res, 404, { error: 'rota desconhecida' });
     return true;
   };

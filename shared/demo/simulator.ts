@@ -223,6 +223,11 @@ export class DemoSimulator {
     this.pendingNotices = [];
   }
 
+  /** Muda quantas sessões principais manter abertas (o gerador de timelapse varia isso ao longo do dia). */
+  setSessions(n: number): void {
+    this.target = Math.max(0, Math.floor(n));
+  }
+
   /** Avança a simulação até `now`. */
   tick(now: number): DemoTickResult {
     if (now >= this.nextSpawnAt) {

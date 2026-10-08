@@ -14,7 +14,7 @@ import { BLOCKED, FREE, SEAT } from '../path/grid';
 import { PROGRAM_SEED } from '../social/gathering';
 import { hasTrait, personaFor, soloWeights } from '../social/persona';
 import { Social } from '../social/social';
-import { browserStorage } from '../social/wallet';
+import { browserStorage, type StorageLike } from '../social/wallet';
 import {
   canDismantle,
   chooseSeat,
@@ -91,7 +91,7 @@ export class Sim {
   /** Cabines ocupadas (furnitureId). */
   readonly stallBusy = new Set<string>();
   /** Vida social: rodas dos ociosos, personalidades e carteiras (social/social.ts). */
-  readonly social: Social = new Social(this, browserStorage());
+  readonly social: Social;
   /** Depuração: agentes forçados a encerrar e salas forçadas a sumir do snapshot. */
   readonly forcedOffline = new Set<string>();
   readonly hiddenRooms = new Set<string>();
@@ -107,10 +107,13 @@ export class Sim {
   private shrinkPending = false;
   private nextHousekeeping = 0;
 
+  /** `storage` das carteiras: null = só em memória (o timelapse não mexe nas moedinhas de verdade). */
   constructor(
     private readonly art: ArtModule,
     private readonly options: () => WorldOptions,
+    storage: StorageLike | null = browserStorage(),
   ) {
+    this.social = new Social(this, storage);
     this.building = assembleBuilding(columnsFor([]), [], 0);
     this.finder = new PathFinder(this.building.grid);
     this.spots.setSpots(this.building.spots);

@@ -206,3 +206,43 @@ describe('detecção de versão nova', () => {
     expect(count).toBe(0);
   });
 });
+
+describe('fonte alternativa (timelapse)', () => {
+  it('guarda os snapshots ao vivo durante o replay e volta a eles no fim', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(10_000);
+    try {
+      const store = new OfficeStore();
+      const seen: number[] = [];
+      store.on('snapshot', (s) => seen.push(s.rev));
+      const apply = (s: OfficeSnapshot) => (store as unknown as { applySnapshot(s: OfficeSnapshot): void }).applySnapshot(s);
+      apply({ ...snap(5), serverTime: 9_000 });
+      expect(store.replaying).toBe(false);
+
+      const replayed = { ...snap(1), serverTime: 1_000, agents: [{ id: 'tl', roomId: 'r' } as OfficeSnapshot['agents'][number]] };
+      store.pushReplay(replayed);
+      expect(store.replaying).toBe(true);
+      expect(store.snapshot).toBe(replayed);
+      expect(store.agent('tl')).toBeDefined();
+      // Ao vivo chegando por baixo: guardado, sem emitir, e o mais antigo continua descartado.
+      apply({ ...snap(6), serverTime: 9_500 });
+      apply(snap(4));
+      expect(store.snapshot).toBe(replayed);
+      expect(store.liveSnapshot?.rev).toBe(6);
+      expect(seen).toEqual([5, 1]);
+
+      vi.setSystemTime(12_000);
+      store.stopReplay();
+      expect(store.replaying).toBe(false);
+      expect(store.snapshot?.rev).toBe(6);
+      // O relógio da interface sai do serverTime: avança o tempo que o snapshot ficou guardado.
+      expect(store.snapshot?.serverTime).toBe(9_500 + 2_000);
+      expect(store.agent('tl')).toBeUndefined();
+      expect(seen).toEqual([5, 1, 6]);
+      store.stopReplay();
+      expect(seen).toHaveLength(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

@@ -46,7 +46,22 @@ export interface WorldApi {
   social?(agentId: string): AgentSocial | null;
   /** (Opcional, aditivo) Acontecimentos sociais (partidas e apostas) para o feed. */
   onSocialEvent?(cb: (e: SocialEvent) => void): () => void;
+  /**
+   * (Opcional, aditivo) Timelapse: com `p`, o mundo passa a desenhar o dia reproduzido (relógio e fator de
+   * animação de `p`); `null` volta ao vivo. Cada chamada recomeça o mundo do zero (ninguém anda até a mesa:
+   * todos já aparecem no lugar), então chame ao entrar, ao pular para outro ponto e ao sair; o próximo
+   * snapshot do store é aplicado como carga inicial.
+   */
+  setPlayback?(p: WorldPlayback | null): void;
   destroy(): void;
+}
+
+/** Relógios do timelapse (ver world/playback.ts). */
+export interface WorldPlayback {
+  /** Instante reproduzido (epoch ms): hora do céu, da iluminação e do relógio de parede. */
+  clock(): number;
+  /** Fator de animação (1 = tempo real; 0 = pausado). */
+  scale(): number;
 }
 
 export interface AgentSocial {
