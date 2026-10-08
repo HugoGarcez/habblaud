@@ -12,6 +12,8 @@ import type {
   Notice,
   NoticeLevel,
   OfficeSnapshot,
+  PermissionDecision,
+  PermissionRequestInfo,
   RoomInfo,
   ShellJob,
   SourceInfo,
@@ -20,6 +22,7 @@ import type {
 import { SHELL_WAIT_TOOL, SPECIAL, type ShellOutcome } from '../../shared/activity';
 import { DemoSimulator } from '../../shared/demo/simulator';
 import { hash32 } from '../../shared/hash';
+import { applyPermission } from '../permissions/registry';
 import type { NameStore } from './names';
 import { normalizeCwd, roomDisplayNames, SlotAllocator } from './rooms';
 
@@ -52,6 +55,8 @@ export interface OfficeDeps {
   accountName: (id: string) => string | undefined;
   /** Terminal somente leitura ligado (ver OfficeSnapshot.meta.terminal e ServerConfig.terminal). */
   terminal?: boolean;
+  /** Pedidos de permissão pendentes por agente (PermissionRegistry.snapshot), postos no snapshot. */
+  permissions?: () => ReadonlyMap<string, PermissionRequestInfo>;
   now?: () => number;
 }
 
@@ -631,6 +636,31 @@ export class Office {
     rec.history = [...add, ...rec.history].sort((a, b) => a.at - b.at).slice(-HISTORY_LIMIT);
   }
 
+  // ---------------------------------------------------------------- pedidos de permissão (server/permissions)
+
+  /** Aviso de pedido de permissão vindo do hook; usa o dedupe do "precisa de você" (o mesmo pedido, outro caminho). */
+  noticePermission(id: string, what: string): void {
+    const info = this.agents.get(id)?.info;
+    if (!info) return;
+    this.notice('wait', id, 'alert', `🔐 ${info.name} pede permissão em ${this.roomName(info.roomId)}: ${what}`, info.roomId);
+    this.markDirty();
+  }
+
+  /** Decisão para um pedido fictício do demo. true = o pedido era do demo (e foi respondido). */
+  decideDemoPermission(requestId: string, d: PermissionDecision): boolean {
+    if (!this.demo) return false;
+    const now = this.now();
+    if (!this.demo.decidePermission(requestId, d, now)) return false;
+    this.demoSnap = this.demo.snapshot(now);
+    this.markDirty();
+    return true;
+  }
+
+  /** Pedido fictício do demo (já vem completo no snapshot). */
+  demoPermission(requestId: string): PermissionRequestInfo | undefined {
+    return this.demoSnap?.agents.find((a) => a.permission?.id === requestId)?.permission;
+  }
+
   // ---------------------------------------------------------------- demonstração
 
   setDemo(enabled: boolean): void {
@@ -708,7 +738,8 @@ export class Office {
         createdAt: r.createdAt,
       }))
       .sort((a, b) => a.slot - b.slot);
-    const real = [...this.agents.values()].map((r) => cloneAgent(r.info));
+    const perms = this.deps.permissions?.();
+    const real = [...this.agents.values()].map((r) => applyPermission(cloneAgent(r.info), perms?.get(r.info.id)));
     const trim = (a: AgentInfo): AgentInfo => (a.recent.length > SNAPSHOT_RECENT ? { ...a, recent: a.recent.slice(-SNAPSHOT_RECENT) } : a);
     const sessions = new Map<string, number>();
     for (const a of real) if (a.kind === 'main' && a.status !== 'offline') sessions.set(a.account, (sessions.get(a.account) ?? 0) + 1);

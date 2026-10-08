@@ -61,6 +61,7 @@ const SHORTCUTS: [string[], string][] = [
   [['/'], 'Buscar agente, projeto ou conta'],
   [['F'], 'Seguir o agente selecionado'],
   [['T'], 'Abrir ou fechar o terminal do agente selecionado (somente leitura)'],
+  [['P'], 'Ir até o próximo pedido de permissão para responder pelo escritório'],
   [['O', '0'], 'Visão geral do prédio'],
   [['Esc'], 'Fechar o terminal; depois, a gaveta e a seleção'],
   [['['], 'Mostrar ou ocultar o painel lateral'],
@@ -118,6 +119,9 @@ export class HelpDialog {
             h('li', { text: 'Passe o mouse sobre um personagem para ver o que ele está fazendo.' }),
             h('li', {
               text: 'Nos detalhes de um agente, “Abrir terminal” mostra a conversa da sessão como no Claude Code, ao vivo e só para leitura (precisa do acesso local, bind 127.0.0.1).',
+            }),
+            h('li', {
+              text: 'Com o hook de permissão instalado (npm run hooks:install), quem “pede permissão” mostra nos detalhes o comando ou a edição e os botões Aprovar, Recusar e Responder no terminal. O diálogo continua no terminal: vale o que você responder primeiro.',
             }),
           ),
           shortcuts,

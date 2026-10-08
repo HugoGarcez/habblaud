@@ -171,6 +171,16 @@ capturar o **uso de 5 horas e semanal** que o próprio Claude Code envia — sem
 > O tap aponta para a pasta onde você clonou o CodeTown. Se mover a pasta, rode `npm run usage:install` de novo
 > (até lá, o statusline das contas mostra erro).
 
+### 4. Responda pedidos de permissão pelo escritório (opcional)
+
+```bash
+npm run hooks:install
+```
+
+Instala em cada conta um hook do Claude Code que deixa **aprovar ou recusar pelo CodeTown** os pedidos de
+permissão ("Do you want to…"). Faz backup do `settings.json`; para desfazer: `npm run hooks:uninstall`. Veja
+[Responder pelo escritório](#responder-pelo-escritório).
+
 ### Abrir no celular (opcional)
 
 Por padrão o CodeTown só aceita conexões do próprio computador. Para abrir no celular (no mesmo Wi-Fi), com Docker:
@@ -199,14 +209,15 @@ npm run docker:up        # ou: npm run build && npm start
 
 ```bash
 npm run usage:uninstall                     # devolve o statusline original das contas
+npm run hooks:uninstall                     # tira o hook de permissão das contas
 npm run docker:down                         # para o container
 docker volume rm codetown_codetown-data     # apaga os dados do container (nomes dos personagens)
 docker image rm codetown:local              # apaga a imagem
 rm -rf ~/.codetown                          # apaga os dados locais (uso capturado e nomes)
 ```
 
-Depois é só apagar a pasta do projeto — rode o `usage:uninstall` **antes**, senão o statusline das contas passa a
-dar erro. O `usage:uninstall` deixa cópias `settings.json.codetown-backup-<data>` na pasta de cada conta
+Depois é só apagar a pasta do projeto — rode o `usage:uninstall` e o `hooks:uninstall` **antes**, senão o
+statusline das contas passa a dar erro (e o hook de permissão, a falhar em silêncio). O `usage:uninstall` deixa cópias `settings.json.codetown-backup-<data>` na pasta de cada conta
 (ex.: `~/.claude/`); apague-as se não precisar mais.
 
 ## Como usar
@@ -239,7 +250,7 @@ um **chip colorido com a letra da conta** (C, D…).
 **Câmera:** arraste para mover, role para dar zoom, clique duplo num personagem para segui-lo.
 
 **Atalhos:** `/` busca · `F` seguir o selecionado · `O` ou `0` visão geral · `Esc` limpar seleção ·
-`[` painel lateral · `]` feed · setas/`WASD` mover · `+` `-` zoom · `?` ajuda.
+`[` painel lateral · `]` feed · `P` próximo pedido de permissão · setas/`WASD` mover · `+` `-` zoom · `?` ajuda.
 
 ### Terminal somente leitura
 
@@ -252,6 +263,32 @@ Como o terminal mostra a conversa inteira, ele só existe quando o CodeTown est�
 computador** (o padrão) e só abre por `http://localhost` ou `http://127.0.0.1`. Com a porta liberada para a rede
 (`CODETOWN_BIND=0.0.0.0` ou `CODETOWN_HOST=0.0.0.0`), ele fica desligado. Detalhes em
 [Privacidade e segurança](#privacidade-e-segurança).
+
+### Responder pelo escritório
+
+Com o hook instalado (`npm run hooks:install`), quando um agente pede permissão — rodar um comando, editar um
+arquivo, abrir uma página — o pedido aparece no escritório: o personagem levanta a mão, um aviso com **Responder**
+surge na tela e, nos detalhes do agente, o cartão **Pede permissão** mostra o comando (ou o diff da edição) com os
+botões:
+
+- **Aprovar** — e, quando o Claude Code sugere, **Aprovar e não perguntar de novo** (a mesma regra que o terminal
+  ofereceria, por exemplo `Bash(npm test:*)` neste projeto);
+- **Recusar** — com um motivo opcional, que vai para o agente, e a opção de interrompê-lo;
+- **Responder no terminal** — o CodeTown deixa o pedido de lado.
+
+O diálogo continua aparecendo no terminal ao mesmo tempo, e vale o que você responder primeiro: respondeu no
+terminal, o pedido some do escritório sozinho. O contador **precisam de você** (e a tecla `P`) leva até cada pedido.
+Perguntas do agente (`AskUserQuestion`) continuam só no terminal.
+
+- O hook só desvia o pedido quando há **alguma página do CodeTown aberta** neste computador; com o CodeTown parado
+  ou sem nenhuma página, ele sai na hora e o terminal segue normal.
+- Sem resposta pelo escritório em 5 minutos, o pedido volta a valer só no terminal (`npm run hooks:install --
+  --timeout 120` muda o tempo; `--port` se o CodeTown não usa a 4747). Em **subagentes em segundo plano** o Claude
+  Code só mostra o diálogo no terminal depois que o hook termina: responda pelo escritório ou use **Responder no
+  terminal**.
+- Funciona com a mesma trava do terminal somente leitura: só com o CodeTown acessível apenas pelo próprio
+  computador e aberto por `http://localhost`. Confira com `npm run hooks:status`.
+- No modo demonstração, os agentes fictícios também pedem permissão (de mentira), para experimentar.
 
 ### Modo demonstração
 
@@ -360,7 +397,7 @@ no host); as demais ficam fixas dentro do container. Opções: `npm run docker:u
 shared/   protocolo (types.ts), atividades em PT-BR, nomes, simulador de demonstração
 server/   servidor HTTP + SSE: contas e uso, leitura das sessões e transcripts, modelo do escritório
 client/   Vite: src/art (pixel art procedural), src/world (o escritório no canvas), src/ui (interface)
-scripts/  build do servidor, docker-up, tap de statusline (+ instalador) e screenshots
+scripts/  build do servidor, docker-up, tap de statusline e hook de permissão (+ instaladores) e screenshots
 ```
 
 | Rota | Descrição |
@@ -369,8 +406,9 @@ scripts/  build do servidor, docker-up, tap de statusline (+ instalador) e scree
 | `GET /api/snapshot` | Estado atual do escritório. |
 | `GET /api/agents/:id` | Detalhes de um agente, com até 200 atividades. |
 | `GET /api/agents/:id/terminal` | SSE do terminal somente leitura (eventos `init` e `append`); só com acesso local. |
-| `GET /api/health` | Saúde: versão, demonstração, Docker, terminal, fontes e status de uso de cada conta. |
+| `GET /api/health` | Saúde: versão, demonstração, Docker, terminal, responder pelo escritório, fontes e status de uso de cada conta. |
 | `POST /api/demo` | `{"enabled": true \| false}` liga ou desliga os agentes simulados. |
+| `/api/permissions…` | Responder pelo escritório: o hook registra o pedido e espera; a página busca o detalhe e decide. Só com acesso local. |
 
 Mais detalhes do servidor em [`server/README.md`](server/README.md).
 
@@ -394,8 +432,9 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
 
 ## Privacidade e segurança
 
-- **Só leitura:** o CodeTown nunca grava nas pastas do Claude Code. A única exceção é o `npm run usage:install` /
-  `usage:uninstall`, que muda só o `statusLine.command` do `settings.json` — com backup antes.
+- **Só leitura:** o CodeTown nunca grava nas pastas do Claude Code. As exceções são o `npm run usage:install` /
+  `usage:uninstall`, que muda só o `statusLine.command` do `settings.json`, e o `npm run hooks:install` /
+  `hooks:uninstall`, que muda só a lista `hooks.PermissionRequest` — sempre com backup antes.
 - **Só local, por padrão:** o servidor só aceita conexões do próprio computador; liberar a rede local é opcional.
   Não há telemetria nem chamadas externas: o CodeTown não acessa a internet.
 - **Sem credenciais:** o CodeTown não lê senhas nem tokens de acesso. Do `.claude.json` de cada conta aproveita só o
@@ -409,6 +448,14 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
   ligá-lo com a porta exposta — e cada pedido precisa vir por `localhost`/`127.0.0.1`: IPs da rede e nomes de
   `CODETOWN_ALLOWED_HOSTS` (proxies, túneis) são recusados. Segredos são mascarados e textos longos truncados antes
   de chegar ao navegador; no modo demonstração, a conversa é fictícia. `CODETOWN_TERMINAL=0` desliga de vez.
+- **Responder pelo escritório, só local:** aprovar ou recusar age sobre as sessões, então segue a mesma trava do
+  terminal (bind local, `Host` local, nada de proxies ou túneis) e só existe com o hook instalado por você. As
+  respostas exigem JSON e origem local (um site aberto no navegador não consegue mandá-las), o hook só fala com
+  `127.0.0.1` e, na dúvida — CodeTown fora do ar, erro, tempo esgotado —, sai sem decidir: vale o terminal. O comando
+  completo ou o diff só saem do servidor para quem abriu a página pelo próprio computador. "Sempre permitir" só
+  aplica uma regra que o próprio Claude Code sugeriu para aquele pedido. Atenção: qualquer programa ou pessoa que
+  consiga abrir `http://localhost:4747` nesta máquina também consegue responder; em computadores compartilhados
+  com outros usuários, não instale o hook.
 - **O que aparece na tela:** resumos das atividades (ferramenta, arquivo, comando ou consulta), títulos das sessões,
   tarefas e estatísticas (e, no terminal somente leitura, a conversa). Não exponha a porta em redes em que você não
   confia.
@@ -481,6 +528,18 @@ O terminal só existe com o CodeTown acessível apenas pelo próprio computador.
 `http://localhost:4747` (pelo IP da rede ou por um nome de `CODETOWN_ALLOWED_HOSTS` ele é recusado). No Docker, um container
 criado antes desse recurso precisa ser recriado: `npm run docker:up`. O log de inicialização (`npm run docker:logs`)
 diz se o terminal está ligado e, se não estiver, por quê.
+
+</details>
+
+<details>
+<summary><b>O pedido de permissão não aparece no escritório</b></summary>
+
+Rode `npm run hooks:status`: ele diz, por conta, se o hook está instalado (e apontando para esta pasta) e se o
+CodeTown está respondendo pedidos. O pedido só é desviado com alguma página do CodeTown aberta por
+`http://localhost` (ou `127.0.0.1`) e com o terminal somente leitura ligado (mesma trava). Se o CodeTown usa outra
+porta, reinstale com `npm run hooks:install -- --port <porta>`. Sessões abertas antes da instalação costumam
+recarregar o `settings.json` sozinhas; se não, reabra a sessão. Perguntas do agente (`AskUserQuestion`) não passam
+pelo hook.
 
 </details>
 

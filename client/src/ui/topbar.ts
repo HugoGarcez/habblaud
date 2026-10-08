@@ -4,6 +4,7 @@ import { h, iconButton, setAttr, setHidden, setText, setTitle, setVariant } from
 import { formatDuration, formatInt } from './format';
 import { FALLBACK_MARK, ICONS } from './icons';
 import { computeCounters, shellLine, shellWaitIn, shellWaitingAgents, waitingAgents, type Counters } from './model';
+import { focusPermission, nextPermissionAgent, permissionAgents } from './permission';
 import { UsageCards } from './usage';
 import { wordmark } from './widgets';
 
@@ -21,6 +22,7 @@ const COUNTERS: { key: Exclude<keyof Counters, 'shells'>; singular: string; plur
   { key: 'subagents', singular: 'subagente', plural: 'subagentes', hint: 'Subagentes em atividade' },
   { key: 'waiting', singular: 'precisa de você', plural: 'precisam de você', hint: 'Agentes esperando sua resposta no terminal' },
 ];
+const WAITING_HINT = COUNTERS.find((c) => c.key === 'waiting')!.hint;
 
 export class TopBar implements UiComponent {
   readonly el: HTMLElement;
@@ -158,6 +160,15 @@ export class TopBar implements UiComponent {
     const waiting = this.counters.get('waiting')!.el as HTMLButtonElement;
     waiting.classList.toggle('is-active', c.waiting > 0);
     waiting.disabled = c.waiting === 0;
+    // Pedidos que dá para responder por aqui (hook de permissão): a dica diz quantos.
+    const answerable = permissionAgents(snap?.agents ?? []).length;
+    waiting.classList.toggle('has-answer', answerable > 0);
+    setTitle(
+      waiting,
+      answerable
+        ? `${WAITING_HINT}. ${answerable === 1 ? '1 pedido de permissão dá' : `${answerable} pedidos de permissão dão`} para responder por aqui: clique para ir até ${answerable === 1 ? 'ele' : 'cada um'} (P).`
+        : `${WAITING_HINT}. Clique para ir até o primeiro.`,
+    );
     this.renderShells(c.shells, now);
 
     this.usage.render();
@@ -200,7 +211,12 @@ export class TopBar implements UiComponent {
   }
 
   private focusFirstWaiting(): void {
-    const first = waitingAgents(this.ctx.store.snapshot?.agents ?? [])[0];
+    // Quem tem pedido para responder pelo escritório vem antes (cliques seguidos passam por todos).
+    const agents = this.ctx.store.snapshot?.agents ?? [];
+    const sel = this.ctx.selection();
+    const next = nextPermissionAgent(agents, sel?.type === 'agent' ? sel.id : undefined);
+    if (next) return focusPermission(this.ctx, next.id);
+    const first = waitingAgents(agents)[0];
     if (first) this.ctx.select({ type: 'agent', id: first.id }, { focus: true });
   }
 }

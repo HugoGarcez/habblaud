@@ -19,6 +19,7 @@ import { HoverTip } from './hovertip';
 import { hasRunningShells } from './model';
 import { Notifier } from './notify';
 import { ConnectionBanner, EmptyState, Splash } from './overlays';
+import { focusPermission, nextPermissionAgent } from './permission';
 import { loadPrefs, safeLocalStorage, savePrefs, worldOptionsFrom, type UiPrefs } from './prefs';
 import { SettingsPopover } from './settings';
 import { Sidebar } from './sidebar';
@@ -268,6 +269,15 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
         e.preventDefault();
         toggleTerminal();
         break;
+      case 'p':
+      case 'P': {
+        // Próximo pedido de permissão para responder pelo escritório (só leva até ele: nunca aprova).
+        e.preventDefault();
+        const next = nextPermissionAgent(store.snapshot?.agents ?? [], selection?.type === 'agent' ? selection.id : undefined);
+        if (next) focusPermission(ctx, next.id);
+        else ctx.announce('Nenhum pedido de permissão para responder agora.');
+        break;
+      }
       case 'o':
       case 'O':
         e.preventDefault();

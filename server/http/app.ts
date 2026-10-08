@@ -18,6 +18,11 @@ export interface ApiDeps {
   terminal?: boolean;
   /** Streams do terminal; sem eles o recurso fica desligado mesmo com `terminal`. */
   terminals?: TerminalStreams;
+  /**
+   * Rotas de /api/permissions (responder pelo escritório, server/permissions/http.ts). Só existem com bind
+   * local (ServerConfig.terminal); a trava do Host local é conferida aqui antes de chamá-las.
+   */
+  permissions?: (req: IncomingMessage, res: ServerResponse, path: string) => void;
 }
 
 /** GET /api/agents/:id/terminal (ids nunca contêm '/'). */
@@ -25,7 +30,7 @@ const TERMINAL_ROUTE = /^\/api\/agents\/([^/]+)\/terminal$/;
 
 const MAX_BODY = 256 * 1024;
 
-class HttpError extends Error {
+export class HttpError extends Error {
   constructor(
     readonly status: number,
     message: string,
@@ -48,7 +53,7 @@ export function sendJson(res: ServerResponse, status: number, body: unknown): vo
 }
 
 /** Lê o corpo JSON. Exige `Content-Type: application/json` (barreira contra CSRF; ver http/guard.ts). */
-function readJson(req: IncomingMessage): Promise<unknown> {
+export function readJson(req: IncomingMessage): Promise<unknown> {
   if (!isJsonContentType(req.headers['content-type'])) {
     req.resume();
     return Promise.reject(new HttpError(415, 'envie o corpo como JSON (Content-Type: application/json)'));
@@ -124,6 +129,7 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
           demo: office.isDemo(),
           docker: deps.inDocker,
           terminal: !!terminals,
+          permissions: !!deps.permissions,
           sources: deps.sources(),
           accounts: accounts.entries().map((a) => ({ id: a.id, usageStatus: accounts.usageView(a.id).status })),
         });
@@ -146,6 +152,17 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
           return true;
         }
         terminals.attach(req, res, id);
+      }
+      return true;
+    }
+    if (path === '/api/permissions' || path.startsWith('/api/permissions/')) {
+      // Responder pelo escritório age sobre as sessões: a mesma trava do terminal (bind local + Host local).
+      if (!deps.permissions) {
+        sendJson(res, 403, { error: 'responder pelo escritório desligado: só funciona com o CodeTown acessível apenas pelo próprio computador' });
+      } else if (!isLoopbackHost(req.headers.host)) {
+        sendJson(res, 403, { error: 'pedidos de permissão só são respondidos pelo próprio computador (http://localhost ou http://127.0.0.1)' });
+      } else {
+        deps.permissions(req, res, path);
       }
       return true;
     }
