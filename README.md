@@ -199,11 +199,19 @@ Depois abra `http://<ip-do-computador>:4747` no celular (no macOS: `ipconfig get
 
 ### Atualizar
 
+A versão em uso aparece na barra superior, ao lado de "Conectado", e em **Configurações › Sobre**. A cada 6 horas o
+CodeTown confere no GitHub se saiu uma versão nova (as [releases](https://github.com/marmottajr/codetown/releases)
+deste repositório). Quando sai, aparece o selo verde **Nova versão** no lugar do número, com um aviso e um ponto no
+botão de configurações. Em **Sobre** ficam o link do que mudou e o botão **Verificar agora** (as notas de cada
+versão também estão no [`CHANGELOG.md`](CHANGELOG.md)). Para atualizar:
+
 ```bash
 git pull
 npm install
 npm run docker:up        # ou: npm run build && npm start
 ```
+
+Para não consultar o GitHub, use `CODETOWN_UPDATE_CHECK=0` (no `.env`, para o Docker).
 
 ### Desinstalar
 
@@ -241,12 +249,14 @@ um **chip colorido com a letra da conta** (C, D…).
 
 - **Topo:** contadores (salas, agentes, trabalhando, subagentes, shells rodando, precisam de você) e um cartão de
   **uso por conta**. O de shells só aparece enquanto algum comando está rodando; clique nele para ir até quem espera.
+  Embaixo do logo ficam a conexão e a versão em uso, que vira o selo **Nova versão** quando sai uma versão nova (veja
+  [Atualizar](#atualizar)).
 - **Painel lateral:** busca, filtro por conta e a lista de salas com seus agentes e subagentes.
 - **Gaveta de detalhes:** clique num personagem (no prédio ou na lista) para ver atividade, tarefas, subagentes,
   linha do tempo e estatísticas (ferramentas, tokens, custo, linhas alteradas, modelo, branch).
 - **Feed:** as últimas atividades de todo o escritório.
-- **Configurações (⚙):** nomes, balões, quanto os ociosos passeiam, ciclo dia/noite, sons, notificações do navegador
-  e modo demonstração. **Ajuda (?):** legenda completa e atalhos.
+- **Configurações (⚙):** nomes, balões, quanto os ociosos passeiam, ciclo dia/noite, sons, notificações do navegador,
+  modo demonstração e **Sobre** (versão em uso e versão nova). **Ajuda (?):** legenda completa e atalhos.
 - **Meu dia (📊):** para onde foi o tempo do dia (veja [Meu dia](#meu-dia)). **Timelapse** e **Histórico** (os relógios
   da barra superior): veja [Timelapse do dia](#timelapse-do-dia) e [Terminal somente leitura](#terminal-somente-leitura).
 
@@ -442,10 +452,11 @@ Tudo funciona sem configurar nada. Se precisar ajustar, use variáveis de ambien
 | `CODETOWN_DEMO` | desligado | `1` liga o modo demonstração ao iniciar. |
 | `CODETOWN_ALLOWED_HOSTS` | — | Nomes extras aceitos no endereço (ex.: `meu-mac.local`), além de `localhost` e IPs. |
 | `CODETOWN_TERMINAL` | ligado (só com acesso local) | `0` desliga o terminal somente leitura. Com a porta exposta ele já fica desligado, sem opção de ligar. |
+| `CODETOWN_UPDATE_CHECK` | ligado | `0` desliga a verificação de versão nova (uma consulta às releases do repositório no GitHub a cada 6 h). |
 | `CODETOWN_ACCOUNTS` | — | JSON para personalizar nome, letra ou cor, casado pelo nome da pasta da conta. Ex.: `[{"id":".claude-conta2","name":"Trabalho","short":"T","color":"#5cc97b"}]`. |
 
-**No Docker**, valem `CODETOWN_PORT`, `CODETOWN_BIND`, `CODETOWN_ALLOWED_HOSTS`, `CODETOWN_DEMO` e `CODETOWN_TERMINAL`
-(no `.env` ou no ambiente) e `CODETOWN_CLAUDE_DIRS`, `CODETOWN_USAGE_DIR` e `CODETOWN_ACCOUNTS` (lidas pelo `docker:up`
+**No Docker**, valem `CODETOWN_PORT`, `CODETOWN_BIND`, `CODETOWN_ALLOWED_HOSTS`, `CODETOWN_DEMO`, `CODETOWN_TERMINAL` e
+`CODETOWN_UPDATE_CHECK` (no `.env` ou no ambiente) e `CODETOWN_CLAUDE_DIRS`, `CODETOWN_USAGE_DIR` e `CODETOWN_ACCOUNTS` (lidas pelo `docker:up`
 no host); as demais ficam fixas dentro do container. Opções: `npm run docker:up -- --no-build` (sobe sem reconstruir),
 `npm run docker:down` (para) e `npm run docker:logs` (acompanha os logs).
 
@@ -527,7 +538,10 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
   `usage:uninstall`, que muda só o `statusLine.command` do `settings.json`, e o `npm run hooks:install` /
   `hooks:uninstall`, que muda só a lista `hooks.PermissionRequest` — sempre com backup antes.
 - **Só local, por padrão:** o servidor só aceita conexões do próprio computador; liberar a rede local é opcional.
-  Não há telemetria nem chamadas externas: o CodeTown não acessa a internet.
+  Não há telemetria. A única chamada externa é a verificação de versão nova: a cada 6 horas, uma consulta anônima,
+  sem token, à API pública do GitHub (`api.github.com/repos/marmottajr/codetown/releases/latest`). Ela não envia nada
+  sobre as suas sessões; o GitHub vê só o seu IP e a versão em uso, que vai no `User-Agent`.
+  `CODETOWN_UPDATE_CHECK=0` desliga a consulta.
 - **Sem credenciais:** o CodeTown não lê senhas nem tokens de acesso. Do `.claude.json` de cada conta aproveita só o
   e-mail, a organização e o cache do `/usage`; o uso ao vivo vem do tap de statusline.
 - **Segredos mascarados:** tokens e senhas com formato conhecido (`Bearer`, `-u usuário:senha`, `TOKEN=`, chaves
@@ -568,6 +582,7 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
 | `npm test` | Testes (Vitest). |
 | `npm run typecheck` | Verificação de tipos de cliente, servidor e scripts. |
 | `npm run demo:timeline` | Gera uma linha do tempo fictícia (simulador do modo demonstração) para o timelapse. |
+| `npm run release` | Publica a versão do `package.json` no GitHub (tag e release com as notas do `CHANGELOG.md`). |
 
 Para tirar screenshots sem abrir o seu navegador, `scripts/shot.mjs` usa um Chromium headless isolado (Playwright).
 Na primeira vez, baixe o navegador (uma vez só): `npx playwright-core install chromium-headless-shell`.
@@ -592,6 +607,16 @@ CODETOWN_DATA_DIR=/tmp/codetown-demo CODETOWN_TIMELINE=0 CODETOWN_CLAUDE_DIRS=/t
 ```
 
 `CODETOWN_TIMELINE=0` evita gravar nessa pasta; com a gravação ligada, dias com mais de 7 dias são apagados.
+
+**Publicar uma versão:** toda versão tem a sua seção no [`CHANGELOG.md`](CHANGELOG.md), com o que entrou. Durante o
+trabalho, anote as mudanças em "Não lançado". Para lançar:
+
+1. Suba o número com `npm version minor --no-git-tag-version` (ou `patch`, numa versão só de correções).
+2. Troque "Não lançado" pela versão e a data (`## [0.3.0] - AAAA-MM-DD`), deixe um "Não lançado" vazio em cima e
+   atualize os links do fim. O `npm test` falha se a versão do `package.json` não tiver seção.
+3. Faça o merge na `main` e rode `npm run release` (precisa do [`gh`](https://cli.github.com/) autenticado; `-- --dry-run`
+   só mostra as notas). O script cria a tag `v0.3.0` e a release com o texto da seção. A partir daí, quem usa o
+   CodeTown vê o selo **Nova versão**.
 
 ## Solução de problemas
 

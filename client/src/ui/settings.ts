@@ -1,4 +1,4 @@
-// Configurações (popover): opções do escritório, avisos e modo demonstração.
+// Configurações (popover): opções do escritório, avisos, modo demonstração e Sobre (versão).
 import type { UiComponent, UiContext } from './context';
 import { h, iconButton, setAttr, setHidden, setText } from './dom';
 import { ICONS } from './icons';
@@ -6,6 +6,7 @@ import { notificationState, type Notifier } from './notify';
 import type { UiPrefs } from './prefs';
 import { SoundSettingsGroup } from './settings-sound';
 import type { SoundControl } from './sound';
+import { AboutGroup } from './version';
 
 type BoolPref = { [K in keyof UiPrefs]: UiPrefs[K] extends boolean ? K : never }[keyof UiPrefs];
 
@@ -62,6 +63,7 @@ export class SettingsPopover implements UiComponent {
   private daylight: ReturnType<typeof segmented<UiPrefs['daylight']>>;
   private soundGroup: SoundSettingsGroup;
   private demoGroup: HTMLElement;
+  private about: AboutGroup;
   private demoBusy = false;
   private anchor: HTMLElement | null = null;
 
@@ -114,6 +116,8 @@ export class SettingsPopover implements UiComponent {
       sw('demo', 'Modo demonstração', 'Coloca agentes fictícios no escritório, junto com os reais.', () => void this.toggleDemo()),
     );
 
+    this.about = new AboutGroup(ctx);
+
     const close = iconButton(ICONS.close, 'Fechar configurações', () => this.hide(), 'ui-icon-btn--sm');
     this.el = h(
       'div',
@@ -136,6 +140,7 @@ export class SettingsPopover implements UiComponent {
       ),
       this.soundGroup.el,
       this.demoGroup,
+      this.about.el,
     );
     this.el.addEventListener('toggle', () => {
       this.anchor?.setAttribute('aria-expanded', String(this.isOpen));
@@ -166,6 +171,13 @@ export class SettingsPopover implements UiComponent {
     this.el.focus();
   }
 
+  /** Abre (se fechado) e leva até a seção "Sobre". */
+  showAbout(anchor: HTMLElement): void {
+    if (!this.isOpen) this.toggle(anchor);
+    this.render();
+    requestAnimationFrame(() => this.about.highlight());
+  }
+
   hide(): void {
     if (typeof this.el.hidePopover === 'function' && this.isOpen) this.el.hidePopover();
     this.el.classList.remove('is-open');
@@ -190,6 +202,7 @@ export class SettingsPopover implements UiComponent {
     this.daylight.set(p.daylight);
     this.soundGroup.render();
     setHidden(this.demoGroup, this.ctx.store.mock);
+    this.about.render();
 
     const notif = this.switches.get('browserNotifications')!;
     const state = notificationState();

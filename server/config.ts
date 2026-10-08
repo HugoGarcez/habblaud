@@ -6,6 +6,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { discoverClaudeDirs } from './accounts/detect';
 import { parseAllowedHosts } from './http/guard';
+import { parseGithubRepo } from './updates/checker';
 
 export interface ServerConfig {
   port: number;
@@ -38,6 +39,10 @@ export interface ServerConfig {
   /** Raiz do projeto (onde fica o package.json); serve dist/client a partir daqui. */
   rootDir: string;
   version: string;
+  /** Repositório no GitHub ("dono/nome", do campo `repository` do package.json) onde saem as versões novas. */
+  repo?: string;
+  /** Consulta o GitHub atrás de versão nova (server/updates/checker.ts); CODETOWN_UPDATE_CHECK=0 desliga. */
+  updateCheck: boolean;
 }
 
 export function isTruthy(v: string | undefined): boolean {
@@ -64,12 +69,13 @@ export function findRoot(from: string): string {
   return resolve(from, '..');
 }
 
-function readVersion(rootDir: string): string {
+/** Versão e repositório do package.json. */
+function readPackage(rootDir: string): { version: string; repo?: string } {
   try {
-    const v = (JSON.parse(readFileSync(join(rootDir, 'package.json'), 'utf8')) as { version?: unknown }).version;
-    return typeof v === 'string' ? v : '0.0.0';
+    const pkg = JSON.parse(readFileSync(join(rootDir, 'package.json'), 'utf8')) as { version?: unknown; repository?: unknown };
+    return { version: typeof pkg.version === 'string' ? pkg.version : '0.0.0', repo: parseGithubRepo(pkg.repository) };
   } catch {
-    return '0.0.0';
+    return { version: '0.0.0' };
   }
 }
 
@@ -124,6 +130,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
   const port = Number.parseInt(env.CODETOWN_PORT ?? '', 10);
   const rootDir = findRoot(dirname(fileURLToPath(import.meta.url)));
   const host = env.CODETOWN_HOST?.trim() || '127.0.0.1';
+  const pkg = readPackage(rootDir);
   return {
     port: Number.isFinite(port) && port > 0 && port < 65536 ? port : 4747,
     host,
@@ -138,6 +145,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
     terminal: terminalOffReason(env, host, inDocker) === undefined,
     timeline: !env.CODETOWN_TIMELINE?.trim() || isTruthy(env.CODETOWN_TIMELINE),
     rootDir,
-    version: readVersion(rootDir),
+    version: pkg.version,
+    repo: pkg.repo,
+    updateCheck: !env.CODETOWN_UPDATE_CHECK?.trim() || isTruthy(env.CODETOWN_UPDATE_CHECK),
   };
 }

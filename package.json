@@ -1,9 +1,14 @@
 {
   "name": "codetown",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Escritório virtual animado que mostra, em tempo real, o que seus agentes do Claude Code estão fazendo.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/marmottajr/codetown.git"
+  },
+  "homepage": "https://github.com/marmottajr/codetown#readme",
   "type": "module",
   "engines": {
     "node": ">=22.12"
@@ -27,7 +32,8 @@
     "usage:status": "tsx scripts/statusline-install.ts status",
     "hooks:install": "tsx scripts/hooks-install.ts install",
     "hooks:uninstall": "tsx scripts/hooks-install.ts uninstall",
-    "hooks:status": "tsx scripts/hooks-install.ts status"
+    "hooks:status": "tsx scripts/hooks-install.ts status",
+    "release": "tsx scripts/release.ts"
   },
   "devDependencies": {
     "@fontsource/pixelify-sans": "^5.3.0",

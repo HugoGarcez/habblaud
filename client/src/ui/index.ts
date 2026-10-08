@@ -29,6 +29,7 @@ import { SoundControl } from './sound';
 import { TERMINAL_UNAVAILABLE_HINT, TerminalPanel } from './terminal';
 import { TimelapsePlayer } from './timelapse';
 import { Toasts } from './toasts';
+import { UpdateToaster } from './version';
 import { TopBar } from './topbar';
 import { UpdateBanner } from './update';
 import { FreeArea } from './viewport';
@@ -132,6 +133,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
     },
     openHelp: (section) => help.open(section),
     toggleSettings: () => settings.toggle(topbar.settingsBtn),
+    openAbout: () => settings.showAbout(topbar.settingsBtn),
     toggleTimelapse() {
       // O terminal mostra a conversa de agora: não combina com o dia reproduzido.
       if (!timelapse.isOpen && terminal.isOpen) terminal.close();
@@ -152,6 +154,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
   drawer = new Drawer(ctx, terminal);
   const feed = new FeedPanel(ctx);
   const toasts = new Toasts(ctx);
+  const updateToaster = new UpdateToaster(ctx, (n) => toasts.push(n));
   settings = new SettingsPopover(ctx, notifier, sound);
   help = new HelpDialog();
   const day = new DayLauncher(ctx, (el) => root.append(el));
@@ -173,7 +176,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
     narrow: ctx.isNarrow(),
   }));
 
-  const components: UiComponent[] = [topbar, sidebar, drawer, terminal, history, feed, toasts, settings, empty, banner, tip, notifier, splash, timelapse, sound, day];
+  const components: UiComponent[] = [topbar, sidebar, drawer, terminal, history, feed, toasts, settings, empty, banner, tip, notifier, splash, timelapse, sound, day, updateToaster];
 
   // ---------------------------------------------------------------- renderização agrupada por quadro
   let rafId = 0;

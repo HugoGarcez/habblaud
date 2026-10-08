@@ -3,13 +3,13 @@ import type { AddressInfo } from 'node:net';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { OfficeSnapshot } from '../../shared/types';
+import type { OfficeSnapshot, UpdateStatus } from '../../shared/types';
 import { AccountsService } from '../accounts/service';
 import { setQuiet } from '../log';
 import { NameStore } from '../model/names';
 import { Office } from '../model/office';
 import { tempDir } from '../test/fixtures';
-import { createApiHandler } from './app';
+import { createApiHandler, type ApiDeps } from './app';
 import { createRequestGuard, hostAllowed, hostnameOf, isLoopbackHost, originAllowed, parseAllowedHosts } from './guard';
 import { Hub } from './sse';
 import { createStaticHandler, IMMUTABLE, REVALIDATE } from './static';
@@ -22,7 +22,7 @@ interface Env {
   close: () => Promise<void>;
 }
 
-async function start(): Promise<Env & { cleanup: () => void }> {
+async function start(extra: Partial<ApiDeps> = {}): Promise<Env & { cleanup: () => void }> {
   const tmp = tempDir();
   const dir = join(tmp.dir, '.claude');
   mkdirSync(join(dir, 'sessions'), { recursive: true });
@@ -46,7 +46,7 @@ async function start(): Promise<Env & { cleanup: () => void }> {
   late.office = office;
   const hub = new Hub(office, { throttleMs: 10 });
   hub.start();
-  const api = createApiHandler({ office, hub, accounts, sources: () => [], version: '9.9.9', inDocker: false });
+  const api = createApiHandler({ office, hub, accounts, sources: () => [], version: '9.9.9', inDocker: false, ...extra });
   const serveStatic = createStaticHandler(dist);
   const guard = createRequestGuard({ allowedHosts: new Set(['codetown.lan']) });
   const server = http.createServer((req, res) => {
@@ -137,6 +137,30 @@ describe('API HTTP', () => {
     expect((await fetch(`${env.base}/api/agents/nao-existe`)).status).toBe(404);
     const health = await (await fetch(`${env.base}/api/health`)).json();
     expect(health).toMatchObject({ ok: true, version: '9.9.9', demo: false, docker: false, terminal: false, accounts: [{ id: '.claude', usageStatus: 'disabled' }] });
+  });
+
+  it('GET /api/updates e POST /api/updates/check sem verificador: desligado', async () => {
+    expect(await (await fetch(`${env.base}/api/updates`)).json()).toEqual({ version: '9.9.9', state: 'off', available: false });
+    const check = await fetch(`${env.base}/api/updates/check`, { method: 'POST', headers: JSON_HEADERS, body: '{}' });
+    expect(await check.json()).toMatchObject({ state: 'off' });
+    expect((await fetch(`${env.base}/api/updates/check`)).status).toBe(405);
+    expect(((await (await fetch(`${env.base}/api/health`)).json()) as { updates: unknown }).updates).toEqual({ state: 'off', available: false });
+  });
+
+  it('com verificador: GET devolve o status e o POST pede uma verificação manual', async () => {
+    const status: UpdateStatus = { state: 'ok', repo: 'dono/nome', checkedAt: 1, latest: '10.0.0', url: 'https://github.com/dono/nome/releases/tag/v10.0.0', available: true };
+    const calls: { manual?: boolean }[] = [];
+    const other = await start({ updates: { status: () => status, check: async (o) => (calls.push(o), status) } });
+    try {
+      expect(await (await fetch(`${other.base}/api/updates`)).json()).toEqual({ version: '9.9.9', ...status });
+      const res = await fetch(`${other.base}/api/updates/check`, { method: 'POST', headers: JSON_HEADERS, body: '{}' });
+      expect(await res.json()).toMatchObject({ latest: '10.0.0', available: true });
+      expect(calls).toEqual([{ manual: true }]);
+      expect(((await (await fetch(`${other.base}/api/health`)).json()) as { updates: unknown }).updates).toEqual({ state: 'ok', latest: '10.0.0', available: true });
+    } finally {
+      await other.close();
+      other.cleanup();
+    }
   });
 
   it('terminal somente leitura desligado: 403 JSON e meta.terminal false', async () => {

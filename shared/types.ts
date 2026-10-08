@@ -184,6 +184,34 @@ export interface RoomEffect {
   agentId?: string;
 }
 
+/**
+ * Verificação de versão nova: o servidor consulta a release mais recente do repositório no GitHub
+ * (server/updates/checker.ts) e compara com a versão em uso.
+ */
+export interface UpdateStatus {
+  /**
+   * - off: verificação desligada (CODETOWN_UPDATE_CHECK=0 ou package.json sem repositório no GitHub);
+   * - pending: ainda não verificou;
+   * - ok: verificou (com ou sem release publicada);
+   * - error: a última tentativa falhou (sem internet, limite de consultas do GitHub...).
+   */
+  state: 'off' | 'pending' | 'ok' | 'error';
+  /** Repositório consultado, "dono/nome". */
+  repo?: string;
+  /** Última consulta que deu certo (epoch ms). */
+  checkedAt?: number;
+  /** Versão da release mais recente, sem o "v" (ausente: nenhuma release publicada). */
+  latest?: string;
+  /** Página da release mais recente no GitHub. */
+  url?: string;
+  /** Publicação da release mais recente (epoch ms). */
+  publishedAt?: number;
+  /** A release mais recente é mais nova que a versão em uso. */
+  available: boolean;
+  /** Motivo da falha (state "error"). */
+  error?: string;
+}
+
 export interface SourceInfo {
   /** Rótulo da conta (basename do config dir). */
   label: string;
@@ -269,6 +297,8 @@ export interface OfficeSnapshot {
      * exposto além do próprio computador (bind local). Ausente/false = recurso desligado.
      */
     terminal?: boolean;
+    /** Verificação de versão nova no GitHub (ausente nos testes e no timelapse). */
+    updates?: UpdateStatus;
   };
 }
 
