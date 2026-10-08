@@ -83,6 +83,9 @@ const PROJECTS: DemoProject[] = [
   },
 ];
 
+/** Projetos do demo (o histórico fictício do "Meu dia" usa todos, não só as salas abertas no momento). */
+export const DEMO_PROJECT_NAMES: readonly string[] = PROJECTS.map((p) => p.name);
+
 const SUB_TYPES = ['Explore', 'general-purpose', 'Plan', 'code-reviewer', 'test-runner'];
 const SUB_TASKS = [
   'Mapear arquivos envolvidos',

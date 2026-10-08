@@ -133,6 +133,11 @@ export class TopBar implements UiComponent {
     );
   }
 
+  /** Acrescenta um botão de janela própria (ex.: Meu dia) ao começo do grupo de painéis. */
+  addPanelButton(btn: HTMLElement): void {
+    this.panelGroup.prepend(btn);
+  }
+
   render(): void {
     const { store } = this.ctx;
     const snap = store.snapshot;
