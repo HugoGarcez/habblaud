@@ -1,12 +1,35 @@
 // Tradução de chamadas de ferramenta do Claude Code em atividades legíveis (PT-BR).
 // Código puro, usado pelo servidor (transcripts reais) e pelo simulador de demonstração.
-import type { ActivityKind } from './types';
+import type { ActivityKind, AskQuestion } from './types';
 
 export interface ActivityDescription {
   kind: ActivityKind;
   icon: string;
   text: string;
   detail?: string;
+  questions?: AskQuestion[];
+}
+
+const MAX_QUESTIONS = 4;
+const MAX_OPTIONS = 6;
+
+/** Perguntas de um AskUserQuestion para exibir no escritório (mascaradas e cortadas, como o resto). */
+function askQuestions(raw: unknown): AskQuestion[] {
+  const clean = (v: unknown, n: number) => (typeof v === 'string' && v.trim() ? truncate(maskSecrets(v.slice(0, n * 4)), n) : '');
+  const qs = Array.isArray(raw) ? raw.filter((q): q is Record<string, unknown> => !!q && typeof q === 'object') : [];
+  return qs.slice(0, MAX_QUESTIONS).flatMap((q) => {
+    const question = clean(q.question, 300);
+    if (!question) return [];
+    const opts = Array.isArray(q.options) ? q.options.filter((o): o is Record<string, unknown> => !!o && typeof o === 'object') : [];
+    const options = opts.slice(0, MAX_OPTIONS).flatMap((o) => {
+      const label = clean(o.label, 80);
+      if (!label) return [];
+      const description = clean(o.description, 200);
+      return [{ label, ...(description ? { description } : {}) }];
+    });
+    const header = clean(q.header, 30);
+    return [{ question, ...(header ? { header } : {}), ...(q.multiSelect === true ? { multiSelect: true } : {}), options }];
+  });
 }
 
 const MAX_TEXT = 46;
@@ -699,7 +722,8 @@ export function describeTool(name: string, rawInput: unknown): ActivityDescripti
       return make('communicate', '💬', `Mensagem para ${str(input.to) || 'outro agente'}`, str(input.message));
     case 'AskUserQuestion': {
       const qs = Array.isArray(input.questions) ? (input.questions as Array<Record<string, unknown>>) : [];
-      return make('ask', '❓', 'Fazendo uma pergunta a você', qs[0] ? str(qs[0].question) : undefined);
+      const questions = askQuestions(qs);
+      return { ...make('ask', '❓', 'Fazendo uma pergunta a você', qs[0] ? str(qs[0].question) : undefined), ...(questions.length ? { questions } : {}) };
     }
     case 'Skill':
       return make('skill', '🧩', `Usando a skill ${str(input.skill) || str(input.command)}`);

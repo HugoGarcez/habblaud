@@ -188,6 +188,9 @@ class AgentView {
   private termLabel: HTMLElement;
   private alert: HTMLElement;
   private alertText: HTMLElement;
+  /** Perguntas e opções do AskUserQuestion pendente (só leitura: a resposta é dada no Claude Code). */
+  private alertQuestions: HTMLElement;
+  private alertQuestionsKey = '';
   /** Pedido de permissão para responder por aqui (substitui o alerta genérico enquanto existe). */
   private perm: PermissionCard;
   private shellBox: HTMLElement;
@@ -267,13 +270,14 @@ class AgentView {
     );
 
     this.alertText = h('p', { class: 'ui-alert__text' });
+    this.alertQuestions = h('div', { class: 'ui-ask', hidden: true });
     const alertIcon = h('span', { class: 'ui-alert__icon', attrs: { 'aria-hidden': 'true' } });
     alertIcon.innerHTML = ICONS.hand;
     this.alert = h(
       'div',
       { class: 'ui-alert', role: 'alert', hidden: true },
       alertIcon,
-      h('div', {}, h('strong', { class: 'ui-alert__title', text: 'Precisa de você' }), this.alertText),
+      h('div', {}, h('strong', { class: 'ui-alert__title', text: 'Precisa de você' }), this.alertText, this.alertQuestions),
     );
 
     // Esperando o shell: caixa de status (com a fase da espera no escritório) e a lista de comandos rodando.
@@ -451,6 +455,7 @@ class AgentView {
         `Vá ao terminal da ${account?.name ?? a.account} em ${room?.name ?? 'seu projeto'} para responder${a.waitingFor ? `: ${a.waitingFor}` : '.'}`,
       );
     }
+    this.renderQuestions(waiting && a.activity?.kind === 'ask' ? a.activity : undefined);
 
     // Esperando o shell.
     setHidden(this.shellBox, !wait);
@@ -516,6 +521,33 @@ class AgentView {
     setText(this.timelineSec.extra, this.history.length ? String(this.history.length) : '');
 
     this.renderStats(a, now);
+  }
+
+  /** Lista as perguntas pendentes com as opções, só para leitura (a resposta continua no Claude Code). */
+  private renderQuestions(act: Activity | undefined): void {
+    const qs = act?.questions ?? [];
+    setHidden(this.alertQuestions, qs.length === 0);
+    const key = qs.length ? `${act!.id}|${qs.length}` : '';
+    if (key === this.alertQuestionsKey) return;
+    this.alertQuestionsKey = key;
+    this.alertQuestions.replaceChildren(
+      ...qs.map((q) =>
+        h(
+          'div',
+          { class: 'ui-ask__q' },
+          q.header ? h('span', { class: 'ui-ask__tag', text: q.header }) : null,
+          h('p', { class: 'ui-ask__question', text: q.question }),
+          q.multiSelect ? h('p', { class: 'ui-ask__hint', text: 'Pode escolher mais de uma' }) : null,
+          h(
+            'ol',
+            { class: 'ui-ask__opts' },
+            ...q.options.map((o) =>
+              h('li', {}, h('strong', { text: o.label }), o.description ? h('span', { class: 'ui-ask__desc', text: o.description }) : null),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   private renderTerminalButton(live: boolean): void {
