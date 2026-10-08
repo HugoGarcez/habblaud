@@ -140,6 +140,11 @@ export interface AgentInfo {
   seed: number;
   /** Subagente rodando em segundo plano. */
   background?: boolean;
+  /**
+   * Pedido de permissão que dá para responder pelo CodeTown (hook PermissionRequest; o mais antigo, se
+   * houver vários). Enquanto existe, o agente aparece como 'waiting'. Ver PermissionRequestInfo.
+   */
+  permission?: PermissionRequestInfo;
 }
 
 export interface RoomInfo {
@@ -367,4 +372,58 @@ export interface RecentSessionsResponse {
   /** Janela da listagem (dias) e máximo de sessões. */
   days: number;
   limit: number;
+}
+
+// ------------------------------------------------------------------ responder pelo escritório
+
+/** Regra "sempre permitir" sugerida pelo Claude Code para um pedido (permission_suggestions do hook). */
+export interface PermissionSuggestionInfo {
+  /** Posição na lista que o hook recebeu: é ela que volta na decisão (o hook aplica a sugestão original). */
+  index: number;
+  /** Regras no formato das permissões do Claude Code, ex.: "Bash(npm test:*)". */
+  rules: string[];
+  /** Onde a regra fica guardada: 'session', 'localSettings', 'projectSettings' ou 'userSettings'. */
+  destination: string;
+}
+
+/**
+ * Pedido de permissão pendente que dá para responder pelo CodeTown: o hook PermissionRequest do Claude Code
+ * (scripts/permission-hook.mjs) o registra e fica esperando a decisão. Só existe com bind local (a mesma
+ * trava do terminal somente leitura) e com alguma página do CodeTown aberta.
+ * No snapshot vai sem `input` (os argumentos completos só saem por GET /api/permissions/:id, com acesso
+ * local); os pedidos fictícios do demo já vêm com ele.
+ */
+export interface PermissionRequestInfo {
+  id: string;
+  /** Nome bruto da ferramenta (ex.: "Bash", "Edit", "mcp__github__create_issue"). */
+  tool: string;
+  /** Título no estilo do Claude Code: "Bash(npm test)", "Edit(src/app.ts)". Mascarado e cortado. */
+  title: string;
+  /** Resumo em PT-BR (ex.: "Rodando os testes") e o ícone da atividade. */
+  text: string;
+  icon: string;
+  /** Argumentos (comando, diff, JSON...), mascarados e truncados. */
+  input?: string;
+  inputKind?: TerminalInputKind;
+  /** Pedido de um subagente que o CodeTown ainda não mostra: o tipo dele (ex.: "Explore"). */
+  subagent?: string;
+  /** Regras "sempre permitir" que podem ser aplicadas junto com a aprovação. */
+  suggestions?: PermissionSuggestionInfo[];
+  /** Outros pedidos do mesmo agente esperando depois deste. */
+  queued?: number;
+  createdAt: number;
+  /** Quando o hook desiste de esperar e o pedido passa a valer só no terminal. */
+  expiresAt: number;
+}
+
+/** Corpo de POST /api/permissions/:id/decision (vindo da página). */
+export interface PermissionDecision {
+  /** allow = aprovar; deny = recusar; terminal = devolver o pedido ao terminal (o hook sai sem decidir). */
+  behavior: 'allow' | 'deny' | 'terminal';
+  /** Recusa: motivo repassado ao agente. */
+  message?: string;
+  /** Recusa: interrompe o agente (ele para e espera você). */
+  interrupt?: boolean;
+  /** Aprovação: aplica junto a sugestão desta posição (PermissionSuggestionInfo.index). */
+  suggestion?: number;
 }

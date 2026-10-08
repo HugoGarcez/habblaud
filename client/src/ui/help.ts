@@ -63,6 +63,7 @@ const SHORTCUTS: [string[], string][] = [
   [['T'], 'Abrir ou fechar o terminal do agente selecionado (somente leitura)'],
   [['Ctrl+F'], 'Com o terminal em foco: buscar na conversa (⌘F no Mac); Enter e Shift+Enter navegam'],
   [['L'], 'Abrir ou fechar o timelapse do dia'],
+  [['P'], 'Ir até o próximo pedido de permissão para responder pelo escritório'],
   [['O', '0'], 'Visão geral do prédio'],
   [['Esc'], 'Fechar a busca do terminal, depois o terminal; depois, a gaveta e a seleção'],
   [['['], 'Mostrar ou ocultar o painel lateral'],
@@ -123,6 +124,9 @@ export class HelpDialog {
             }),
             h('li', {
               text: 'No terminal: busca (lupa ou Ctrl/⌘+F), filtro “Tudo / Só prompts / Sem ferramentas” e um botão de copiar em cada entrada. O relógio da barra superior abre o histórico das sessões dos últimos 7 dias, inclusive as já encerradas.',
+            }),
+            h('li', {
+              text: 'Com o hook de permissão instalado (npm run hooks:install), quem “pede permissão” mostra nos detalhes o comando ou a edição e os botões Aprovar, Recusar e Responder no terminal. O diálogo continua no terminal: vale o que você responder primeiro.',
             }),
           ),
           shortcuts,

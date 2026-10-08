@@ -17,6 +17,8 @@ import { errMsg, log } from './log';
 import { NameStore } from './model/names';
 import { Office } from './model/office';
 import { openMainAgent, SessionHistory } from './sources/history';
+import { createPermissionRoutes } from './permissions/http';
+import { PermissionRegistry } from './permissions/registry';
 import { ClaudeWatcher } from './sources/watcher';
 import { createBuildReader } from './build';
 
@@ -27,7 +29,7 @@ const names = new NameStore(join(config.dataDir, 'names.json'));
 names.load();
 
 // Office, contas e watcher se referenciam (avisos de mudança / fontes): ligação tardia.
-const late: { office?: Office; watcher?: ClaudeWatcher } = {};
+const late: { office?: Office; watcher?: ClaudeWatcher; permissions?: PermissionRegistry } = {};
 const accounts = new AccountsService({
   dirs: config.claudeDirs,
   home: config.home,
@@ -45,6 +47,7 @@ const office = new Office({
   sources: () => late.watcher?.sources() ?? [],
   accountName: (id) => accounts.find(id)?.detected.name,
   terminal: config.terminal,
+  permissions: () => late.permissions?.snapshot() ?? new Map(),
 });
 const watcher = new ClaudeWatcher({ accounts, office, inDocker: config.inDocker });
 late.office = office;
@@ -60,6 +63,17 @@ const history = config.terminal
 const timelineDir = join(config.dataDir, TIMELINE_DIR);
 const timeline = config.timeline ? new TimelineRecorder({ dir: timelineDir }) : undefined;
 if (timeline) hub.onSnapshot((snap) => timeline.ingest(snap));
+// Responder pelo escritório (hook PermissionRequest): age sobre as sessões, então segue a mesma trava.
+const permissions = config.terminal
+  ? new PermissionRegistry({
+      office,
+      viewers: () => hub.localSize,
+      transcriptPathOf: (id) => watcher.transcriptPathOf(id),
+      demoDecide: (id, d) => office.decideDemoPermission(id, d),
+      demoDetail: (id) => office.demoPermission(id),
+    })
+  : undefined;
+late.permissions = permissions;
 
 if (config.demo) office.setDemo(true);
 watcher.start();
@@ -69,6 +83,7 @@ if (timeline) {
   timeline.start();
   timeline.ingest(hub.current());
 }
+permissions?.start();
 const ticker = setInterval(() => {
   try {
     office.tick();
@@ -88,6 +103,7 @@ const api = createApiHandler({
   terminals,
   sessions: history,
   timeline: createTimelineHandler({ dir: timelineDir, recording: !!timeline }),
+  permissions: permissions ? createPermissionRoutes(permissions) : undefined,
 });
 
 const server = http.createServer();
@@ -153,6 +169,7 @@ server.listen(config.port, config.host, () => {
   if (config.terminal) log.info('   Terminal somente leitura: ligado (acesso só local).');
   else log.info(`   Terminal somente leitura: desligado (${terminalOffReason(process.env, config.host, config.inDocker)}).`);
   log.info(timeline ? `   Linha do tempo (timelapse): gravando em ${timelineDir}.` : '   Linha do tempo (timelapse): gravação desligada (CODETOWN_TIMELINE).');
+  log.info(`   Responder pelo escritório: ${config.terminal ? 'ligado (precisa do hook: npm run hooks:install)' : 'desligado (mesma trava do terminal)'}.`);
 });
 
 let shuttingDown = false;
@@ -166,6 +183,7 @@ function shutdown(signal: string): void {
   hub.stop();
   terminals?.stop();
   timeline?.stop();
+  permissions?.stop();
   names.flush();
   void closeVite?.();
   server.close(() => process.exit(0));

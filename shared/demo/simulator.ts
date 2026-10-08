@@ -1,14 +1,16 @@
 // Simulador de escritório para demonstração e desenvolvimento.
 // Puro (sem Node/DOM): roda no servidor (CODETOWN_DEMO=1) e no navegador (?mock=1).
 //
-// Gera sessões fictícias com ciclos realistas: prompt -> trabalho -> (permissão) -> (subagentes)
+// Gera sessões fictícias com ciclos realistas: prompt -> trabalho -> (permissão, com pedido fictício
+// para responder pelo escritório) -> (subagentes)
 // -> (comando longo em primeiro plano) -> fim de turno -> (esperando shell em segundo plano) ->
 // pausa -> ... e encerra sessões de tempos em tempos para exercitar as animações de chegada,
 // saída, "apagar a luz" e sumiço de salas.
-import type { AccountInfo, Activity, AgentInfo, FeedItem, Notice, OfficeSnapshot, RoomInfo, ShellJob, TaskItem } from '../types';
+import type { AccountInfo, Activity, AgentInfo, FeedItem, Notice, OfficeSnapshot, PermissionDecision, RoomInfo, ShellJob, TaskItem } from '../types';
 import { describePrompt, describeShellJob, describeTool, SHELL_DONE_TOOL, SHELL_WAIT_TOOL, SPECIAL, type ActivityDescription, type ShellOutcome } from '../activity';
 import { hash32, mulberry32 } from '../hash';
 import { pickName } from '../names';
+import { demoPermission } from './permission';
 
 interface DemoProject {
   name: string;
@@ -271,6 +273,70 @@ export class DemoSimulator {
     };
   }
 
+  // ---------------------------------------------------------------- pedidos de permissão (fictícios)
+
+  /**
+   * Resposta a um pedido fictício pelo escritório: aprovar ou recusar retomam o trabalho na hora;
+   * "responder no terminal" só tira o pedido do escritório (o agente continua esperando um pouco).
+   * false = pedido desconhecido (já respondido ou de outra instância).
+   */
+  decidePermission(requestId: string, d: PermissionDecision, now = Date.now()): boolean {
+    const a = [...this.agents.values()].find((x) => x.info.permission?.id === requestId);
+    if (!a || a.phase !== 'waiting') return false;
+    const title = a.info.permission!.title;
+    delete a.info.permission;
+    this.dirty = true;
+    if (d.behavior === 'terminal') {
+      a.phaseUntil = Math.min(a.phaseUntil, now + this.ms(3_000, 8_000));
+      return true;
+    }
+    if (d.behavior === 'allow') {
+      this.activity(a, now, { kind: 'other', icon: '✅', text: d.suggestion !== undefined ? 'Aprovado no CodeTown (sempre permitir)' : 'Aprovado no CodeTown', detail: title, tool: 'PermissionRequest' });
+    } else {
+      this.activity(a, now, { kind: 'wait', icon: '🚫', text: 'Recusado no CodeTown', detail: d.message ? `${title} — ${d.message}` : title, tool: 'PermissionRequest' });
+    }
+    this.resumeFromWaiting(a, now);
+    return true;
+  }
+
+  /**
+   * Faz um agente principal que está trabalhando (ou, sem nenhum, qualquer um ocioso) pedir permissão
+   * agora. Para testes e capturas de tela; devolve o id do agente.
+   */
+  forcePermission(now = Date.now()): string | undefined {
+    const mains = [...this.agents.values()].filter((a) => a.info.kind === 'main' && a.removeAt === undefined);
+    const a = mains.find((x) => x.phase === 'working') ?? mains.find((x) => x.phase === 'idle');
+    if (!a) return undefined;
+    if (a.phase === 'idle') {
+      a.phase = 'working';
+      a.actionsLeft = 3;
+      this.setStatus(a, 'working', now);
+    }
+    this.askPermission(a, now);
+    return a.info.id;
+  }
+
+  /** Para no meio do turno pedindo permissão (com o pedido fictício para responder pelo escritório). */
+  private askPermission(a: SimAgent, now: number): void {
+    a.phase = 'waiting';
+    // Com o cartão para responder, a espera é mais longa (dá tempo de clicar).
+    a.phaseUntil = now + this.ms(25_000, 50_000);
+    a.info.waitingFor = 'aprovar uma permissão';
+    a.info.permission = demoPermission(`${this.prefix}perm-${this.tag}-${++this.seq}`, a.project, a.rng, now);
+    this.setStatus(a, 'waiting', now);
+    this.activity(a, now, SPECIAL.waiting('aprovar uma permissão'));
+    this.notice(now, 'alert', `✋ ${a.info.name} precisa de você em ${a.project.name}: aprovar uma permissão`, a.info.id, a.info.roomId);
+  }
+
+  private resumeFromWaiting(a: SimAgent, now: number): void {
+    a.phase = 'working';
+    a.info.waitingFor = undefined;
+    delete a.info.permission;
+    this.setStatus(a, 'working', now);
+    a.nextActionAt = now + this.ms(800, 1_500);
+    this.dirty = true;
+  }
+
   // ---------------------------------------------------------------- internos
 
   private ms(min: number, max: number): number {
@@ -439,10 +505,8 @@ export class DemoSimulator {
         break;
       case 'waiting':
         if (now >= a.phaseUntil) {
-          a.phase = 'working';
-          a.info.waitingFor = undefined;
-          this.setStatus(a, 'working', now);
-          a.nextActionAt = now + this.ms(800, 1_500);
+          // Respondido "no terminal": o pedido some do escritório.
+          this.resumeFromWaiting(a, now);
         }
         break;
       case 'delegating': {
@@ -499,12 +563,7 @@ export class DemoSimulator {
         {
           const roll = a.rng();
           if (roll < 0.1) {
-            a.phase = 'waiting';
-            a.phaseUntil = now + this.ms(7_000, 16_000);
-            a.info.waitingFor = 'aprovar uma permissão';
-            this.setStatus(a, 'waiting', now);
-            this.activity(a, now, SPECIAL.waiting('aprovar uma permissão'));
-            this.notice(now, 'alert', `✋ ${a.info.name} precisa de você em ${a.project.name}: aprovar uma permissão`, a.info.id, a.info.roomId);
+            this.askPermission(a, now);
           } else if (roll < 0.2 && a.children.length === 0) {
             const count = 2 + Math.floor(a.rng() * 3);
             this.activity(a, now, describeTool('Agent', { description: `${count} frentes em paralelo`, subagent_type: 'general-purpose' }));
@@ -726,5 +785,6 @@ function structuredCloneAgent(a: AgentInfo): AgentInfo {
     activity: a.activity ? { ...a.activity } : undefined,
   };
   if (a.shells) c.shells = a.shells.map((j) => ({ ...j }));
+  if (a.permission) c.permission = { ...a.permission, suggestions: a.permission.suggestions?.map((s) => ({ ...s, rules: s.rules.slice() })) };
   return c;
 }

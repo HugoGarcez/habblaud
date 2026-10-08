@@ -4,6 +4,7 @@ import { createAvatar } from './avatar';
 import type { UiComponent, UiContext } from './context';
 import { h, iconButton, prefersReducedMotion, setHidden, setText } from './dom';
 import { ICONS } from './icons';
+import { focusPermission } from './permission';
 
 const MAX_VISIBLE = 4;
 /** Avisos iguais dentro desta janela viram um só (com contador). */
@@ -15,6 +16,8 @@ interface Toast {
   notice: Notice;
   el: HTMLElement;
   count: HTMLElement;
+  /** "Responder" (alertas de quem tem pedido de permissão para responder pelo escritório). */
+  answer?: HTMLButtonElement;
   repeats: number;
   timer: ReturnType<typeof setTimeout> | null;
   remaining: number;
@@ -68,6 +71,8 @@ export class Toasts implements UiComponent {
       if (t.notice.level !== 'alert' || !t.notice.agentId) continue;
       const a = this.ctx.agent(t.notice.agentId);
       if (!a || a.status !== 'waiting') this.dismiss(t);
+      // O pedido pode chegar (pelo hook) depois do aviso: o atalho aparece quando ele existe.
+      else if (t.answer) setHidden(t.answer, !a.permission);
     }
   }
 
@@ -87,6 +92,11 @@ export class Toasts implements UiComponent {
     });
     const el = h('div', { class: `ui-toast ui-toast--${n.level}`, role: n.level === 'alert' ? 'alert' : 'status' }, body);
     const toast: Toast = { key, notice: n, el, count, repeats: 1, timer: null, remaining: 0, startedAt: 0 };
+    if (n.level === 'alert' && n.agentId) {
+      const id = n.agentId;
+      toast.answer = h('button', { class: 'ui-toast__answer', type: 'button', text: 'Responder', title: 'Aprovar ou recusar pelo escritório', hidden: !agent?.permission, on: { click: () => focusPermission(this.ctx, id) } });
+      el.append(toast.answer);
+    }
     el.append(iconButton(ICONS.close, 'Fechar aviso', () => this.dismiss(toast), 'ui-icon-btn--sm ui-toast__close'));
     // Pausa o tempo de vida com o mouse em cima.
     el.addEventListener('mouseenter', () => this.pause(toast));

@@ -271,8 +271,11 @@ function questionsText(raw: unknown): string {
     .join('\n\n');
 }
 
-/** Título e argumentos de uma chamada de ferramenta, no estilo do Claude Code: "Bash(npm test)". */
-function toolView(name: string, input: Rec, cwd?: string): ToolView {
+/**
+ * Título e argumentos de uma chamada de ferramenta, no estilo do Claude Code: "Bash(npm test)".
+ * Também usado pelos pedidos de permissão (server/permissions/).
+ */
+export function toolView(name: string, input: Rec, cwd?: string): ToolView {
   const s = (k: string) => str(input[k]);
   const path = s('file_path') ?? s('notebook_path') ?? s('path');
   const rel = path ? relPath(path, cwd) : undefined;

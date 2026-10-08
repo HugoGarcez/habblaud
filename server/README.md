@@ -52,7 +52,12 @@ enquanto o status é `shell`, o balão é "⏳ Esperando o shell: <rótulo>" (`t
 | `GET /api/health` | `{ok, version, demo, docker, terminal, sources, accounts:[{id, usageStatus}]}` |
 | `GET /api/timeline/days` | `{recording, days:[{day, bytes, from, to}]}`: dias gravados para o timelapse, do mais recente ao mais antigo |
 | `GET /api/timeline/:dia` | o arquivo do dia (`AAAA-MM-DD`) em JSONL (`application/x-ndjson`, gzip se aceito); 400 para dia inválido, 404 sem gravação |
+| `GET /api/health` | `{ok, version, demo, docker, terminal, permissions, sources, accounts:[{id, usageStatus}]}` |
 | `POST /api/demo` | `{enabled: boolean}` liga/desliga agentes simulados (misturados aos reais) |
+| `POST /api/permissions` | (hook) registra um pedido de permissão: `201 {id, expiresAt}` ou `200 {skip}`; só com bind local (ver abaixo) |
+| `GET /api/permissions/:id/wait` | (hook) long-poll de até 25 s (`?timeout=` em segundos): `{status: 'pending' \| 'decided' \| 'released', ...}` |
+| `GET /api/permissions/:id` | (página) detalhe do pedido com os argumentos (`PermissionRequestInfo` com `input`) |
+| `POST /api/permissions/:id/decision` | (página) `PermissionDecision`: `{behavior: 'allow' \| 'deny' \| 'terminal', message?, interrupt?, suggestion?}` |
 
 O snapshot (SSE e `GET /api/snapshot`) leva só as últimas 8 atividades de cada agente em `recent`; o histórico
 de até 200 (inclusive o começo de transcripts longos, lido em segundo plano) vem de `GET /api/agents/:id`.
@@ -135,6 +140,35 @@ encerrada sem nenhuma linha com horário é omitida. A lista sai da atividade ma
 conhecidas (404), o id precisa ter formato de UUID (400) e o arquivo, com links resolvidos (`realpath`), precisa ficar
 dentro da pasta `projects/` da conta (404); segmentos que não decodificam respondem 400. As duas rotas exigem a mesma
 trava do terminal (recurso ligado e `Host` local, senão 403) e só aceitam `GET` (a lista, também `HEAD`; senão 405).
+## Responder pelo escritório
+
+O hook `PermissionRequest` do Claude Code (`scripts/permission-hook.mjs`, instalado em `<conta>/settings.json` por
+`npm run hooks:install`, com `matcher: "*"`) roda **junto** com o diálogo de permissão do terminal: vale o que
+responder primeiro. Em subagentes em segundo plano o Claude Code roda o hook antes e só mostra o diálogo depois que
+ele sai. O hook manda o pedido (`session_id`, `agent_id`/`agent_type`, `cwd`, `tool_name`, `tool_input` com textos
+cortados, `permission_suggestions` e o próprio `timeout_ms`) e espera; com `decided` imprime
+`hookSpecificOutput.decision` (`allow`, com `updatedPermissions` = a sugestão original escolhida, ou `deny` com
+`message`/`interrupt`); com `released`, erro ou tempo esgotado sai sem imprimir nada (vale o terminal).
+`AskUserQuestion` não é desviado.
+
+`permissions/registry.ts` (`PermissionRegistry`):
+
+- só aceita o pedido com alguma página conectada por `Host` local (`Hub.localSize`) e com a sessão conhecida
+  (principal pelo `session_id`; subagente por `<session_id>:<agent_id>`, ou o principal com `subagent` = tipo);
+  senão `{skip: 'no-viewers' | 'unknown-session' | 'unsupported-tool' | 'too-many'}` (máx. 32 abertos);
+- publica o pedido mais antigo de cada agente em `AgentInfo.permission` (sem `input`, que só sai pelo detalhe;
+  `queued` = quantos esperam depois) e põe o agente como `waiting`; atividade `PermissionRequest` no feed e aviso
+  "pede permissão" (dedupe do "precisa de você"); aprovar/recusar viram atividades também;
+- libera o hook (`released`) quando: `terminal` na página, tempo limite do hook + 5 s (`expired`), nenhum hook
+  esperando por 8 s (`orphan`), agente que saiu (`gone`) ou resposta no próprio terminal (`answered`): o Claude Code
+  não encerra o hook quando você responde lá, então o registro acha a chamada no fim do transcript
+  (`permissions/transcript.ts`: nome + assinatura dos argumentos, a mais recente sem resultado) e espera o
+  `tool_result` dela; sem a chamada, um principal que esteve `waiting` no registro de sessões e saiu dele há 3 s;
+- decisões não buscadas ficam guardadas por 30 s; pedidos do demo (`demo:perm-…`) vão para o simulador.
+
+As rotas (`permissions/http.ts`) seguem a trava do terminal somente leitura: sem `ServerConfig.terminal` → 403 em
+todas; `Host` que não é local → 403. O guard já exige JSON e `Origin` local nos `POST`. Erros: 400 (corpo ou
+sugestão inválidos), 404 (pedido desconhecido, já entregue ou expirado), 405, 409 (já respondido).
 
 ## Variáveis de ambiente
 
@@ -152,6 +186,10 @@ trava do terminal (recurso ligado e `Host` local, senão 403) e só aceitam `GET
 | `CODETOWN_ACCOUNTS` | — | JSON com metadados das contas vindos do host (Docker): `[{id, configDir, mountDir, short, name, email, organization, plan, color, cachedUsage}]`, casados por `id`, `mountDir` ou `configDir` |
 | `CODETOWN_USAGE_DIR` | `~/.codetown/usage` (Docker: `/usage`) | pasta do uso capturado pelo tap de statusline, relida a cada 5 s |
 | `CODETOWN_ALLOWED_HOSTS` | — | nomes extras aceitos no `Host`/`Origin` (vírgula); `localhost`, `*.localhost` e IPs sempre valem |
+
+No hook de permissão (ambiente do Claude Code; os argumentos `--port`/`--timeout` gravados pelo instalador têm
+preferência): `CODETOWN_PORT` (porta do CodeTown, padrão `4747`), `CODETOWN_PERMISSION_TIMEOUT` (segundos de espera
+pela resposta no CodeTown, padrão `300`, entre 5 e 1800) e `CODETOWN_HOOK_DEBUG=1` (conta no stderr o que fez).
 
 ## Uso do plano (5h e semanal)
 
@@ -178,6 +216,9 @@ números novos — nunca um 0% inventado.
 - `http/` — proteções de borda (`guard.ts`), rotas (`app.ts`), SSE (`sse.ts`), terminal somente leitura (`terminal.ts`) e o histórico dele (`sessions.ts`), estáticos (`static.ts`).
 - `history/` — gravador da linha do tempo do timelapse (`timeline.ts`).
 - `http/` — proteções de borda (`guard.ts`), rotas (`app.ts`), SSE (`sse.ts`), terminal somente leitura (`terminal.ts`), timelapse (`timeline.ts`), estáticos (`static.ts`).
+- `http/` — proteções de borda (`guard.ts`), rotas (`app.ts`), SSE (`sse.ts`), terminal somente leitura (`terminal.ts`), estáticos (`static.ts`).
+- `permissions/` — responder pelo escritório: registro dos pedidos (`registry.ts`), rotas (`http.ts`) e a busca da chamada no transcript (`transcript.ts`).
 
 Testes: `npx vitest run server shared` (fixtures sintéticas em `server/test/fixtures.ts`; os scripts do host —
-tap de statusline, instalador e `docker-up` — são testados em `server/test/` com HOME e config dirs falsos).
+tap de statusline, hook de permissão (rodado como processo contra um servidor de teste), instaladores e
+`docker-up` — são testados em `server/test/` com HOME e config dirs falsos).

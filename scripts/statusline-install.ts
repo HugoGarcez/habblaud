@@ -73,7 +73,7 @@ export function isTapCommand(cmd: unknown): cmd is string {
 }
 
 /** Caminho entre aspas duplas (legível); com `$`, crase, `"` ou `\\`, aspas simples. */
-function quotePath(p: string): string {
+export function quotePath(p: string): string {
   return /^[^"$`\\]*$/.test(p) ? `"${p}"` : shellQuote(p);
 }
 
@@ -238,11 +238,11 @@ function stamp(d: Date): string {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 }
 
-function tildify(p: string, home: string): string {
+export function tildify(p: string, home: string): string {
   return p === home || p.startsWith(`${home}/`) ? `~${p.slice(home.length)}` : p;
 }
 
-function readSettings(file: string): { settings: Settings; raw?: string } | { error: string } {
+export function readSettings(file: string): { settings: Settings; raw?: string } | { error: string } {
   if (!existsSync(file)) return { settings: {} };
   let raw: string;
   try {
@@ -261,7 +261,7 @@ function readSettings(file: string): { settings: Settings; raw?: string } | { er
 }
 
 /** Backup + gravação atômica preservando a permissão do arquivo. Devolve o caminho do backup. */
-function writeSettings(file: string, settings: Settings, raw: string | undefined, now: Date): string | undefined {
+export function writeSettings(file: string, settings: Settings, raw: string | undefined, now: Date): string | undefined {
   let mode = 0o600;
   let backup: string | undefined;
   if (raw !== undefined) {
