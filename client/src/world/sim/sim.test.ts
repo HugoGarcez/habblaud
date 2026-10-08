@@ -240,6 +240,24 @@ describe('simulação do escritório', () => {
     expect(ana.pose).toBe('type');
   });
 
+  it('quem cochila na mesa (ocioso há muito tempo) acorda ao levantar: o "zzz" não vai junto', () => {
+    const sim = newSim();
+    const clock = { now: T0 };
+    sim.applySnapshot(snap([room('/a', 0)], [agent('ana', '/a', 'idle', { statusSince: T0 - 3_600_000 })]), clock.now);
+    const ana = sim.chars.get('ana')!;
+    run(sim, clock, 60, () => ana.atSpot === ana.homeSpot && ana.icon === 'zzz');
+    expect(ana.pose).toBe('sleep');
+    expect(ana.icon).toBe('zzz');
+    // Uma roda (ou qualquer plano) tira do lugar sem mudar o modo: segue "ocioso há muito tempo".
+    ana.queue.push({ t: 'exit' }, { t: 'act', pose: 'stand', ms: 4000 });
+    run(sim, clock, 1.5);
+    expect(ana.pose).toBe('stand');
+    expect(ana.icon).toBeNull();
+    // A verificação de 1 em 1 s não devolve o "zzz" a quem está de pé.
+    run(sim, clock, 1.5);
+    expect(ana.icon).toBeNull();
+  });
+
   it('avanço rápido (aba oculta) teletransporta para os destinos', () => {
     const sim = newSim();
     const clock = { now: T0 };

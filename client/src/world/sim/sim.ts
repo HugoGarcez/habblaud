@@ -546,7 +546,7 @@ export class Sim {
       if (ch.info.kind === 'sub' && !ch.leaving) this.refreshMode(ch);
       // comando em primeiro plano passou dos 10 s (ou a espera acabou): muda de modo sem snapshot novo
       else if (!ch.leaving && (ch.mode === 'shell' || (ch.info.status === 'working' && ch.info.shells?.length))) this.refreshMode(ch);
-      if (ch.mode === 'idle' && isLongIdle(ch.info.status, ch.info.statusSince, now) && ch.atSpot === ch.homeSpot && ch.icon !== 'zzz') {
+      if (ch.mode === 'idle' && isLongIdle(ch.info.status, ch.info.statusSince, now) && ch.atSpot === ch.homeSpot && ch.pose === 'sleep' && ch.icon !== 'zzz') {
         ch.setIcon('zzz', 1e12, now);
       }
     }
@@ -639,6 +639,9 @@ export class Sim {
     ch.animT += dt * 1000;
     ch.updateLane(dt);
     if (ch.icon && now >= ch.iconUntil) ch.icon = null;
+    // "zzz" só enquanto dorme: quem levanta (uma roda chamou, festa na sala, um passeio) acordou, e o ícone não vai
+    // junto. O cochilo na mesa de quem está ocioso há muito tempo não muda o modo, então ninguém mais o apagaria.
+    if (ch.icon === 'zzz' && ch.pose !== 'sleep') ch.icon = null;
     if (ch.mode === 'shell' && ch.shellSince) ch.shellStage = shellStage(now - ch.shellSince);
     if (!ch.step) {
       if (ch.replan) {

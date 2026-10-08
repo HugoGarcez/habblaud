@@ -10,6 +10,11 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Corrigido
+
+- Quem cochilava na mesa (ocioso há mais de 10 minutos) e levantava para uma roda, uma festa ou um passeio saía
+  andando com o "zzz" na cabeça. Agora o "zzz" só aparece enquanto o personagem dorme.
+
 ## [0.3.0] - 2026-10-08
 
 ### Adicionado
