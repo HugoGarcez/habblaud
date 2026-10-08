@@ -10,6 +10,8 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+## [0.4.0] - 2026-10-08
+
 ### Alterado
 
 - **O CodeTown agora se chama Habblaud.** O nome muda em toda parte: interface, logotipo, placa da recepção, totem da
@@ -91,7 +93,8 @@ Primeira versão publicada.
   Subagentes chegam, trabalham e entregam ao principal. Mostra as duas contas, com o uso de 5 horas e semanal de
   cada uma (tap de statusline), além de feed de atividade, avisos e modo demonstração. Roda no Node ou no Docker local.
 
-[Não lançado]: https://github.com/marmottajr/habblaud/compare/v0.3.2...HEAD
+[Não lançado]: https://github.com/marmottajr/habblaud/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/marmottajr/habblaud/releases/tag/v0.4.0
 [0.3.2]: https://github.com/marmottajr/habblaud/releases/tag/v0.3.2
 [0.3.1]: https://github.com/marmottajr/habblaud/releases/tag/v0.3.1
 [0.3.0]: https://github.com/marmottajr/habblaud/releases/tag/v0.3.0
