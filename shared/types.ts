@@ -242,9 +242,10 @@ export interface AccountUsage {
    * Origem dos números (as duas são arquivos locais gravados a partir do próprio Claude Code):
    * - 'statusline': capturado ao vivo e gravado em ~/.habblaud/usage/<conta>.json pelo mod do Habblaud
    *   (mod/habblaud, recomendado) ou pelo scripts/statusline-tap.mjs (campo rate_limits do statusline);
-   * - 'cache': `cachedUsageUtilization` gravado pelo próprio Claude Code (atualiza quando alguém roda /usage).
+   * - 'cache': `cachedUsageUtilization` gravado pelo próprio Claude Code (atualiza quando alguém roda /usage);
+   * - 'codex': `rate_limits` que o Codex grava nos próprios rollouts (<CODEX_HOME>/sessions/…/rollout-*.jsonl).
    */
-  source: 'cache' | 'statusline';
+  source: 'cache' | 'statusline' | 'codex';
   /** Quem gravou o arquivo ao vivo ('statusline'): o mod do Habblaud no Claude Code ou o tap de statusline. */
   via?: 'mod' | 'tap';
   /** Quando os números foram obtidos na origem (epoch ms). */

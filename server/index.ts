@@ -23,6 +23,7 @@ import { createPermissionRoutes } from './permissions/http';
 import { PermissionRegistry } from './permissions/registry';
 import { ClaudeWatcher } from './sources/watcher';
 import { findOrcaBin, OrcaWatcher } from './sources/orca';
+import { CodexUsageService } from './sources/codex-usage';
 import { createBuildReader } from './build';
 import { UpdateChecker } from './updates/checker';
 
@@ -75,8 +76,11 @@ const office = new Office({
 });
 const watcher = new ClaudeWatcher({ accounts, office, inDocker: config.inDocker });
 // Agentes do Orca (Codex, OpenCode, Antigravity…): lidos pela CLI do Orca, fora do Docker. HABBLAUD_ORCA=0 desliga.
+// Uso de 5 h/semanal das contas do Codex (rollouts em ~/.codex e nas contas do Orca); fora do Docker.
+const codexUsage = new CodexUsageService({ home: config.home, onChange: () => office.markDirty() });
 const orca = new OrcaWatcher({
   office,
+  codexUsage: () => (config.inDocker ? [] : codexUsage.entries()),
   bin: config.inDocker || process.env.HABBLAUD_ORCA === '0' ? undefined : findOrcaBin(),
   idleMaxMs: Number(process.env.HABBLAUD_ORCA_IDLE_MIN) > 0 ? Number(process.env.HABBLAUD_ORCA_IDLE_MIN) * 60_000 : undefined,
 });
@@ -112,6 +116,7 @@ late.permissions = permissions;
 if (config.demo) office.setDemo(true);
 watcher.start();
 orca.start();
+if (!config.inDocker) codexUsage.start();
 accounts.start();
 hub.start();
 if (timeline) {
@@ -226,6 +231,7 @@ function shutdown(signal: string): void {
   stats.stop();
   watcher.stop();
   orca.stop();
+  codexUsage.stop();
   accounts.stop();
   hub.stop();
   terminals?.stop();

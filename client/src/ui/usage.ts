@@ -14,6 +14,7 @@ import { createAccountChip, updateAccountChip } from './widgets';
 export const SOURCE_LABEL: Record<NonNullable<AccountInfo['usage']>['source'], string> = {
   cache: 'cache do /usage do Claude Code',
   statusline: 'ao vivo (statusline do Claude Code)',
+  codex: 'sessões do Codex (atualiza a cada resposta)',
 };
 
 /** Origem para mostrar: o arquivo ao vivo pode ter sido gravado pelo mod do Habblaud ou pelo tap. */
@@ -166,8 +167,8 @@ export class UsageCards {
   }
 
   render(): void {
-    // Contas virtuais dos agentes do Orca (Codex, OpenCode…) não têm o uso de 5h/semanal do Claude.
-    const accounts = (this.ctx.store.snapshot?.accounts ?? []).filter((a) => !a.id.startsWith('orca:'));
+    // Contas virtuais dos agentes do Orca (OpenCode, Antigravity…) só têm cartão quando há números de uso (Codex).
+    const accounts = (this.ctx.store.snapshot?.accounts ?? []).filter((a) => !a.id.startsWith('orca:') || a.usage);
     this.list.sync(accounts);
     this.el.classList.toggle('is-empty', accounts.length === 0);
     setStyleVar(this.el, '--count', String(accounts.length));
@@ -287,7 +288,7 @@ export class UsageCards {
     setText(r.tipNote, note);
     setHidden(r.tipNote, !note);
     // O passo a passo aparece sempre que os números não são ao vivo.
-    const live = u?.source === 'statusline' && state === 'ok';
+    const live = (u?.source === 'statusline' || u?.source === 'codex') && state === 'ok';
     setHidden(r.tipSetup, live);
   }
 }

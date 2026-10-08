@@ -13,8 +13,10 @@ import { delimiter, join } from 'node:path';
 import { describeCommand, describePrompt, describeTool, SPECIAL, truncate, type ActivityDescription } from '../../shared/activity';
 import { hash32 } from '../../shared/hash';
 import type { AccountInfo, AgentStatus, SourceInfo } from '../../shared/types';
+import { rollover, STALE_AFTER_MS } from '../accounts/usage';
 import { errMsg, log } from '../log';
 import type { Office } from '../model/office';
+import type { CodexUsageEntry } from './codex-usage';
 
 export interface OrcaAgent {
   paneKey: string;
@@ -188,6 +190,8 @@ export interface OrcaWatcherOptions {
   idleMaxMs?: number;
   /** Tipos de agente ignorados (padrão: claude, que vem dos transcripts). */
   skipTypes?: string[];
+  /** Uso de 5 h/semanal de cada conta do Codex (ver codex-usage.ts), da leitura mais recente para a mais antiga. */
+  codexUsage?: () => CodexUsageEntry[];
 }
 
 interface Tracked {
@@ -196,6 +200,13 @@ interface Tracked {
   prompt?: string;
   toolKey?: string;
   lastMessage?: string;
+}
+
+function withUsage(acc: AccountInfo, e: CodexUsageEntry, now: number): AccountInfo {
+  acc.usage = rollover(e.usage, now);
+  acc.usageStatus = now - e.usage.fetchedAt > STALE_AFTER_MS ? 'stale' : 'ok';
+  if (acc.configDir === 'Orca') acc.configDir = e.home.dir;
+  return acc;
 }
 
 export class OrcaWatcher {
@@ -244,17 +255,33 @@ export class OrcaWatcher {
     return this.enabled ? [{ ...this.info }] : [];
   }
 
-  /** Contas "virtuais", uma por tipo de agente visto (Codex, OpenCode…), com o nº de sessões abertas. */
+  /**
+   * Contas "virtuais", uma por tipo de agente visto (Codex, OpenCode…), com o nº de sessões abertas.
+   * O Codex leva o uso de 5 h/semanal: a conta usada por último fica em "orca:codex" (a dos agentes); as outras
+   * contas do Codex com números ganham um cartão próprio ("Codex · Orca 2").
+   */
   accounts(sessions: ReadonlyMap<string, number>): AccountInfo[] {
-    return [...this.types].sort().map((t) => {
+    const now = this.now();
+    const codex = this.opts.codexUsage?.() ?? [];
+    const types = new Set(this.types);
+    if (codex.length) types.add('codex');
+    const out: AccountInfo[] = [...types].sort().map((t) => {
       const k = agentKind(t);
       const id = orcaAccountId(t);
-      return { id, short: k.short, name: k.name, color: k.color, configDir: 'Orca', sessions: sessions.get(id) ?? 0, usageStatus: 'disabled' };
+      const acc: AccountInfo = { id, short: k.short, name: k.name, color: k.color, configDir: 'Orca', sessions: sessions.get(id) ?? 0, usageStatus: 'disabled' };
+      if (t === 'codex' && codex[0]) withUsage(acc, codex[0], now);
+      return acc;
     });
+    for (const e of codex.slice(1)) {
+      const k = agentKind('codex');
+      const acc: AccountInfo = { id: `${orcaAccountId('codex')}~${e.home.label}`, short: k.short, name: `${k.name} · ${e.home.label}`, color: k.color, configDir: e.home.dir, sessions: 0, usageStatus: 'disabled' };
+      out.push(withUsage(acc, e, now));
+    }
+    return out;
   }
 
   accountName(id: string): string | undefined {
-    return id.startsWith(ORCA_ACCOUNT_PREFIX) ? agentKind(id.slice(ORCA_ACCOUNT_PREFIX.length)).name : undefined;
+    return id.startsWith(ORCA_ACCOUNT_PREFIX) ? agentKind(id.slice(ORCA_ACCOUNT_PREFIX.length).split('~')[0]).name : undefined;
   }
 
   /** Uma rodada: lê a CLI e aplica no escritório. Exposto para os testes. */
