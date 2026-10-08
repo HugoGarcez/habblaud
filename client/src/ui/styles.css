@@ -1,4 +1,4 @@
-/* Interface do CodeTown: painéis escuros translúcidos sobre o escritório em pixel art.
+/* Interface do Habblaud: painéis escuros translúcidos sobre o escritório em pixel art.
    Tipografia: logotipo em pixels (SVG); Pixelify Sans só em rótulos fixos de painel sem "C" maiúsculo nem
    dígitos (na Pixelify o "C" parece "O" e o "5" parece "S"); system-ui para o corpo, nomes, letras de conta e números.
    Identidade: detalhes "em pixel" (pontos de status quadrados, barras segmentadas de uso, ícones em pixels). */
@@ -603,7 +603,7 @@
 
 .ui-wordmark {
   display: block;
-  width: 141px;
+  width: 135px;
   height: 24px;
   image-rendering: pixelated;
 }
@@ -3160,7 +3160,7 @@
 }
 
 .ui-splash__name .ui-wordmark {
-  width: 235px;
+  width: 225px;
   height: 40px;
 }
 
@@ -3226,7 +3226,7 @@
   animation: ui-blink 1s steps(2, jump-none) infinite;
 }
 
-/* Aviso de versão nova (página aberta antes de uma atualização do CodeTown). */
+/* Aviso de versão nova (página aberta antes de uma atualização do Habblaud). */
 .ui-banner--update {
   z-index: 46;
   border-color: rgba(74, 168, 232, 0.55);

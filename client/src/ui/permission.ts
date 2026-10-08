@@ -1,7 +1,7 @@
 // Responder pelo escritório: cartão do pedido de permissão na gaveta do agente (Aprovar, Recusar com
 // motivo, "sempre permitir" e Responder no terminal) e os atalhos que levam até ele (aviso, contador da
 // barra superior e tecla P). O pedido chega pelo hook PermissionRequest
-// (mod/codetown-permissoes/hooks/permission-hook.mjs); o diálogo continua no terminal e vale o que for
+// (mod/habblaud-permissoes/hooks/permission-hook.mjs); o diálogo continua no terminal e vale o que for
 // respondido primeiro.
 import type { AgentInfo, PermissionDecision, PermissionRequestInfo, PermissionSuggestionInfo } from '../../../shared/types';
 import type { UiContext } from './context';
@@ -11,7 +11,7 @@ import { ICONS } from './icons';
 import { diffLineKind, moreLabel, previewText, showToolInput, splitToolTitle } from './terminal';
 
 /** Evento (em ctx.root) que pede para o cartão de um agente aparecer: rolar até ele e receber o foco. */
-export const PERMISSION_FOCUS_EVENT = 'codetown:permission-focus';
+export const PERMISSION_FOCUS_EVENT = 'habblaud:permission-focus';
 const PREVIEW_LINES = 12;
 const MESSAGE_MAX = 1_000;
 
@@ -135,13 +135,13 @@ export class PermissionCard {
     this.preview = h('div', { class: 'ui-perm__preview' });
     this.note = h('p', { class: 'ui-perm__note', hidden: true });
     this.queue = h('p', { class: 'ui-perm__queue', hidden: true });
-    this.remote = h('p', { class: 'ui-perm__note', hidden: true, text: 'Para responder por aqui, abra o CodeTown por http://localhost (ou 127.0.0.1). Por enquanto, responda no terminal.' });
+    this.remote = h('p', { class: 'ui-perm__note', hidden: true, text: 'Para responder por aqui, abra o Habblaud por http://localhost (ou 127.0.0.1). Por enquanto, responda no terminal.' });
 
     this.approveBtn = h('button', { class: 'ui-btn ui-perm__btn ui-perm__btn--allow', type: 'button', on: { click: () => this.send({ behavior: 'allow' }) } }, '✓ Aprovar');
     this.denyBtn = h('button', { class: 'ui-btn ui-perm__btn ui-perm__btn--deny', type: 'button', attrs: { 'aria-expanded': 'false' }, on: { click: () => this.toggleDeny() } }, '✕ Recusar…');
     this.terminalBtn = h(
       'button',
-      { class: 'ui-btn ui-perm__btn', type: 'button', title: 'O CodeTown deixa este pedido de lado: vale o que você responder no terminal', on: { click: () => this.send({ behavior: 'terminal' }) } },
+      { class: 'ui-btn ui-perm__btn', type: 'button', title: 'O Habblaud deixa este pedido de lado: vale o que você responder no terminal', on: { click: () => this.send({ behavior: 'terminal' }) } },
       'Responder no terminal',
     );
 
@@ -224,7 +224,7 @@ export class PermissionCard {
 
     setText(this.what, `${p.icon} ${p.text}${p.subagent ? ` · subagente ${p.subagent}` : ''}`);
     setText(this.timer, expiryText(p.expiresAt, now));
-    setTitle(this.timer, `Pedido feito às ${formatClock(p.createdAt)}. Sem resposta aqui até ${formatClock(p.expiresAt)}, o CodeTown devolve o pedido ao terminal.`);
+    setTitle(this.timer, `Pedido feito às ${formatClock(p.createdAt)}. Sem resposta aqui até ${formatClock(p.expiresAt)}, o Habblaud devolve o pedido ao terminal.`);
     const { name, args } = splitToolTitle(p.title);
     const shown = commandPreview(full) ? '' : args;
     if (this.tool.dataset.title !== `${p.title}|${shown}`) {
@@ -309,7 +309,7 @@ export class PermissionCard {
     try {
       error = await this.ctx.store.decidePermission(id, d);
     } catch {
-      error = 'Não foi possível falar com o CodeTown. Responda no terminal.';
+      error = 'Não foi possível falar com o Habblaud. Responda no terminal.';
     }
     if (this.id !== id) return;
     if (error) {

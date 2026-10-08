@@ -42,10 +42,10 @@ describe('salas', () => {
       new Map([
         ['1', '/p/empresa/applications/app'],
         ['2', '/p/outro/app'],
-        ['3', '/p/codetown'],
+        ['3', '/p/habblaud'],
       ]),
     );
-    expect([...names.values()]).toEqual(['applications/app', 'outro/app', 'codetown']);
+    expect([...names.values()]).toEqual(['applications/app', 'outro/app', 'habblaud']);
   });
 });
 

@@ -38,7 +38,7 @@ export const INPUT_PREVIEW_LINES = 10;
 /** Prompt do usuário muito longo (texto colado): recolhido. */
 export const PROMPT_PREVIEW_LINES = 24;
 
-export const TERMINAL_UNAVAILABLE_HINT = 'O terminal só fica disponível quando o CodeTown roda com acesso local (bind 127.0.0.1)';
+export const TERMINAL_UNAVAILABLE_HINT = 'O terminal só fica disponível quando o Habblaud roda com acesso local (bind 127.0.0.1)';
 const OPEN_ERROR = 'Não foi possível abrir o terminal. O recurso só funciona no acesso local, com o agente ainda aberto.';
 const SESSION_OPEN_ERROR = 'Não foi possível abrir a sessão. O histórico só funciona no acesso local, com o transcript ainda no disco.';
 const INPUT_PLACEHOLDER = 'Somente leitura — responda no terminal do Claude Code';

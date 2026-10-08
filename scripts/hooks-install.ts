@@ -1,23 +1,23 @@
-// Instala (ou remove) o hook de permissão do CodeTown em cada conta do Claude Code. Roda no HOST, com tsx:
+// Instala (ou remove) o hook de permissão do Habblaud em cada conta do Claude Code. Roda no HOST, com tsx:
 //
 //   npm run hooks:install     # acrescenta o hook PermissionRequest em <conta>/settings.json (backup antes)
-//   npm run hooks:uninstall   # tira só o hook do CodeTown (os seus hooks ficam)
-//   npm run hooks:status      # mostra, por conta, se está instalado, e se o CodeTown está respondendo pedidos
+//   npm run hooks:uninstall   # tira só o hook do Habblaud (os seus hooks ficam)
+//   npm run hooks:status      # mostra, por conta, se está instalado, e se o Habblaud está respondendo pedidos
 //   (opções: --dry-run, --node <caminho>, --port <n>, --timeout <s>)
 //
-// No Claude Code 2.1.287+ o mesmo hook vem pronto no plugin `codetown-permissoes` do marketplace do
-// repositório (mod/codetown-permissoes, que roda o MESMO script); este instalador fica para as versões
+// No Claude Code 2.1.287+ o mesmo hook vem pronto no plugin `habblaud-permissoes` do marketplace do
+// repositório (mod/habblaud-permissoes, que roda o MESMO script); este instalador fica para as versões
 // anteriores e para tirar instalações antigas.
 //
-// O hook (mod/codetown-permissoes/hooks/permission-hook.mjs) deixa aprovar ou recusar pelo escritório os
+// O hook (mod/habblaud-permissoes/hooks/permission-hook.mjs) deixa aprovar ou recusar pelo escritório os
 // pedidos de permissão ("Do you want to…"): o Claude Code continua mostrando o diálogo no terminal e vale o
-// que você responder primeiro. Sem o CodeTown no ar ou sem nenhuma página aberta, o hook sai na hora e nada muda.
+// que você responder primeiro. Sem o Habblaud no ar ou sem nenhuma página aberta, o hook sai na hora e nada muda.
 //
 // Em <conta>/settings.json só a lista hooks.PermissionRequest muda: entra um grupo {matcher: "*", hooks:
-// [{type: "command", command: 'node "<CodeTown>/mod/codetown-permissoes/hooks/permission-hook.mjs"', timeout,
+// [{type: "command", command: 'node "<Habblaud>/mod/habblaud-permissoes/hooks/permission-hook.mjs"', timeout,
 // statusMessage}]} (os demais hooks e chaves ficam como estão). Antes de gravar, uma cópia vai para
-// settings.json.codetown-backup-<data>. Rodar de novo atualiza o caminho/opções sem duplicar (e troca o
-// caminho antigo, scripts/permission-hook.mjs, de antes da 0.3).
+// settings.json.habblaud-backup-<data>. Rodar de novo atualiza o caminho/opções sem duplicar (e troca o
+// caminho antigo, scripts/permission-hook.mjs, de antes da 0.3, e o do nome antigo, mod/codetown-permissoes/).
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -26,12 +26,13 @@ import { discoverClaudeDirs } from '../server/accounts/detect';
 import { detectNodeCommand, quotePath, readSettings, tildify, writeSettings, type Settings } from './statusline-install';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-export const HOOK_SCRIPT = join(ROOT, 'mod', 'codetown-permissoes', 'hooks', 'permission-hook.mjs');
+export const HOOK_SCRIPT = join(ROOT, 'mod', 'habblaud-permissoes', 'hooks', 'permission-hook.mjs');
 /** Onde o script ficava até a 0.2 (instalações antigas apontam para cá; o status avisa e manda reinstalar). */
 export const LEGACY_HOOK_SCRIPT = join(ROOT, 'scripts', 'permission-hook.mjs');
 /**
- * O hook é reconhecido pelo NOME do arquivo, em qualquer pasta: assim o caminho antigo (scripts/) e o novo
- * (mod/codetown-permissoes/hooks/) contam como "nosso", e install/uninstall trocam ou tiram os dois.
+ * O hook é reconhecido pelo NOME do arquivo, em qualquer pasta: assim o caminho antigo (scripts/), o do nome
+ * antigo (mod/codetown-permissoes/hooks/, que não existe mais) e o novo (mod/habblaud-permissoes/hooks/) contam
+ * como "nosso", e install/uninstall trocam ou tiram qualquer um deles.
  */
 const HOOK_NAME = 'permission-hook.mjs';
 const EVENT = 'PermissionRequest';
@@ -39,24 +40,24 @@ export const DEFAULT_PORT = 4747;
 export const DEFAULT_TIMEOUT_S = 300;
 /** Folga do tempo limite do Claude Code sobre o do hook (o hook sempre desiste antes). */
 const TIMEOUT_SLACK_S = 30;
-export const STATUS_MESSAGE = 'Aguardando resposta no CodeTown';
+export const STATUS_MESSAGE = 'Aguardando resposta no Habblaud';
 
 const USAGE = `Uso: npm run hooks:<install|uninstall|status> [-- opções]
 
-  install     acrescenta o hook de permissão do CodeTown em cada conta (faz backup do settings.json)
-  uninstall   tira o hook do CodeTown de cada conta (os outros hooks ficam)
-  status      mostra se o hook está instalado e se o CodeTown está respondendo pedidos
+  install     acrescenta o hook de permissão do Habblaud em cada conta (faz backup do settings.json)
+  uninstall   tira o hook do Habblaud de cada conta (os outros hooks ficam)
+  status      mostra se o hook está instalado e se o Habblaud está respondendo pedidos
 
 Opções:
   --dry-run        mostra o que mudaria, sem gravar nada
   --node <cmd>     comando do node usado no hook (padrão: detectado no PATH)
-  --port <n>       porta do CodeTown (padrão: CODETOWN_PORT ou ${DEFAULT_PORT})
-  --timeout <s>    quanto o hook espera sua resposta no CodeTown antes de devolver o pedido ao terminal
+  --port <n>       porta do Habblaud (padrão: HABBLAUD_PORT ou ${DEFAULT_PORT})
+  --timeout <s>    quanto o hook espera sua resposta no Habblaud antes de devolver o pedido ao terminal
                    (padrão: ${DEFAULT_TIMEOUT_S} s)
   -h, --help       mostra esta ajuda
 
 Contas: as mesmas do servidor (~/.claude* com projects/ ou sessions/, CLAUDE_CONFIG_DIR ou
-CODETOWN_CLAUDE_DIRS).`;
+HABBLAUD_CLAUDE_DIRS).`;
 
 // ---------------------------------------------------------------------------------------------
 // Funções puras (testadas em server/test/hooks-install.test.ts)
@@ -106,7 +107,7 @@ function eventList(settings: Settings): { hooks: Rec; list: unknown[] } | string
   return { hooks, list: (hooks[EVENT] as unknown[] | undefined) ?? [] };
 }
 
-/** Lista sem os hooks do CodeTown (grupos que ficarem vazios saem); `removed` = quantos saíram. */
+/** Lista sem os hooks do Habblaud (grupos que ficarem vazios saem); `removed` = quantos saíram. */
 function withoutOurs(list: unknown[]): { list: unknown[]; removed: number } {
   let removed = 0;
   const out: unknown[] = [];
@@ -138,10 +139,10 @@ export function planInstall(settings: Settings, entry: Rec): PlanAction {
   }
   const rest = withoutOurs(ev.list).list;
   const next: Settings = { ...settings, hooks: { ...ev.hooks, [EVENT]: [...rest, { matcher: '*', hooks: [entry] }] } };
-  return { action: 'install', settings: next, message: mine.length ? 'atualizado (novo caminho do CodeTown, do node ou das opções)' : 'instalado' };
+  return { action: 'install', settings: next, message: mine.length ? 'atualizado (novo caminho do Habblaud, do node ou das opções)' : 'instalado' };
 }
 
-/** Plano de remoção: tira só os hooks do CodeTown (e o que ficar vazio por causa disso). */
+/** Plano de remoção: tira só os hooks do Habblaud (e o que ficar vazio por causa disso). */
 export function planUninstall(settings: Settings): PlanAction {
   const ev = eventList(settings);
   if (typeof ev === 'string') return { action: 'skip', message: ev };
@@ -153,10 +154,10 @@ export function planUninstall(settings: Settings): PlanAction {
   const next: Settings = { ...settings };
   if (Object.keys(hooks).length) next.hooks = hooks;
   else delete next.hooks;
-  return { action: 'uninstall', settings: next, message: 'hook do CodeTown removido' };
+  return { action: 'uninstall', settings: next, message: 'hook do Habblaud removido' };
 }
 
-/** Hook do CodeTown instalado nesta conta (o primeiro), ou undefined. */
+/** Hook do Habblaud instalado nesta conta (o primeiro), ou undefined. */
 export function installedHook(settings: Settings): Rec | undefined {
   const ev = eventList(settings);
   if (typeof ev === 'string') return undefined;
@@ -180,7 +181,7 @@ export function scriptPathOf(command: string): string | undefined {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Efeitos (arquivos e o /api/health do CodeTown)
+// Efeitos (arquivos e o /api/health do Habblaud)
 // ---------------------------------------------------------------------------------------------
 
 export interface RunOptions extends HookOptions {
@@ -195,7 +196,7 @@ export interface RunContext {
   now: Date;
   hookPath: string;
   out: (line: string) => void;
-  /** Consulta o /api/health do CodeTown (testes injetam um falso). */
+  /** Consulta o /api/health do Habblaud (testes injetam um falso). */
   health?: (port: number) => Promise<{ permissions?: boolean } | undefined>;
 }
 
@@ -205,7 +206,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
   let command: RunOptions['command'] | undefined;
   let dryRun = false;
   let nodeCmd: string | undefined;
-  const envPort = Number.parseInt(env.CODETOWN_PORT ?? '', 10);
+  const envPort = Number.parseInt(env.HABBLAUD_PORT ?? '', 10);
   let port = Number.isInteger(envPort) && envPort > 0 && envPort < 65_536 ? envPort : DEFAULT_PORT;
   let timeoutS = DEFAULT_TIMEOUT_S;
   for (let i = 0; i < argv.length; i++) {
@@ -243,7 +244,7 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
   const { env, home, out } = ctx;
   const dirs = discoverClaudeDirs(env, home);
   if (!dirs.length) {
-    out('Nenhuma conta do Claude Code encontrada (~/.claude* com projects/ ou sessions/). Use CODETOWN_CLAUDE_DIRS se estiverem em outro lugar.');
+    out('Nenhuma conta do Claude Code encontrada (~/.claude* com projects/ ou sessions/). Use HABBLAUD_CLAUDE_DIRS se estiverem em outro lugar.');
     return 1;
   }
   const nodeCmd = opts.nodeCmd ?? detectNodeCommand(env, home);
@@ -299,13 +300,13 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
   }
   if (opts.command === 'status') {
     const health = await (ctx.health ?? fetchHealth)(opts.port);
-    if (!health) out(`CodeTown em http://127.0.0.1:${opts.port}: fora do ar (com ele parado, o hook sai na hora e o terminal segue normal).`);
-    else if (health.permissions) out(`CodeTown em http://127.0.0.1:${opts.port}: respondendo pedidos de permissão (com alguma página aberta).`);
-    else out(`CodeTown em http://127.0.0.1:${opts.port}: no ar, mas responder pelo escritório está desligado (porta exposta na rede ou CODETOWN_TERMINAL=0).`);
+    if (!health) out(`Habblaud em http://127.0.0.1:${opts.port}: fora do ar (com ele parado, o hook sai na hora e o terminal segue normal).`);
+    else if (health.permissions) out(`Habblaud em http://127.0.0.1:${opts.port}: respondendo pedidos de permissão (com alguma página aberta).`);
+    else out(`Habblaud em http://127.0.0.1:${opts.port}: no ar, mas responder pelo escritório está desligado (porta exposta na rede ou HABBLAUD_TERMINAL=0).`);
   }
   if (opts.command === 'install' && changed) {
     out('');
-    out('Pronto. Com o CodeTown aberto no navegador, os pedidos de permissão aparecem no escritório e você');
+    out('Pronto. Com o Habblaud aberto no navegador, os pedidos de permissão aparecem no escritório e você');
     out('pode aprovar ou recusar por lá; o diálogo continua no terminal e vale o que responder primeiro.');
     out('Sessões abertas costumam recarregar o settings.json sozinhas; se não, reabra a sessão.');
     out('Para desfazer: npm run hooks:uninstall');

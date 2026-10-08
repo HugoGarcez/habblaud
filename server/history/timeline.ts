@@ -13,7 +13,7 @@ import type { OfficeSnapshot } from '../../shared/types';
 import { compactSnapshot, dayKey, diffFrames, isDayKey, isDemoId, keyframeOf, shiftDay, type TimelineFrame, type TimelineRecord } from '../../shared/timeline';
 import { errMsg, log } from '../log';
 
-/** Pasta dentro do CODETOWN_DATA_DIR. */
+/** Pasta dentro do HABBLAUD_DATA_DIR. */
 export const TIMELINE_DIR = 'timeline';
 export const KEYFRAME_MS = 5 * 60_000;
 export const THROTTLE_MS = 1_000;

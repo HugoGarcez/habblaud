@@ -6,7 +6,7 @@ import type { SoundBoard } from '../audio/board';
 import type { UiComponent, UiContext } from './context';
 import { computeCounters } from './model';
 
-const BASE_TITLE = 'CodeTown';
+const BASE_TITLE = 'Habblaud';
 
 export type NotificationState = 'unsupported' | 'default' | 'granted' | 'denied';
 
@@ -53,7 +53,7 @@ export class Notifier implements UiComponent {
     else if (n.level === 'success') this.sounds.play('pop');
     if (n.level === 'alert' && prefs.browserNotifications && document.hidden && notificationState() === 'granted') {
       try {
-        const notification = new Notification('CodeTown — precisa de você', {
+        const notification = new Notification('Habblaud — precisa de você', {
           body: n.text,
           tag: n.agentId ?? n.id,
           icon: '/assets/brand/favicon-32.png',

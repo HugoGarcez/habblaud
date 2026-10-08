@@ -1,6 +1,6 @@
-// Hook PermissionRequest (mod/codetown-permissoes/hooks/permission-hook.mjs) rodado como processo de verdade contra o servidor
+// Hook PermissionRequest (mod/habblaud-permissoes/hooks/permission-hook.mjs) rodado como processo de verdade contra o servidor
 // de teste: stdin JSON → saída esperada (aprovar, recusar, "sempre permitir", terminal), saída rápida e
-// sem decisão quando o CodeTown está fora do ar, desligado ou sem páginas abertas, e o tempo limite.
+// sem decisão quando o Habblaud está fora do ar, desligado ou sem páginas abertas, e o tempo limite.
 // Os processos são assíncronos (spawn): o servidor roda neste mesmo processo.
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
@@ -12,7 +12,7 @@ import { hookJson, MAIN, servePermissions, type PermissionServer } from './permi
 
 setQuiet(true);
 
-const HOOK = resolve(__dirname, '../../mod/codetown-permissoes/hooks/permission-hook.mjs');
+const HOOK = resolve(__dirname, '../../mod/habblaud-permissoes/hooks/permission-hook.mjs');
 
 /** Funções exportadas pelo hook (JavaScript puro, sem tipos). */
 interface HookModule {
@@ -58,7 +58,7 @@ async function pendingId(s: PermissionServer): Promise<string> {
   throw new Error('o hook não registrou o pedido');
 }
 
-/** Porta livre sem ninguém escutando (CodeTown "fora do ar"). */
+/** Porta livre sem ninguém escutando (Habblaud "fora do ar"). */
 async function deadPort(): Promise<number> {
   const s = createServer();
   await new Promise<void>((ok) => s.listen(0, '127.0.0.1', ok));
@@ -74,7 +74,7 @@ afterEach(async () => {
 });
 
 describe('permission-hook.mjs (processo)', () => {
-  it('aprovar pelo CodeTown: imprime a decisão allow e sai com 0', async () => {
+  it('aprovar pelo Habblaud: imprime a decisão allow e sai com 0', async () => {
     srv = await servePermissions();
     const run = runHook(JSON.stringify(hookJson()), ['--port', String(srv.port)]);
     const id = await pendingId(srv);
@@ -95,11 +95,11 @@ describe('permission-hook.mjs (processo)', () => {
 
   it('recusar com motivo (e interromper): decisão deny com a mensagem para o agente', async () => {
     srv = await servePermissions();
-    const run = runHook(JSON.stringify(hookJson()), [], { CODETOWN_PORT: String(srv.port) });
+    const run = runHook(JSON.stringify(hookJson()), [], { HABBLAUD_PORT: String(srv.port) });
     srv.registry!.decide(await pendingId(srv), { behavior: 'deny', message: 'use pnpm', interrupt: true });
     const r = await run;
     expect(r.code).toBe(0);
-    expect(JSON.parse(r.stdout).hookSpecificOutput.decision).toEqual({ behavior: 'deny', message: 'Recusado pelo usuário no CodeTown: use pnpm', interrupt: true });
+    expect(JSON.parse(r.stdout).hookSpecificOutput.decision).toEqual({ behavior: 'deny', message: 'Recusado pelo usuário no Habblaud: use pnpm', interrupt: true });
   });
 
   it('"responder no terminal": sai sem decisão (stdout vazio)', async () => {
@@ -110,7 +110,7 @@ describe('permission-hook.mjs (processo)', () => {
     expect(r).toMatchObject({ code: 0, stdout: '' });
   });
 
-  it('CodeTown fora do ar: sai rápido, sem decisão', async () => {
+  it('Habblaud fora do ar: sai rápido, sem decisão', async () => {
     const r = await runHook(JSON.stringify(hookJson()), ['--port', String(await deadPort())]);
     expect(r).toMatchObject({ code: 0, stdout: '' });
     expect(r.ms).toBeLessThan(3_000);
@@ -129,7 +129,7 @@ describe('permission-hook.mjs (processo)', () => {
     expect(srv.registry!.size).toBe(0);
   });
 
-  it('stdin inválido, outro evento ou AskUserQuestion: sai sem perguntar ao CodeTown', async () => {
+  it('stdin inválido, outro evento ou AskUserQuestion: sai sem perguntar ao Habblaud', async () => {
     srv = await servePermissions();
     for (const stdin of ['', 'não é json', '[]', JSON.stringify(hookJson({ hook_event_name: 'PreToolUse' })), JSON.stringify(hookJson({ tool_name: 'AskUserQuestion' }))]) {
       const r = await runHook(stdin, ['--port', String(srv.port)]);
@@ -153,11 +153,11 @@ describe('permission-hook.mjs (funções)', () => {
   it('parseOptions: argumentos, ambiente e limites', () => {
     expect(parseOptions([], {})).toEqual({ port: 4747, timeoutMs: 300_000 });
     expect(parseOptions(['--port', '4851', '--timeout', '60'], {})).toEqual({ port: 4851, timeoutMs: 60_000 });
-    expect(parseOptions([], { CODETOWN_PORT: '4848', CODETOWN_PERMISSION_TIMEOUT: '1' })).toEqual({ port: 4848, timeoutMs: 5_000 });
+    expect(parseOptions([], { HABBLAUD_PORT: '4848', HABBLAUD_PERMISSION_TIMEOUT: '1' })).toEqual({ port: 4848, timeoutMs: 5_000 });
     expect(parseOptions(['--port', 'x', '--timeout', '99999'], {})).toEqual({ port: 4747, timeoutMs: 1_800_000 });
   });
 
-  it('requestBody: só o que o CodeTown usa, com textos cortados', () => {
+  it('requestBody: só o que o Habblaud usa, com textos cortados', () => {
     const body = requestBody(hookJson({ agent_id: 'a1', agent_type: 'Explore', tool_input: { content: 'x'.repeat(20_000) } }), 60_000);
     expect(Object.keys(body).sort()).toEqual(['agent_id', 'agent_type', 'cwd', 'permission_suggestions', 'session_id', 'timeout_ms', 'tool_input', 'tool_name']);
     expect((body.tool_input as { content: string }).content.length).toBe(8_000);
@@ -174,7 +174,7 @@ describe('permission-hook.mjs (funções)', () => {
       hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow' } },
     });
     expect(decisionOutput({ status: 'decided', behavior: 'deny' }, hookJson())).toEqual({
-      hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'deny', message: 'Recusado pelo usuário no CodeTown.' } },
+      hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'deny', message: 'Recusado pelo usuário no Habblaud.' } },
     });
     expect(decisionOutput({ status: 'released', reason: 'terminal' }, hookJson())).toBeUndefined();
     expect(decisionOutput({ status: 'pending' }, hookJson())).toBeUndefined();

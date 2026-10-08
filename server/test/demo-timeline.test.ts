@@ -12,7 +12,7 @@ setQuiet(true);
 describe('demo-timeline', () => {
   let tmp: { dir: string; cleanup: () => void };
   beforeEach(() => {
-    tmp = tempDir('codetown-demotl-');
+    tmp = tempDir('habblaud-demotl-');
   });
   afterEach(() => tmp.cleanup());
 

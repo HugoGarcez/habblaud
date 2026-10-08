@@ -1,5 +1,5 @@
 // Pedidos de permissão fictícios do modo demonstração (responder pelo escritório sem sessões reais).
-// Puro: usado pelo simulador no servidor (CODETOWN_DEMO=1) e no navegador (?mock=1).
+// Puro: usado pelo simulador no servidor (HABBLAUD_DEMO=1) e no navegador (?mock=1).
 import type { PermissionRequestInfo } from '../types';
 import { describeTool } from '../activity';
 

@@ -9,7 +9,7 @@ function snap(version: string, updates?: UpdateStatus): OfficeSnapshot {
   return { rev: 1, serverTime: NOW, rooms: [], agents: [], accounts: [], meta: { demo: false, sources: [], startedAt: 0, version, updates } };
 }
 
-const ok = (patch: Partial<UpdateStatus> = {}): UpdateStatus => ({ state: 'ok', repo: 'marmottajr/codetown', checkedAt: NOW - 2 * HOUR, available: false, ...patch });
+const ok = (patch: Partial<UpdateStatus> = {}): UpdateStatus => ({ state: 'ok', repo: 'marmottajr/habblaud', checkedAt: NOW - 2 * HOUR, available: false, ...patch });
 
 describe('versionInfo', () => {
   it('só versões de verdade (o ?mock=1 manda "demo" e o timelapse "timelapse")', () => {
@@ -22,7 +22,7 @@ describe('versionInfo', () => {
 
 describe('safeGithubUrl', () => {
   it('aceita só páginas do GitHub', () => {
-    expect(safeGithubUrl('https://github.com/marmottajr/codetown/releases/tag/v0.3.0')).toBe('https://github.com/marmottajr/codetown/releases/tag/v0.3.0');
+    expect(safeGithubUrl('https://github.com/marmottajr/habblaud/releases/tag/v0.3.0')).toBe('https://github.com/marmottajr/habblaud/releases/tag/v0.3.0');
     expect(safeGithubUrl('javascript:alert(1)')).toBeUndefined();
     expect(safeGithubUrl('https://github.com.evil.io/x')).toBeUndefined();
     expect(safeGithubUrl('http://github.com/x')).toBeUndefined();
@@ -45,7 +45,7 @@ describe('updateStatusLine', () => {
     expect(updateStatusLine('0.2.0', ok(), NOW).text).toBe('Nenhuma versão publicada no GitHub ainda · verificado há 2 h.');
     expect(updateStatusLine('0.3.0-dev', ok({ latest: '0.2.0' }), NOW).text).toMatch(/à frente da última versão publicada \(v0\.2\.0\)/);
     expect(updateStatusLine('0.2.0', { state: 'pending', available: false }, NOW)).toEqual({ tone: 'pending', text: 'Verificando se há versão nova…' });
-    expect(updateStatusLine('0.2.0', { state: 'off', repo: 'a/b', available: false }, NOW).text).toMatch(/CODETOWN_UPDATE_CHECK=0/);
+    expect(updateStatusLine('0.2.0', { state: 'off', repo: 'a/b', available: false }, NOW).text).toMatch(/HABBLAUD_UPDATE_CHECK=0/);
     expect(updateStatusLine('0.2.0', { state: 'off', available: false }, NOW).text).toMatch(/package\.json/);
     expect(updateStatusLine('0.2.0', ok({ state: 'error', error: 'sem conexão com o GitHub' }), NOW)).toEqual({
       tone: 'warn',
@@ -63,8 +63,8 @@ describe('updateStatusLine', () => {
 describe('versionChipTitle', () => {
   it('diz as duas versões quando há novidade', () => {
     expect(versionChipTitle('0.2.0', ok({ latest: '0.3.0', available: true }), NOW)).toBe(
-      'Nova versão do CodeTown: v0.3.0 (você usa a v0.2.0). Clique para ver as novidades e como atualizar.',
+      'Nova versão do Habblaud: v0.3.0 (você usa a v0.2.0). Clique para ver as novidades e como atualizar.',
     );
-    expect(versionChipTitle('0.2.0', ok({ latest: '0.2.0' }), NOW)).toBe('CodeTown v0.2.0. Você está na versão mais recente · verificado há 2 h. Clique para ver detalhes.');
+    expect(versionChipTitle('0.2.0', ok({ latest: '0.2.0' }), NOW)).toBe('Habblaud v0.2.0. Você está na versão mais recente · verificado há 2 h. Clique para ver detalhes.');
   });
 });

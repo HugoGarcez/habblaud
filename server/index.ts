@@ -1,4 +1,4 @@
-// Servidor do CodeTown: observa as sessões abertas do Claude Code (todas as contas),
+// Servidor do Habblaud: observa as sessões abertas do Claude Code (todas as contas),
 // mantém o modelo do escritório e transmite via SSE. Sem dependências de runtime.
 //   npm run dev    -> tsx server/index.ts --dev (Vite em middleware mode, HMR no mesmo servidor)
 //   npm start      -> node dist/server/index.js (serve dist/client)
@@ -14,6 +14,7 @@ import { TerminalStreams } from './http/terminal';
 import { createTimelineHandler } from './http/timeline';
 import { TIMELINE_DIR, TimelineRecorder } from './history/timeline';
 import { DayStatsService } from './history/daystats';
+import { describeStateMigration, legacyEnvWarning, migrateLegacyStateDir } from './legacy';
 import { errMsg, log } from './log';
 import { NameStore } from './model/names';
 import { Office } from './model/office';
@@ -27,12 +28,22 @@ import { UpdateChecker } from './updates/checker';
 const config = loadConfig();
 const startedAt = Date.now();
 
+// Nome antigo (CodeTown, até a 0.3.2): leva ~/.codetown para ~/.habblaud antes de ler qualquer estado e avisa
+// das variáveis CODETOWN_* que não valem mais. No Docker, quem migra é o docker:up.
+if (!config.inDocker) {
+  const r = migrateLegacyStateDir(config.home);
+  const msg = describeStateMigration(r);
+  if (msg) (r.error ? log.warn : log.info)(msg);
+}
+const legacyEnv = legacyEnvWarning(Object.keys(process.env));
+if (legacyEnv) log.warn(legacyEnv);
+
 const names = new NameStore(join(config.dataDir, 'names.json'));
 names.load();
 
 // Office, contas e watcher se referenciam (avisos de mudança / fontes): ligação tardia.
 const late: { office?: Office; watcher?: ClaudeWatcher; permissions?: PermissionRegistry } = {};
-// Versão nova: consulta a release mais recente no GitHub a cada 6 h (CODETOWN_UPDATE_CHECK=0 desliga).
+// Versão nova: consulta a release mais recente no GitHub a cada 6 h (HABBLAUD_UPDATE_CHECK=0 desliga).
 const updates = new UpdateChecker({
   current: config.version,
   repo: config.repo,
@@ -169,16 +180,16 @@ server.on('request', (req, res) => {
 });
 
 server.on('error', (err: NodeJS.ErrnoException) => {
-  if (err.code === 'EADDRINUSE') log.error(`A porta ${config.port} já está em uso (defina CODETOWN_PORT para usar outra).`);
+  if (err.code === 'EADDRINUSE') log.error(`A porta ${config.port} já está em uso (defina HABBLAUD_PORT para usar outra).`);
   else log.error(`Erro no servidor HTTP: ${errMsg(err)}`);
   process.exit(1);
 });
 
 server.listen(config.port, config.host, () => {
   const host = config.host === '0.0.0.0' || config.host === '::' ? 'localhost' : config.host;
-  log.info(`🏢 CodeTown ${config.version}${config.dev ? ' (dev)' : ''}${config.inDocker ? ' (docker)' : ''} em http://${host}:${config.port}`);
+  log.info(`🏢 Habblaud ${config.version}${config.dev ? ' (dev)' : ''}${config.inDocker ? ' (docker)' : ''} em http://${host}:${config.port}`);
   const list = accounts.entries();
-  if (!list.length) log.warn('Nenhuma pasta do Claude Code encontrada (defina CODETOWN_CLAUDE_DIRS).');
+  if (!list.length) log.warn('Nenhuma pasta do Claude Code encontrada (defina HABBLAUD_CLAUDE_DIRS).');
   for (const a of list) {
     const src = watcher.sources().find((s) => s.label === a.id);
     const usage = accounts.usageView(a.id).status;
@@ -187,12 +198,12 @@ server.listen(config.port, config.host, () => {
   if (office.isDemo()) log.info('   Modo demonstração ligado (agentes simulados misturados aos reais).');
   if (config.terminal) log.info('   Terminal somente leitura: ligado (acesso só local).');
   else log.info(`   Terminal somente leitura: desligado (${terminalOffReason(process.env, config.host, config.inDocker)}).`);
-  log.info(timeline ? `   Linha do tempo (timelapse): gravando em ${timelineDir}.` : '   Linha do tempo (timelapse): gravação desligada (CODETOWN_TIMELINE).');
+  log.info(timeline ? `   Linha do tempo (timelapse): gravando em ${timelineDir}.` : '   Linha do tempo (timelapse): gravação desligada (HABBLAUD_TIMELINE).');
   log.info(`   Responder pelo escritório: ${config.terminal ? 'ligado (precisa do mod: npm run mod:install; ou do hook antigo: npm run hooks:install)' : 'desligado (mesma trava do terminal)'}.`);
   log.info(
     updates.enabled
       ? `   Versão nova: verificando as releases de github.com/${config.repo} a cada 6 h.`
-      : `   Versão nova: verificação desligada (${config.repo ? 'CODETOWN_UPDATE_CHECK' : 'package.json sem repositório no GitHub'}).`,
+      : `   Versão nova: verificação desligada (${config.repo ? 'HABBLAUD_UPDATE_CHECK' : 'package.json sem repositório no GitHub'}).`,
   );
 });
 

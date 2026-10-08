@@ -37,7 +37,7 @@ describe('DemoSimulator: pedidos de permissão', () => {
     a = sim.snapshot(start + 1).agents.find((x) => x.id === id)!;
     expect(a.status).toBe('working');
     expect(a.permission).toBeUndefined();
-    expect(a.recent.map((r) => r.text)).toContain('Aprovado no CodeTown (sempre permitir)');
+    expect(a.recent.map((r) => r.text)).toContain('Aprovado no Habblaud (sempre permitir)');
     expect(sim.decidePermission(p.id, { behavior: 'allow' }, start + 2)).toBe(false);
   });
 
@@ -48,7 +48,7 @@ describe('DemoSimulator: pedidos de permissão', () => {
     sim.decidePermission(p1.id, { behavior: 'deny', message: 'agora não' }, start + 1);
     const after = sim.snapshot(start + 1).agents.find((x) => x.id === a1)!;
     expect(after.status).toBe('working');
-    expect(after.recent.at(-1)).toMatchObject({ icon: '🚫', text: 'Recusado no CodeTown' });
+    expect(after.recent.at(-1)).toMatchObject({ icon: '🚫', text: 'Recusado no Habblaud' });
 
     const sim2 = new DemoSimulator({ seed: 6 }, start);
     const a2 = sim2.forcePermission(start)!;

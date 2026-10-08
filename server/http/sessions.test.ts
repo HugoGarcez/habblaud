@@ -62,7 +62,7 @@ async function serve(opts: { terminal?: boolean } = {}): Promise<Served> {
   const terminals = new TerminalStreams({ office, transcriptPathOf: () => undefined, sessionPollMs: 20 });
   const history = new SessionHistory({ accounts: () => accounts.entries(), openAgentOf: (acc, sid) => openMainAgent(office.list(), acc, sid) });
   const api = createApiHandler({ office, hub, accounts, sources: () => [], version: 't', inDocker: false, terminal, terminals, sessions: history });
-  const guard = createRequestGuard({ allowedHosts: new Set(['codetown.lan']) });
+  const guard = createRequestGuard({ allowedHosts: new Set(['habblaud.lan']) });
   const server = http.createServer((req, res) => {
     if (guard(req, res)) return;
     if (!api(req, res, new URL(req.url ?? '/', 'http://x'))) res.writeHead(404).end();
@@ -146,10 +146,10 @@ describe('histórico de sessões: trava', () => {
     }
   });
 
-  it('Host que não é local (IP da rede ou nome de CODETOWN_ALLOWED_HOSTS): 403; localhost abre', async () => {
+  it('Host que não é local (IP da rede ou nome de HABBLAUD_ALLOWED_HOSTS): 403; localhost abre', async () => {
     const env = await serve();
     try {
-      for (const host of [`192.168.0.10:${env.port}`, `codetown.lan:${env.port}`]) {
+      for (const host of [`192.168.0.10:${env.port}`, `habblaud.lan:${env.port}`]) {
         for (const path of ['/api/sessions/recent', terminalRoute('.claude', SID)]) {
           const r = await request(env.base, path, { headers: { Host: host } });
           expect(r.status).toBe(403);

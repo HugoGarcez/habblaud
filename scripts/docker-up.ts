@@ -1,4 +1,4 @@
-// Sobe (ou derruba) o CodeTown no Docker local. Roda no HOST, com tsx:
+// Sobe (ou derruba) o Habblaud no Docker local. Roda no HOST, com tsx:
 //
 //   npm run docker:up                 # detecta as contas, gera o override, constrói e sobe
 //   npm run docker:up -- --no-build   # sobe sem reconstruir a imagem
@@ -6,44 +6,61 @@
 //
 // O que ele faz ao subir:
 // 1. Descobre os config dirs do Claude Code no host (mesma regra do servidor: ~/.claude*,
-//    CLAUDE_CONFIG_DIR ou CODETOWN_CLAUDE_DIRS) e lê os metadados das contas com detectAccounts.
+//    CLAUDE_CONFIG_DIR ou HABBLAUD_CLAUDE_DIRS) e lê os metadados das contas com detectAccounts.
 // 2. Gera o docker-compose.override.yml montando SOMENTE <conta>/projects e <conta>/sessions,
 //    somente leitura, em /claude/<conta>/... — nunca a pasta inteira da conta, onde ficam
 //    credenciais e configurações — e a pasta do uso capturado pelo statusline
-//    (~/.codetown/usage, criada se faltar) em /usage, também somente leitura. Passa
-//    CODETOWN_CLAUDE_DIRS, CODETOWN_ACCOUNTS, CODETOWN_USAGE_DIR e o fuso do host (TZ) ao container.
-// 3. Roda `docker compose up -d --build`, espera o /api/health e mostra a URL.
-// 4. Atualiza o mod do CodeTown nas contas onde ele JÁ está instalado com outra versão (depois de
-//    atualizar o CodeTown): relê o marketplace desta pasta e roda `claude plugin update` com o
+//    (~/.habblaud/usage, criada se faltar) em /usage, também somente leitura. Passa
+//    HABBLAUD_CLAUDE_DIRS, HABBLAUD_ACCOUNTS, HABBLAUD_USAGE_DIR e o fuso do host (TZ) ao container.
+// 3. Migra o que sobrou do nome antigo (CodeTown, até a 0.3.2): ~/.codetown vira ~/.habblaud, o container
+//    `codetown` e a rede codetown_default saem e, se o volume novo ainda não existe, os dados de
+//    codetown_codetown-data são copiados para ele (o antigo fica, para apagar à mão). Avisa de CODETOWN_*
+//    no ambiente e no .env, que não valem mais.
+// 4. Roda `docker compose up -d --build`, espera o /api/health e mostra a URL.
+// 5. Atualiza o mod do Habblaud nas contas onde ele JÁ está instalado com outra versão (depois de
+//    atualizar o Habblaud): relê o marketplace desta pasta e roda `claude plugin update` com o
 //    CLAUDE_CONFIG_DIR de cada conta. Nunca instala sozinho; se o `claude` faltar ou falhar, é só um aviso.
 //
-// Uso de 5h/semanal ao vivo: o mod do CodeTown (npm run mod:install; Claude Code 2.1.287+) ou, em
+// Uso de 5h/semanal ao vivo: o mod do Habblaud (npm run mod:install; Claude Code 2.1.287+) ou, em
 // versões anteriores, o tap de statusline (npm run usage:install). Os dois gravam os números na pasta
 // montada em /usage. Sem eles, vale o cache do /usage lido das contas ao subir.
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { AccountInfo, SourceInfo } from '../shared/types';
 import { detectAccounts, discoverClaudeDirs, type DetectedAccount } from '../server/accounts/detect';
+import { describeStateMigration, LEGACY_NAME, legacyEnvWarning, migrateLegacyStateDir } from '../server/legacy';
 import { makeClaudeRunner, MIN_CLAUDE_VERSION, readPackageVersion, updateInstalledMods, type ModUpdateResult } from './mod-install';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const HOME = process.env.HOME || homedir();
-const STATE_DIR = join(HOME, '.codetown');
+const STATE_DIR = join(HOME, '.habblaud');
 const OVERRIDE_FILE = join(ROOT, 'docker-compose.override.yml');
-/** Uso capturado no host pelo mod do CodeTown ou pelo tap de statusline (scripts/statusline-tap.mjs). */
-const USAGE_DIR = process.env.CODETOWN_USAGE_DIR?.trim() ? resolve(process.env.CODETOWN_USAGE_DIR.trim()) : join(STATE_DIR, 'usage');
+/** O .env desta pasta, que o Compose lê sozinho. */
+const ENV_FILE = join(ROOT, '.env');
+/** Uso capturado no host pelo mod do Habblaud ou pelo tap de statusline (scripts/statusline-tap.mjs). */
+const USAGE_DIR = process.env.HABBLAUD_USAGE_DIR?.trim() ? resolve(process.env.HABBLAUD_USAGE_DIR.trim()) : join(STATE_DIR, 'usage');
 /** Onde essa pasta aparece no container. */
 const CONTAINER_USAGE_DIR = '/usage';
-const SERVICE = 'codetown';
+const SERVICE = 'habblaud';
 /** Raiz das montagens dentro do container: /claude/<conta>/{projects,sessions}. */
 const CONTAINER_ROOT = '/claude';
 /** Somente estas subpastas de cada conta entram no container. */
 const MOUNTED_SUBDIRS = ['projects', 'sessions'] as const;
 const DEFAULT_PORT = 4747;
 const HEALTH_TIMEOUT_MS = 120_000;
+/** Imagem e volume de dados como o Compose os nomeia (`name: habblaud` no docker-compose.yml). */
+const IMAGE = 'habblaud:local';
+const DATA_VOLUME = 'habblaud_habblaud-data';
+/** O mesmo no CodeTown (até a 0.3.2), só para a migração: container_name fixo, rede padrão, volume e imagem. */
+const LEGACY_DOCKER = {
+  container: LEGACY_NAME,
+  network: `${LEGACY_NAME}_default`,
+  volume: `${LEGACY_NAME}_${LEGACY_NAME}-data`,
+  image: `${LEGACY_NAME}:local`,
+} as const;
 
 const USAGE = `Uso: npm run docker:up [-- opções]
 
@@ -52,7 +69,7 @@ Opções:
   --down       derruba o container (o mesmo que npm run docker:down)
   -h, --help   mostra esta ajuda
 
-Variáveis: CODETOWN_PORT (porta no host, padrão ${DEFAULT_PORT}) e CODETOWN_CLAUDE_DIRS
+Variáveis: HABBLAUD_PORT (porta no host, padrão ${DEFAULT_PORT}) e HABBLAUD_CLAUDE_DIRS
 (config dirs separados por vírgula, se as contas não estiverem em ~/.claude*).`;
 
 // ---------------------------------------------------------------------------------------------
@@ -100,10 +117,10 @@ export function parseArgs(argv: string[]): Options {
 }
 
 export function hostPort(env: NodeJS.ProcessEnv): number {
-  const raw = env.CODETOWN_PORT?.trim();
+  const raw = env.HABBLAUD_PORT?.trim();
   if (!raw) return DEFAULT_PORT;
   const port = Number(raw);
-  if (!Number.isInteger(port) || port <= 0 || port >= 65536) fail(`CODETOWN_PORT inválida: "${raw}" (use um número de 1 a 65535).`);
+  if (!Number.isInteger(port) || port <= 0 || port >= 65536) fail(`HABBLAUD_PORT inválida: "${raw}" (use um número de 1 a 65535).`);
   return port;
 }
 
@@ -198,7 +215,7 @@ export function sanitizeCachedUsage(raw: unknown): CachedUsage | undefined {
   return Object.keys(out.utilization).length ? out : undefined;
 }
 
-/** Metadados das contas para CODETOWN_ACCOUNTS (o container não enxerga o .claude.json do host). */
+/** Metadados das contas para HABBLAUD_ACCOUNTS (o container não enxerga o .claude.json do host). */
 export function accountsPayload(mounts: AccountMount[]): AccountPayload[] {
   return mounts.map(({ account: a, mountDir }) => {
     const p: AccountPayload = { id: a.id, configDir: a.configDir, mountDir, short: a.short, name: a.name, color: a.color };
@@ -241,10 +258,10 @@ export function hostTimeZone(env: NodeJS.ProcessEnv = process.env): string | und
  */
 export function renderOverride(mounts: AccountMount[], generatedAt: Date = new Date(), usageDir?: string, timeZone?: string): string {
   const env: Array<[string, string]> = [
-    ['CODETOWN_CLAUDE_DIRS', mounts.map((m) => m.mountDir).join(',')],
-    ['CODETOWN_ACCOUNTS', JSON.stringify(accountsPayload(mounts))],
+    ['HABBLAUD_CLAUDE_DIRS', mounts.map((m) => m.mountDir).join(',')],
+    ['HABBLAUD_ACCOUNTS', JSON.stringify(accountsPayload(mounts))],
   ];
-  if (usageDir) env.push(['CODETOWN_USAGE_DIR', CONTAINER_USAGE_DIR]);
+  if (usageDir) env.push(['HABBLAUD_USAGE_DIR', CONTAINER_USAGE_DIR]);
   if (timeZone) env.push(['TZ', timeZone]);
   const lines = [
     `# Gerado por scripts/docker-up.ts em ${generatedAt.toISOString()} — não edite: é recriado a cada \`npm run docker:up\`.`,
@@ -286,8 +303,106 @@ export function modHint(mod: Pick<ModUpdateResult, 'installed' | 'unavailable'>)
 }
 
 // ---------------------------------------------------------------------------------------------
-// Estado no host (~/.codetown)
+// Nome antigo (CodeTown, até a 0.3.2): plano da subida no Docker e nomes do .env (funções puras)
 // ---------------------------------------------------------------------------------------------
+
+/** O que já existe no Docker antes de subir. */
+export interface DockerState {
+  /** Container `codetown` do CodeTown (container_name fixo: prende o nome e a porta). */
+  legacyContainer: boolean;
+  /** Rede codetown_default. */
+  legacyNetwork: boolean;
+  /** Volume codetown_codetown-data (nomes dos personagens, linha do tempo, estatísticas). */
+  legacyVolume: boolean;
+  /** Imagem codetown:local. */
+  legacyImage: boolean;
+  /** Volume de dados do Habblaud (habblaud_habblaud-data). */
+  dataVolume: boolean;
+}
+
+export type UpStep =
+  | { kind: 'remove-container'; name: string }
+  | { kind: 'remove-network'; name: string }
+  | { kind: 'compose'; args: string[] }
+  | { kind: 'copy-volume'; from: string; to: string };
+
+export interface UpPlan {
+  steps: UpStep[];
+  /** Comandos para apagar o que sobrou do CodeTown, mostrados no fim quando esta subida migrou algo. */
+  cleanup: string[];
+}
+
+/**
+ * Passos para subir o Habblaud. Antes, tira do caminho o container do CodeTown e a rede dele. Se o volume antigo
+ * existe e o novo ainda não, os dados são copiados: o Compose cria o volume (com os labels dele; um volume criado
+ * à mão gera aviso e pedido para recriar) e o container, ainda parado; a cópia entra e só então ele sobe. O volume
+ * antigo nunca é apagado aqui.
+ */
+export function planUp(state: DockerState, build: boolean): UpPlan {
+  const steps: UpStep[] = [];
+  if (state.legacyContainer) steps.push({ kind: 'remove-container', name: LEGACY_DOCKER.container });
+  if (state.legacyNetwork) steps.push({ kind: 'remove-network', name: LEGACY_DOCKER.network });
+  const copy = state.legacyVolume && !state.dataVolume;
+  if (copy) {
+    steps.push(
+      { kind: 'compose', args: build ? ['up', '--no-start', '--build'] : ['up', '--no-start'] },
+      { kind: 'copy-volume', from: LEGACY_DOCKER.volume, to: DATA_VOLUME },
+      { kind: 'compose', args: ['up', '-d'] },
+    );
+  } else steps.push({ kind: 'compose', args: build ? ['up', '-d', '--build'] : ['up', '-d'] });
+
+  const cleanup: string[] = [];
+  if (state.legacyContainer || copy) {
+    if (state.legacyVolume) cleanup.push(`docker volume rm ${LEGACY_DOCKER.volume}`);
+    if (state.legacyImage) cleanup.push(`docker image rm ${LEGACY_DOCKER.image}`);
+  }
+  return { steps, cleanup };
+}
+
+/**
+ * `docker run` descartável que copia o volume `from` (somente leitura) para `to` com a própria imagem do
+ * Habblaud, como root (ela roda como `node`) e sem rede; a raiz de `to` fica com o dono e as permissões da de
+ * `from`. O --rm leva junto o volume anônimo do VOLUME /data da imagem.
+ */
+export function copyVolumeArgs(from: string, to: string, image: string = IMAGE): string[] {
+  const script = 'set -e; cp -a /from/. /to/; chown "$(stat -c %u:%g /from)" /to; chmod "$(stat -c %a /from)" /to';
+  const flags = ['--rm', '--pull', 'never', '--network', 'none', '--no-healthcheck', '--user', '0:0', '--entrypoint', 'sh'];
+  return ['run', ...flags, '-v', `${from}:/from:ro`, '-v', `${to}:/to`, image, '-c', script];
+}
+
+/** Nomes das variáveis de um .env (linhas `NOME=valor`, com ou sem `export`). Os valores ficam de fora. */
+export function envFileKeys(text: string): string[] {
+  const keys: string[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/.exec(line);
+    if (m) keys.push(m[1]);
+  }
+  return keys;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Estado no host (~/.habblaud)
+// ---------------------------------------------------------------------------------------------
+
+/** Avisa das variáveis CODETOWN_* (nome antigo, ignoradas) no ambiente e no .env desta pasta. */
+function warnLegacyEnv(): void {
+  let fileKeys: string[] = [];
+  try {
+    fileKeys = envFileKeys(readFileSync(ENV_FILE, 'utf8'));
+  } catch {
+    // sem .env (o normal) ou ilegível: nada a avisar
+  }
+  for (const msg of [legacyEnvWarning(Object.keys(process.env)), legacyEnvWarning(fileKeys, 'no .env')]) {
+    if (msg) warn(msg);
+  }
+}
+
+/** Leva ~/.codetown (nome antigo) para ~/.habblaud; roda antes de criar a pasta do uso, para ser um rename. */
+function migrateStateDir(): void {
+  const result = migrateLegacyStateDir(HOME);
+  const msg = describeStateMigration(result);
+  if (msg) (result.error ? warn : say)(msg);
+}
 
 /** Cria a pasta do uso do statusline se faltar e devolve o caminho real (ou undefined, se falhar). */
 function ensureUsageDir(): string | undefined {
@@ -317,10 +432,90 @@ function checkDocker(): void {
 }
 
 function compose(args: string[], port: number): void {
-  // CODETOWN_PORT explícito: vale sobre um eventual .env na pasta do projeto.
-  const res = spawnSync('docker', ['compose', ...args], { cwd: ROOT, stdio: 'inherit', env: { ...process.env, CODETOWN_PORT: String(port) } });
+  // HABBLAUD_PORT explícito: vale sobre um eventual .env na pasta do projeto.
+  const res = spawnSync('docker', ['compose', ...args], { cwd: ROOT, stdio: 'inherit', env: { ...process.env, HABBLAUD_PORT: String(port) } });
   if (res.error) fail(`não consegui rodar "docker compose ${args.join(' ')}": ${res.error.message}`);
   if (res.status !== 0) fail(`"docker compose ${args.join(' ')}" falhou (código ${res.status ?? res.signal}).`);
+}
+
+/** `docker <args>` sem mostrar nada no terminal: se deu certo, a saída e a última linha do erro. */
+function dockerQuiet(args: string[]): { ok: boolean; out: string; error: string } {
+  const res = spawnSync('docker', args, { encoding: 'utf8' });
+  // A última linha do docker costuma ser só "Run 'docker run --help' for more information".
+  const lines = (res.stderr ?? '').split('\n').filter((l) => l.trim() && !/^Run '.*--help'/.test(l));
+  const error = res.error?.message || lines.pop()?.trim() || `código ${res.status ?? res.signal}`;
+  return { ok: res.status === 0, out: res.stdout ?? '', error };
+}
+
+/** O que já existe no Docker do CodeTown e do Habblaud (entrada de planUp). */
+function inspectDocker(): DockerState {
+  const exists = (kind: 'network' | 'volume' | 'image', name: string) => dockerQuiet([kind, 'inspect', name]).ok;
+  // Só sai o container `codetown` que é mesmo do CodeTown: da imagem antiga ou do projeto antigo do Compose.
+  const { container, image } = LEGACY_DOCKER;
+  const c = dockerQuiet(['container', 'inspect', '--format', '{{.Config.Image}} {{index .Config.Labels "com.docker.compose.project"}}', container]);
+  const [cImage = '', cProject = ''] = c.out.trim().split(' ');
+  const legacyContainer = c.ok && (cImage === image || cProject === LEGACY_NAME);
+  if (c.ok && !legacyContainer) warn(`existe um container ${container} que não é do CodeTown (imagem ${cImage || '?'}); ele fica como está.`);
+  return {
+    legacyContainer,
+    legacyNetwork: exists('network', LEGACY_DOCKER.network),
+    legacyVolume: exists('volume', LEGACY_DOCKER.volume),
+    legacyImage: exists('image', image),
+    dataVolume: exists('volume', DATA_VOLUME),
+  };
+}
+
+/** Copia os dados do volume do CodeTown para o do Habblaud. Falha é só um aviso: o escritório sobe sem eles. */
+function copyVolume(from: string, to: string): boolean {
+  // O volume novo tem de vir do Compose: o `docker run -v` criaria um sem os labels dele.
+  if (!dockerQuiet(['volume', 'inspect', to]).ok) {
+    warn(`o Compose não criou o volume ${to}; os dados do CodeTown não foram copiados e continuam em ${from}.`);
+    return false;
+  }
+  say(`Copiando os dados do CodeTown (nomes dos personagens, linha do tempo e estatísticas) de ${from} para ${to}…`);
+  const res = dockerQuiet(copyVolumeArgs(from, to));
+  if (!res.ok) {
+    warn(
+      `não consegui copiar os dados do CodeTown (${res.error}). O escritório sobe sem eles; os dados continuam em ${from}.\n` +
+        `  Para tentar de novo: npm run docker:down && docker volume rm ${to} && npm run docker:up`,
+    );
+    return false;
+  }
+  say(`Dados copiados; o volume ${from} ficou intacto.`);
+  return true;
+}
+
+/** Executa os passos de planUp. Derrubam o docker:up só o Compose e o container antigo que não sai. */
+function runPlan(plan: UpPlan, port: number, build: boolean): { copyFailed: boolean } {
+  let copyFailed = false;
+  let created = false;
+  for (const step of plan.steps) {
+    switch (step.kind) {
+      case 'remove-container': {
+        say(`Removendo o container ${step.name} (CodeTown, o nome antigo)…`);
+        const res = dockerQuiet(['rm', '-f', step.name]);
+        if (!res.ok) fail(`não consegui remover o container antigo ${step.name} (${res.error}). Remova com docker rm -f ${step.name} e rode de novo.`);
+        break;
+      }
+      case 'remove-network': {
+        const res = dockerQuiet(['network', 'rm', step.name]);
+        if (!res.ok) warn(`não consegui remover a rede antiga ${step.name} (${res.error}); apague depois com docker network rm ${step.name}.`);
+        break;
+      }
+      case 'copy-volume':
+        copyFailed = !copyVolume(step.from, step.to);
+        break;
+      case 'compose':
+        if (step.args.includes('--no-start')) {
+          say(`${build ? 'Construindo a imagem e criando' : 'Criando'} o container, ainda parado, para receber os dados do CodeTown…`);
+          created = true;
+        } else if (created) say('Subindo o container…');
+        else say(build ? 'Construindo a imagem e subindo o container…' : 'Subindo o container (sem reconstruir a imagem)…');
+        compose(step.args, port);
+        break;
+    }
+  }
+  return { copyFailed };
 }
 
 interface Health {
@@ -363,20 +558,21 @@ function down(port: number): void {
   checkDocker();
   say('Derrubando o container…');
   compose(['down'], port);
-  say('Pronto. Os nomes dos personagens continuam guardados no volume codetown-data.');
+  say('Pronto. Os nomes dos personagens continuam guardados no volume habblaud-data.');
 }
 
 async function up(opts: Options, port: number): Promise<void> {
   checkDocker();
+  warnLegacyEnv();
   const baseUrl = `http://127.0.0.1:${port}`;
   const publicUrl = `http://localhost:${port}`;
 
-  // Porta ocupada por um CodeTown fora do Docker (npm run dev / npm start)?
+  // Porta ocupada por um Habblaud fora do Docker (npm run dev / npm start)?
   const existing = await fetchHealth(baseUrl, 1_500);
   if (existing && !existing.docker) {
     fail(
-      `já existe um CodeTown rodando fora do Docker em ${publicUrl} (npm run dev ou npm start?).\n` +
-        `Pare-o antes, ou use outra porta: CODETOWN_PORT=4848 npm run docker:up`,
+      `já existe um Habblaud rodando fora do Docker em ${publicUrl} (npm run dev ou npm start?).\n` +
+        `Pare-o antes, ou use outra porta: HABBLAUD_PORT=4848 npm run docker:up`,
     );
   }
 
@@ -387,7 +583,7 @@ async function up(opts: Options, port: number): Promise<void> {
     warn(
       'nenhuma pasta do Claude Code (com projects/ ou sessions/) foi encontrada em ~/.claude*.\n' +
         '  O escritório vai abrir vazio (dá para ligar o modo demonstração na interface).\n' +
-        '  Se as contas estiverem em outro lugar: CODETOWN_CLAUDE_DIRS=/caminho/conta1,/caminho/conta2 npm run docker:up',
+        '  Se as contas estiverem em outro lugar: HABBLAUD_CLAUDE_DIRS=/caminho/conta1,/caminho/conta2 npm run docker:up',
     );
   }
   for (const m of mounts) {
@@ -398,6 +594,7 @@ async function up(opts: Options, port: number): Promise<void> {
     if (!mounts.some((m) => m.hostDir === dir)) warn(`${tildify(dir)} não tem projects/ nem sessions/; conta ignorada.`);
   }
 
+  migrateStateDir();
   const usageDir = ensureUsageDir();
   if (usageDir) say(`Uso ao vivo (mod ou tap de statusline): monta ${tildify(USAGE_DIR)} em ${CONTAINER_USAGE_DIR}, somente leitura.`);
   const tmp = `${OVERRIDE_FILE}.tmp`;
@@ -406,15 +603,15 @@ async function up(opts: Options, port: number): Promise<void> {
   renameSync(tmp, OVERRIDE_FILE);
   say('docker-compose.override.yml gerado.');
 
-  say(opts.build ? 'Construindo a imagem e subindo o container…' : 'Subindo o container (sem reconstruir a imagem)…');
-  compose(opts.build ? ['up', '-d', '--build'] : ['up', '-d'], port);
+  const plan = planUp(inspectDocker(), opts.build);
+  const { copyFailed } = runPlan(plan, port, opts.build);
 
-  say(`Aguardando o CodeTown responder em ${publicUrl}…`);
+  say(`Aguardando o Habblaud responder em ${publicUrl}…`);
   const health = await waitHealthy(baseUrl);
-  if (!health) fail(`o CodeTown não respondeu em ${HEALTH_TIMEOUT_MS / 1000} s. Veja o que aconteceu com: npm run docker:logs`);
+  if (!health) fail(`o Habblaud não respondeu em ${HEALTH_TIMEOUT_MS / 1000} s. Veja o que aconteceu com: npm run docker:logs`);
 
   console.log('');
-  say(`CodeTown${health.version ? ` ${health.version}` : ''} no ar: ${publicUrl}`);
+  say(`Habblaud${health.version ? ` ${health.version}` : ''} no ar: ${publicUrl}`);
   for (const acc of accounts) {
     const src = health.sources?.find((s) => s.label === acc.id);
     if (!src) continue;
@@ -423,6 +620,8 @@ async function up(opts: Options, port: number): Promise<void> {
     say(`  Conta ${acc.short} (${acc.id}): ${state}${usage ? ` · ${USAGE_STATUS[usage]}` : ''}`);
   }
   for (const line of modHint(updateMods(dirs, accounts))) say(line);
+  // Com a cópia falha, os dados só existem no volume antigo: nada de sugerir apagá-lo.
+  if (plan.cleanup.length && !copyFailed) say(`  Sobrou do CodeTown; depois de conferir o escritório, apague com: ${plan.cleanup.join(' · ')}`);
   say('  Logs: npm run docker:logs · Parar: npm run docker:down');
 }
 
@@ -437,7 +636,7 @@ function updateMods(dirs: string[], accounts: DetectedAccount[]): Pick<ModUpdate
     }
     return mod;
   } catch (err) {
-    warn(`não consegui conferir o mod do CodeTown (${(err as Error).message}).`);
+    warn(`não consegui conferir o mod do Habblaud (${(err as Error).message}).`);
     return { installed: false, unavailable: true };
   }
 }

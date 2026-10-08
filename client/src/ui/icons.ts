@@ -259,7 +259,7 @@ export const ICONS = {
 
 export type IconKey = keyof typeof ICONS;
 
-/** Marca do CodeTown em pixels (usada quando /assets/brand/logo-mark.png não existe): prédio com janelas acesas. */
+/** Marca do Habblaud em pixels (usada quando /assets/brand/logo-mark.png não existe): prédio com janelas acesas. */
 export const FALLBACK_MARK = pixelIcon(
   [
     '.....######.....',
@@ -282,19 +282,19 @@ export const FALLBACK_MARK = pixelIcon(
 );
 
 /**
- * Logotipo "CodeTown" em pixels, copiado da placa da marca (assets/brand/signage.png): o "C" tem a abertura
- * desenhada à mão, ao contrário do "C" da Pixelify Sans, que parece um "O" em qualquer peso.
- * c = "Code" (creme), t = "Town" (âmbar), s = sombra de 1 px.
+ * Logotipo "Habblaud" em pixels, com a mesma fonte bitmap da placa da marca (assets/brand/signage.png, gerada por
+ * scripts/assets/pixelart.py): a Pixelify Sans não fica nítida nesse tamanho.
+ * c = "Hab" (creme), t = "blaud" (âmbar), s = sombra de 1 px.
  */
 export const WORDMARK_ROWS = [
-  '.ccc............c.......ttttt..................',
-  'csssc...........c.......sstss..................',
-  'c...s..ccc...cccc..ccc....t....ttt..t...t.tttt.',
-  'c.....csssc.csssc.csssc...t...tssst.t...t.tssst',
-  'c.....c...c.c...c.ccccc...t...t...t.t.t.t.t...t',
-  'c...c.c...c.c...c.cssss...t...t...t.t.t.t.t...t',
-  'scccs.scccs.scccc.sccc....t...sttts.ststs.t...t',
-  '.sss...sss...ssss..sss....s....sss...s.s..s...s',
+  'c...c.......c.....t.....tt..................t',
+  'c...c.......c.....t.....st..................t',
+  'c...c..ccc..cccc..tttt...t...ttt..t...t..tttt',
+  'ccccc..sssc.csssc.tssst..t...ssst.t...t.tssst',
+  'csssc..cccc.c...c.t...t..t...tttt.t...t.t...t',
+  'c...c.csssc.c...c.t...t..t..tssst.t...t.t...t',
+  'c...c.scccc.ccccs.tttts.ttt.stttt.stttt.stttt',
+  's...s..ssss.ssss..ssss..sss..ssss..ssss..ssss',
 ] as const;
 
 export const WORDMARK = pixelIcon(WORDMARK_ROWS, { s: 'rgba(6, 8, 14, 0.62)', c: '#f4f1ea', t: '#fac665' }, 'ui-wordmark');

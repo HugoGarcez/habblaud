@@ -28,7 +28,7 @@ export interface TimelineDayInfo {
 }
 
 export interface TimelineDays {
-  /** O servidor está gravando (CODETOWN_TIMELINE não desligou). */
+  /** O servidor está gravando (HABBLAUD_TIMELINE não desligou). */
   recording: boolean;
   days: TimelineDayInfo[];
 }

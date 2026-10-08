@@ -213,7 +213,7 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
     if (terminalMatch) {
       if (method !== 'GET') methodNotAllowed(res, 'GET');
       else if (!terminals) {
-        sendJson(res, 403, { error: 'terminal somente leitura desligado: ele só funciona com o CodeTown acessível apenas pelo próprio computador' });
+        sendJson(res, 403, { error: 'terminal somente leitura desligado: ele só funciona com o Habblaud acessível apenas pelo próprio computador' });
       } else if (!isLoopbackHost(req.headers.host)) {
         sendJson(res, 403, { error: 'o terminal somente leitura só abre pelo próprio computador (http://localhost ou http://127.0.0.1)' });
       } else {
@@ -235,7 +235,7 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
     if (path === '/api/permissions' || path.startsWith('/api/permissions/')) {
       // Responder pelo escritório age sobre as sessões: a mesma trava do terminal (bind local + Host local).
       if (!deps.permissions) {
-        sendJson(res, 403, { error: 'responder pelo escritório desligado: só funciona com o CodeTown acessível apenas pelo próprio computador' });
+        sendJson(res, 403, { error: 'responder pelo escritório desligado: só funciona com o Habblaud acessível apenas pelo próprio computador' });
       } else if (!isLoopbackHost(req.headers.host)) {
         sendJson(res, 403, { error: 'pedidos de permissão só são respondidos pelo próprio computador (http://localhost ou http://127.0.0.1)' });
       } else {

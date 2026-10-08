@@ -1,19 +1,19 @@
 {
-  "name": "codetown",
+  "name": "habblaud",
   "owner": { "name": "Márcio Junior", "url": "https://github.com/marmottajr" },
-  "description": "Plugins do CodeTown, o escritório virtual em pixel art das suas sessões do Claude Code.",
+  "description": "Plugins do Habblaud, o escritório virtual em pixel art das suas sessões do Claude Code.",
   "version": "0.3.2",
   "plugins": [
     {
-      "name": "codetown",
-      "source": "./mod/codetown",
-      "description": "Mod do CodeTown: uso do plano (5h e semanal) para o escritório, aviso embaixo do prompt quando outra sessão precisa de você e o comando /codetown.",
+      "name": "habblaud",
+      "source": "./mod/habblaud",
+      "description": "Mod do Habblaud: uso do plano (5h e semanal) para o escritório, aviso embaixo do prompt quando outra sessão precisa de você e o comando /habblaud.",
       "category": "productivity"
     },
     {
-      "name": "codetown-permissoes",
-      "source": "./mod/codetown-permissoes",
-      "description": "Aprovar ou recusar pelo CodeTown os pedidos de permissão do Claude Code (hook PermissionRequest).",
+      "name": "habblaud-permissoes",
+      "source": "./mod/habblaud-permissoes",
+      "description": "Aprovar ou recusar pelo Habblaud os pedidos de permissão do Claude Code (hook PermissionRequest).",
       "category": "productivity"
     }
   ]

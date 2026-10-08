@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="client/public/assets/brand/logo-mark@4x.png" width="96" alt="Logo do CodeTown: um pequeno prédio em pixel art" />
+  <img src="client/public/assets/brand/logo-mark@4x.png" width="96" alt="Logo do Habblaud: um pequeno prédio em pixel art" />
 </p>
 
-<h1 align="center">CodeTown</h1>
+<h1 align="center">Habblaud</h1>
 
 <p align="center">
   <b>O escritório virtual dos seus agentes do Claude Code.</b><br />
@@ -18,13 +18,13 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/office.gif" width="820" alt="Animação de uma sala do CodeTown: personagens digitando nas mesas, subagentes com crachá e balões de atividade" />
+  <img src="docs/screenshots/office.gif" width="820" alt="Animação de uma sala do Habblaud: personagens digitando nas mesas, subagentes com crachá e balões de atividade" />
 </p>
 
 ---
 
 Você abre o Claude Code em vários projetos, dispara subagentes, deixa tarefas rodando… e perde a noção de quem está
-fazendo o quê. O **CodeTown** transforma isso num escritório que dá para entender de relance: quem está digitando,
+fazendo o quê. O **Habblaud** transforma isso num escritório que dá para entender de relance: quem está digitando,
 quem levantou a mão porque **precisa de você**, quem entregou o trabalho e foi embora, quem foi tomar um café
 enquanto espera a próxima instrução — e quanto de cada conta você já gastou na sessão de 5 horas e na semana.
 
@@ -33,7 +33,7 @@ eles veem futebol juntos no lounge, jogam videogame e ping-pong, fofocam na copa
 moedinhas no jokenpô. Veja em [Vida social](#vida-social).
 
 Tudo roda na sua máquina, lendo os arquivos que o próprio Claude Code já grava (e só as linhas `alias` do seu shell,
-para dar a letra de cada conta). Nada sai do computador: o CodeTown não lê credenciais nem faz chamadas externas.
+para dar a letra de cada conta). Nada sai do computador: o Habblaud não lê credenciais nem faz chamadas externas.
 
 ## Sumário
 
@@ -56,7 +56,7 @@ para dar a letra de cada conta). Nada sai do computador: o CodeTown não lê cre
 ganha a sua sala ao longo do corredor. No topo, os contadores e o uso de cada conta; à esquerda, as salas e os
 agentes; embaixo, o feed de atividade.
 
-![Visão geral do CodeTown: prédio com recepção, copa, banheiros, lounge e salas de projeto; barra lateral com salas e agentes; uso das contas no topo; feed de atividade embaixo](docs/screenshots/overview.png)
+![Visão geral do Habblaud: prédio com recepção, copa, banheiros, lounge e salas de projeto; barra lateral com salas e agentes; uso das contas no topo; feed de atividade embaixo](docs/screenshots/overview.png)
 
 <table>
   <tr>
@@ -106,7 +106,7 @@ ela, e o endereço antigo apaga e é desmontado. Assim o prédio não fica com b
 
 <table>
   <tr>
-    <td width="34%"><img src="docs/screenshots/mobile.png" alt="CodeTown no celular, com o uso das contas no topo" /></td>
+    <td width="34%"><img src="docs/screenshots/mobile.png" alt="Habblaud no celular, com o uso das contas no topo" /></td>
     <td>
       <b>Também no celular.</b> A interface se adapta a telas pequenas: o uso das contas fica no topo, a lista de
       salas vira uma gaveta e os detalhes abrem de baixo para cima. Veja como liberar o acesso pela rede local em
@@ -129,15 +129,15 @@ ela, e o endereço antigo apaga e é desmontado. Assim o prédio não fica com b
 ### 1. Baixe o projeto
 
 ```bash
-git clone https://github.com/marmottajr/codetown.git
-cd codetown
+git clone https://github.com/marmottajr/habblaud.git
+cd habblaud
 npm install
 ```
 
-> O `npm install` só baixa ferramentas de compilação (Vite, TypeScript, tsx…). O servidor do CodeTown não tem
+> O `npm install` só baixa ferramentas de compilação (Vite, TypeScript, tsx…). O servidor do Habblaud não tem
 > dependências de runtime: usa só módulos nativos do Node.
 
-### 2. Suba o CodeTown
+### 2. Suba o Habblaud
 
 **Opção A — Docker (recomendado para deixar sempre ligado)**
 
@@ -159,25 +159,25 @@ Abra **http://localhost:4747**. Para desenvolver, use `npm run dev` (servidor + 
 
 Agora abra o Claude Code em qualquer projeto e veja o seu agente chegar pelo elevador. 🎉
 
-### 3. Instale o mod do CodeTown no Claude Code (recomendado)
+### 3. Instale o mod do Habblaud no Claude Code (recomendado)
 
 ```bash
 npm run mod:install                        # o mod e o plugin de permissões, em cada conta
 npm run mod:install -- --sem-permissoes    # só o mod, sem responder permissões pelo escritório
 ```
 
-O CodeTown traz um [mod](https://code.claude.com/docs/en/plugins/mods/overview) (um plugin que roda dentro do
+O Habblaud traz um [mod](https://code.claude.com/docs/en/plugins/mods/overview) (um plugin que roda dentro do
 Claude Code) e o instala em cada conta, pelo próprio `claude plugin`, a partir desta pasta. Com ele:
 
-- o **uso de 5 horas e semanal** de cada conta aparece ao vivo no CodeTown;
+- o **uso de 5 horas e semanal** de cada conta aparece ao vivo no Habblaud;
 - o terminal mostra uma linha quando **outra sessão precisa de você** (permissão ou resposta);
-- o comando **`/codetown`** passa a existir no Claude Code;
+- o comando **`/habblaud`** passa a existir no Claude Code;
 - dá para **aprovar ou recusar pelo escritório** os pedidos de permissão ("Do you want to…"), com o plugin
-  `codetown-permissoes` (veja [Responder pelo escritório](#responder-pelo-escritório)).
+  `habblaud-permissoes` (veja [Responder pelo escritório](#responder-pelo-escritório)).
 
 Precisa do **Claude Code 2.1.287 ou mais novo** (`claude --version`). O mod roda dentro de cada sessão, com as suas
 permissões, e acessa só o que está listado em [`mod/README.md`](mod/README.md); para conferir sem rodar nada,
-`claude plugin validate mod/codetown` mostra os eventos que ele trata e as chamadas que faz. Sessões já abertas
+`claude plugin validate mod/habblaud` mostra os eventos que ele trata e as chamadas que faz. Sessões já abertas
 carregam o mod com `/reload-plugins` (ou ao reabrir). Se a conta tinha o jeito antigo (abaixo), o `mod:install` tira o
 tap e o hook do `settings.json` (com backup), porque o mod faz o mesmo. Confira com `npm run mod:status`; para
 desfazer: `npm run mod:uninstall`.
@@ -204,15 +204,15 @@ não ficarem dois capturando o uso ou respondendo o mesmo pedido.
 
 ### Abrir no celular (opcional)
 
-Por padrão o CodeTown só aceita conexões do próprio computador. Para abrir no celular (no mesmo Wi-Fi), com Docker:
+Por padrão o Habblaud só aceita conexões do próprio computador. Para abrir no celular (no mesmo Wi-Fi), com Docker:
 
 ```bash
-printf 'CODETOWN_BIND=0.0.0.0\n' > .env
+printf 'HABBLAUD_BIND=0.0.0.0\n' > .env
 npm run docker:up -- --no-build
 ```
 
 Depois abra `http://<ip-do-computador>:4747` no celular (no macOS: `ipconfig getifaddr en0`; se vier vazio,
-`ipconfig getifaddr en1`). No modo Node, use `CODETOWN_HOST=0.0.0.0 npm start`.
+`ipconfig getifaddr en1`). No modo Node, use `HABBLAUD_HOST=0.0.0.0 npm start`.
 
 > ⚠️ Com isso, qualquer aparelho da rede vê a atividade dos agentes (comandos, arquivos, títulos das sessões). Use
 > só em redes de confiança. O [terminal somente leitura](#terminal-somente-leitura) fica desligado enquanto a porta
@@ -221,7 +221,7 @@ Depois abra `http://<ip-do-computador>:4747` no celular (no macOS: `ipconfig get
 ### Atualizar
 
 A versão em uso aparece na barra superior, ao lado de "Conectado", e em **Configurações › Sobre**. A cada 6 horas o
-CodeTown confere no GitHub se saiu uma versão nova (as [releases](https://github.com/marmottajr/codetown/releases)
+Habblaud confere no GitHub se saiu uma versão nova (as [releases](https://github.com/marmottajr/habblaud/releases)
 deste repositório). Quando sai, aparece o selo verde **Nova versão** no lugar do número, com um aviso e um ponto no
 botão de configurações. Em **Sobre** ficam o link do que mudou e o botão **Verificar agora** (as notas de cada
 versão também estão no [`CHANGELOG.md`](CHANGELOG.md)). Para atualizar:
@@ -234,23 +234,46 @@ npm run docker:up        # ou: npm run build && npm start (e depois npm run mod:
 
 O `docker:up` também atualiza o mod nas contas em que ele já está instalado (nunca instala sozinho) e avisa:
 "Mod atualizado para 0.3.0 na Conta D; sessões abertas: /reload-plugins". No modo Node, rode `npm run mod:install`
-depois de atualizar. Para não consultar o GitHub, use `CODETOWN_UPDATE_CHECK=0` (no `.env`, para o Docker).
+depois de atualizar. Para não consultar o GitHub, use `HABBLAUD_UPDATE_CHECK=0` (no `.env`, para o Docker).
+
+#### Vindo do CodeTown
+
+O Habblaud se chamava **CodeTown** até a 0.3.2. Depois do `git pull`, rode uma vez:
+
+```bash
+npm install
+npm run mod:install      # troca o marketplace e os plugins codetown pelos habblaud, em cada conta
+npm run docker:up        # tira o container codetown e copia os dados do volume antigo para o novo
+```
+
+- **Mod:** até o `mod:install`, o Claude Code das contas reclama do marketplace `codetown` (as pastas
+  `mod/codetown*` mudaram de nome). O `docker:up` avisa, mas não troca sozinho.
+- **Docker:** o volume antigo (`codetown_codetown-data`) fica intacto. Depois de conferir que os nomes dos personagens
+  vieram, apague-o com `docker volume rm codetown_codetown-data`, e a imagem antiga com `docker image rm codetown:local`.
+- **Pasta local:** `~/.codetown` vira `~/.habblaud` sozinha (no servidor, no `docker:up` e no `mod:install`).
+- **Navegador:** preferências e moedinhas passam para as chaves novas na primeira vez que a página abre.
+- **Variáveis:** as `CODETOWN_*` não valem mais; renomeie para `HABBLAUD_*` no `.env` (ex.: `HABBLAUD_BIND`). O
+  servidor e o `docker:up` avisam quando acham uma antiga.
+- **Repositório:** agora é `github.com/marmottajr/habblaud` (o GitHub redireciona o endereço antigo). Para acertar o
+  clone: `git remote set-url origin https://github.com/marmottajr/habblaud.git`. A pasta local pode continuar com o
+  nome antigo.
+- Backups do `settings.json` feitos antes da troca continuam com o nome `settings.json.codetown-backup-<data>`.
 
 ### Desinstalar
 
 ```bash
 npm run mod:uninstall                       # tira o mod, o plugin de permissões e o marketplace das contas
 npm run docker:down                         # para o container
-docker volume rm codetown_codetown-data     # apaga os dados do container (nomes, linha do tempo e estatísticas)
-docker image rm codetown:local              # apaga a imagem
-rm -rf ~/.codetown                          # apaga os dados locais (uso capturado, nomes, linha do tempo e estatísticas)
+docker volume rm habblaud_habblaud-data     # apaga os dados do container (nomes, linha do tempo e estatísticas)
+docker image rm habblaud:local              # apaga a imagem
+rm -rf ~/.habblaud                          # apaga os dados locais (uso capturado, nomes, linha do tempo e estatísticas)
 ```
 
 Depois é só apagar a pasta do projeto — rode o `mod:uninstall` **antes**, senão o Claude Code das contas passa a
 reclamar do marketplace que sumiu. Se você usou o jeito antigo, rode também `npm run usage:uninstall` (devolve o
 statusline original) e `npm run hooks:uninstall` (tira o hook de permissão); sem eles, o statusline das contas passa
 a dar erro (e o hook, a falhar em silêncio). O `mod:install`, que tira o tap e o hook antigos, e os instaladores e
-desinstaladores antigos deixam cópias `settings.json.codetown-backup-<data>` na pasta de cada conta (ex.:
+desinstaladores antigos deixam cópias `settings.json.habblaud-backup-<data>` na pasta de cada conta (ex.:
 `~/.claude/`); apague-as se não precisar mais.
 
 ## Como usar
@@ -322,9 +345,9 @@ dá para digitar nem interferir no agente. Vale para agentes principais e subage
   por dia, com busca por título, projeto ou conta. Uma sessão encerrada abre no terminal com projeto, título e data no
   cabeçalho e "Sessão encerrada às …" no rodapé; uma sessão ainda aberta abre o terminal ao vivo do agente.
 
-Como o terminal (e o histórico) mostra a conversa inteira, ele só existe quando o CodeTown está acessível **apenas pelo
+Como o terminal (e o histórico) mostra a conversa inteira, ele só existe quando o Habblaud está acessível **apenas pelo
 próprio computador** (o padrão) e só abre por `http://localhost` ou `http://127.0.0.1`. Com a porta liberada para a rede
-(`CODETOWN_BIND=0.0.0.0` ou `CODETOWN_HOST=0.0.0.0`), ele fica desligado. Detalhes em
+(`HABBLAUD_BIND=0.0.0.0` ou `HABBLAUD_HOST=0.0.0.0`), ele fica desligado. Detalhes em
 [Privacidade e segurança](#privacidade-e-segurança).
 
 ### Timelapse do dia
@@ -337,8 +360,8 @@ pular até lá) e **Voltar ao vivo**. Enquanto isso, o escritório fica levement
 feed continua mostrando o que acontece agora.
 
 O servidor grava a linha do tempo **a partir do momento em que está ligado** (não dá para reconstruir o passado):
-resumos do que o escritório mostra, sem conversas, em `~/.codetown/timeline/` (no Docker, no volume de dados), com
-limite de tamanho por dia e os últimos **7 dias** guardados. Para não gravar: `CODETOWN_TIMELINE=0`. Detalhes em
+resumos do que o escritório mostra, sem conversas, em `~/.habblaud/timeline/` (no Docker, no volume de dados), com
+limite de tamanho por dia e os últimos **7 dias** guardados. Para não gravar: `HABBLAUD_TIMELINE=0`. Detalhes em
 [`server/README.md`](server/README.md#linha-do-tempo-timelapse).
 
 Os personagens andam mais rápido no replay, mas nas velocidades altas quem fica pouco tempo no escritório quase não
@@ -354,27 +377,27 @@ botões:
 - **Aprovar** — e, quando o Claude Code sugere, **Aprovar e não perguntar de novo** (a mesma regra que o terminal
   ofereceria, por exemplo `Bash(npm test:*)` neste projeto);
 - **Recusar** — com um motivo opcional, que vai para o agente, e a opção de interrompê-lo;
-- **Responder no terminal** — o CodeTown deixa o pedido de lado.
+- **Responder no terminal** — o Habblaud deixa o pedido de lado.
 
 O diálogo continua aparecendo no terminal ao mesmo tempo, e vale o que você responder primeiro: respondeu no
 terminal, o pedido some do escritório sozinho. O contador **precisam de você** (e a tecla `P`) leva até cada pedido.
 Perguntas do agente (`AskUserQuestion`) continuam só no terminal.
 
 - O pedido passa por um hook `PermissionRequest` do Claude Code (o do plugin, ou o do jeito antigo), que só o desvia
-  quando há **alguma página do CodeTown aberta** neste computador; com o CodeTown parado ou sem nenhuma página, ele
+  quando há **alguma página do Habblaud aberta** neste computador; com o Habblaud parado ou sem nenhuma página, ele
   sai na hora e o terminal segue normal.
 - Sem resposta pelo escritório em 5 minutos, o pedido volta a valer só no terminal (as opções do plugin estão em
   [`mod/README.md`](mod/README.md); no jeito antigo, `npm run hooks:install -- --timeout 120` muda o tempo e
   `--port`, a porta). Em **subagentes em segundo plano** o Claude Code só mostra o diálogo no terminal depois que o
   hook termina: responda pelo escritório ou use **Responder no terminal**.
-- Funciona com a mesma trava do terminal somente leitura: só com o CodeTown acessível apenas pelo próprio
+- Funciona com a mesma trava do terminal somente leitura: só com o Habblaud acessível apenas pelo próprio
   computador e aberto por `http://localhost`. Confira com `npm run mod:status` (ou `npm run hooks:status`, no jeito
   antigo).
 - No modo demonstração, os agentes fictícios também pedem permissão (de mentira), para experimentar.
 
 ### GitHub no escritório
 
-O que os agentes fazem no GitHub anima a sala do projeto, sem token e sem acessar a internet: o CodeTown lê nos
+O que os agentes fazem no GitHub anima a sala do projeto, sem token e sem acessar a internet: o Habblaud lê nos
 transcripts as chamadas (`gh pr create`, `gh pr merge`, `git push`, `gh run watch`, `gh pr checks`, `gh run view`,
 `gh release create` e as ferramentas do MCP do GitHub) e os resultados delas.
 
@@ -391,8 +414,8 @@ transcripts as chamadas (`gh pr create`, `gh pr merge`, `git push`, `gh run watc
   </tr>
 </table>
 
-Cada evento também gera um aviso ("🎉 Danilo abriu o PR #12 em codetown", "🚨 CI falhou em codetown (feat/x)") e entra
-no feed. Só o que acontece ao vivo anima a sala: o que já estava nos transcripts quando o CodeTown abriu vai só para o
+Cada evento também gera um aviso ("🎉 Danilo abriu o PR #12 em habblaud", "🚨 CI falhou em habblaud (feat/x)") e entra
+no feed. Só o que acontece ao vivo anima a sala: o que já estava nos transcripts quando o Habblaud abriu vai só para o
 histórico. Com "reduzir movimento" ligado no sistema, nada pisca nem gira. No modo demonstração, PRs, merges e CIs
 fictícios aparecem de tempos em tempos.
 ### Meu dia
@@ -401,10 +424,10 @@ O botão **Meu dia** (ou a tecla `M`) mostra para onde foi o dia: quanto tempo o
 em destaque, quanto tempo ficaram **esperando você** (permissão, pergunta ou escolha) — com a maior espera, quem
 esperou, onde e quando. Ao lado, sessões, subagentes, pedidos, tokens e custo (quando o Claude Code grava o custo no
 transcript), e gráficos por hora, por projeto (do que mais esperou você para o que menos esperou) e por conta, além
-do ranking das maiores esperas. Escolha o dia no seletor (o CodeTown guarda os últimos 30); aberto no dia de hoje,
+do ranking das maiores esperas. Escolha o dia no seletor (o Habblaud guarda os últimos 30); aberto no dia de hoje,
 o painel se atualiza a cada 30 s. Cada gráfico tem uma versão em tabela, e a legenda liga e desliga cada status.
 
-O tempo é **tempo de agente**: dois agentes trabalhando por uma hora contam duas horas. O CodeTown só conta o que
+O tempo é **tempo de agente**: dois agentes trabalhando por uma hora contam duas horas. O Habblaud só conta o que
 acontece enquanto ele está rodando, e o dia segue o fuso do seu navegador. Com o modo demonstração ligado, o painel
 mostra números fictícios (com o selo "demonstração") e deixa alternar para os dados reais; os agentes do demo nunca
 entram nas estatísticas de verdade.
@@ -416,17 +439,17 @@ Quer ver o escritório cheio sem ter sessões abertas?
 - Acrescente **`?mock=1`** à URL (ex.: http://localhost:4747/?mock=1) para simular tudo no navegador, sem as suas
   sessões reais. Parâmetros: `&speed=3` acelera o tempo e `&sessions=6` muda o número de sessões simuladas.
 - Ou ligue pela interface — **Ver demonstração** (quando o escritório está vazio) ou **Configurações › Modo
-  demonstração** —, que coloca agentes fictícios junto com os reais. Com `npm run demo` (ou `CODETOWN_DEMO=1` no
+  demonstração** —, que coloca agentes fictícios junto com os reais. Com `npm run demo` (ou `HABBLAUD_DEMO=1` no
   `.env` do Docker), esse modo já começa ligado.
 
 ## Contas e uso (5 horas e semanal)
 
 Se você usa mais de uma conta do Claude Code (por exemplo, um atalho `c` com `~/.claude` e um `d` com
-`CLAUDE_CONFIG_DIR=~/.claude-conta2`), o CodeTown mostra todas juntas: cada agente leva o chip da sua conta e o topo
+`CLAUDE_CONFIG_DIR=~/.claude-conta2`), o Habblaud mostra todas juntas: cada agente leva o chip da sua conta e o topo
 mostra, para cada conta, o **percentual usado** da sessão de 5 horas e da semana e **quando cada limite reinicia**.
 
 **Como as contas são reconhecidas.** Cada pasta de configuração do Claude Code é uma conta: `~/.claude` e qualquer
-`~/.claude*` com `projects/` ou `sessions/` (além de `CLAUDE_CONFIG_DIR`). Para dar a letra de cada uma, o CodeTown
+`~/.claude*` com `projects/` ou `sessions/` (além de `CLAUDE_CONFIG_DIR`). Para dar a letra de cada uma, o Habblaud
 lê nos arquivos do shell (`~/.zshrc`, `~/.bashrc`…) **somente** as linhas `alias x='... claude ...'`:
 
 ```bash
@@ -436,9 +459,9 @@ alias d='CLAUDE_CONFIG_DIR=~/.claude-conta2 claude'
 
 vira **Conta C** e **Conta D**. Só valem atalhos de até 3 letras; contas sem atalho recebem A, B…
 
-**De onde vêm os números.** O jeito recomendado é o mod do CodeTown (`npm run mod:install`, Claude Code 2.1.287+):
+**De onde vêm os números.** O jeito recomendado é o mod do Habblaud (`npm run mod:install`, Claude Code 2.1.287+):
 dentro de cada sessão, ele recebe do próprio Claude Code os limites do plano e guarda só os percentuais de 5 horas e
-da semana (e quando reiniciam) em `~/.codetown/usage/<conta>.json`. Os números chegam depois da próxima resposta de
+da semana (e quando reiniciam) em `~/.habblaud/usage/<conta>.json`. Os números chegam depois da próxima resposta de
 cada conta. Confira com `npm run mod:status`. Em versões anteriores do Claude Code, o tap de statusline
 (`npm run usage:install`) faz o mesmo pelo comando de statusline, no mesmo arquivo.
 
@@ -446,18 +469,18 @@ cada conta. Confira com `npm run mod:status`. Em versões anteriores do Claude C
 <summary><b>Detalhes do tap e do cache do /usage</b></summary>
 
 - O `usage:install` (jeito antigo) altera, em `<conta>/settings.json`, **só** o campo `statusLine.command`: o comando
-  original (ex.: `npx -y ccstatusline`) passa a rodar através de `node "<pasta do CodeTown>/scripts/statusline-tap.mjs" --
-  <comando original>`. Uma cópia do arquivo vai antes para `settings.json.codetown-backup-<data>`. Se a conta não tinha
+  original (ex.: `npx -y ccstatusline`) passa a rodar através de `node "<pasta do Habblaud>/scripts/statusline-tap.mjs" --
+  <comando original>`. Uma cópia do arquivo vai antes para `settings.json.habblaud-backup-<data>`. Se a conta não tinha
   statusline, é criado um que só captura o uso. `npm run usage:install -- --dry-run` mostra o que mudaria sem gravar.
 - O tap repassa o mesmo JSON ao seu statusline (saída e código de saída continuam os dele) e grava **somente**
   `{accountId, configDir, fetchedAt, five_hour, seven_day}` — nada de prompts, custos ou caminhos de projeto. Qualquer
-  falha na captura é ignorada: o statusline nunca quebra por causa do CodeTown.
+  falha na captura é ignorada: o statusline nunca quebra por causa do Habblaud.
 
 | Fonte | Como funciona |
 | --- | --- |
-| **Mod do CodeTown** (recomendado) | Ao vivo, como descrito acima. Substitui o tap: o `mod:install` tira o tap da conta. |
+| **Mod do Habblaud** (recomendado) | Ao vivo, como descrito acima. Substitui o tap: o `mod:install` tira o tap da conta. |
 | Tap de statusline (Claude Code anterior ao 2.1.287) | Ao vivo, pelo comando de statusline, no mesmo arquivo. |
-| Cache do `/usage` (sempre ligado) | O Claude Code grava o último resultado do comando `/usage`. No modo Node, o CodeTown relê a cada 60 s; no Docker, vale o valor lido no último `npm run docker:up`. Só muda quando alguém roda `/usage`. |
+| Cache do `/usage` (sempre ligado) | O Claude Code grava o último resultado do comando `/usage`. No modo Node, o Habblaud relê a cada 60 s; no Docker, vale o valor lido no último `npm run docker:up`. Só muda quando alguém roda `/usage`. |
 
 As fontes são arquivos locais: nenhuma lê senhas ou tokens, nem faz chamadas de rede. Vale sempre a fonte com os
 números mais recentes. Números com mais de 30 minutos aparecem como **desatualizados**; uma janela que já reiniciou
@@ -471,21 +494,21 @@ Tudo funciona sem configurar nada. Se precisar ajustar, use variáveis de ambien
 
 | Variável | Padrão | Para quê |
 | --- | --- | --- |
-| `CODETOWN_PORT` | `4747` | Porta HTTP (no Docker, a porta publicada no host). |
-| `CODETOWN_HOST` | `127.0.0.1` | Interface do servidor no modo Node. Fora de `127.0.0.1`/`localhost`, o terminal somente leitura fica desligado. |
-| `CODETOWN_BIND` | `127.0.0.1` | Só Docker (no `.env`): onde a porta é publicada. `0.0.0.0` libera a rede local (e desliga o terminal somente leitura). |
-| `CODETOWN_CLAUDE_DIRS` | detecção automática | Pastas das contas, separadas por vírgula (ex.: `/caminho/conta1,/caminho/conta2`). |
-| `CODETOWN_DATA_DIR` | `~/.codetown` | Onde o CodeTown guarda os próprios dados (nomes dos personagens, linha do tempo do timelapse e estatísticas do Meu dia). |
-| `CODETOWN_TIMELINE` | ligado | `0` desliga a gravação da linha do tempo (os dias já gravados continuam no timelapse). No Docker fica sempre ligado. |
-| `CODETOWN_USAGE_DIR` | `~/.codetown/usage` | Onde o mod (ou o tap de statusline) grava o uso. |
-| `CODETOWN_DEMO` | desligado | `1` liga o modo demonstração ao iniciar. |
-| `CODETOWN_ALLOWED_HOSTS` | — | Nomes extras aceitos no endereço (ex.: `meu-mac.local`), além de `localhost` e IPs. |
-| `CODETOWN_TERMINAL` | ligado (só com acesso local) | `0` desliga o terminal somente leitura. Com a porta exposta ele já fica desligado, sem opção de ligar. |
-| `CODETOWN_UPDATE_CHECK` | ligado | `0` desliga a verificação de versão nova (uma consulta às releases do repositório no GitHub a cada 6 h). |
-| `CODETOWN_ACCOUNTS` | — | JSON para personalizar nome, letra ou cor, casado pelo nome da pasta da conta. Ex.: `[{"id":".claude-conta2","name":"Trabalho","short":"T","color":"#5cc97b"}]`. |
+| `HABBLAUD_PORT` | `4747` | Porta HTTP (no Docker, a porta publicada no host). |
+| `HABBLAUD_HOST` | `127.0.0.1` | Interface do servidor no modo Node. Fora de `127.0.0.1`/`localhost`, o terminal somente leitura fica desligado. |
+| `HABBLAUD_BIND` | `127.0.0.1` | Só Docker (no `.env`): onde a porta é publicada. `0.0.0.0` libera a rede local (e desliga o terminal somente leitura). |
+| `HABBLAUD_CLAUDE_DIRS` | detecção automática | Pastas das contas, separadas por vírgula (ex.: `/caminho/conta1,/caminho/conta2`). |
+| `HABBLAUD_DATA_DIR` | `~/.habblaud` | Onde o Habblaud guarda os próprios dados (nomes dos personagens, linha do tempo do timelapse e estatísticas do Meu dia). |
+| `HABBLAUD_TIMELINE` | ligado | `0` desliga a gravação da linha do tempo (os dias já gravados continuam no timelapse). No Docker fica sempre ligado. |
+| `HABBLAUD_USAGE_DIR` | `~/.habblaud/usage` | Onde o mod (ou o tap de statusline) grava o uso. |
+| `HABBLAUD_DEMO` | desligado | `1` liga o modo demonstração ao iniciar. |
+| `HABBLAUD_ALLOWED_HOSTS` | — | Nomes extras aceitos no endereço (ex.: `meu-mac.local`), além de `localhost` e IPs. |
+| `HABBLAUD_TERMINAL` | ligado (só com acesso local) | `0` desliga o terminal somente leitura. Com a porta exposta ele já fica desligado, sem opção de ligar. |
+| `HABBLAUD_UPDATE_CHECK` | ligado | `0` desliga a verificação de versão nova (uma consulta às releases do repositório no GitHub a cada 6 h). |
+| `HABBLAUD_ACCOUNTS` | — | JSON para personalizar nome, letra ou cor, casado pelo nome da pasta da conta. Ex.: `[{"id":".claude-conta2","name":"Trabalho","short":"T","color":"#5cc97b"}]`. |
 
-**No Docker**, valem `CODETOWN_PORT`, `CODETOWN_BIND`, `CODETOWN_ALLOWED_HOSTS`, `CODETOWN_DEMO`, `CODETOWN_TERMINAL` e
-`CODETOWN_UPDATE_CHECK` (no `.env` ou no ambiente) e `CODETOWN_CLAUDE_DIRS`, `CODETOWN_USAGE_DIR` e `CODETOWN_ACCOUNTS` (lidas pelo `docker:up`
+**No Docker**, valem `HABBLAUD_PORT`, `HABBLAUD_BIND`, `HABBLAUD_ALLOWED_HOSTS`, `HABBLAUD_DEMO`, `HABBLAUD_TERMINAL` e
+`HABBLAUD_UPDATE_CHECK` (no `.env` ou no ambiente) e `HABBLAUD_CLAUDE_DIRS`, `HABBLAUD_USAGE_DIR` e `HABBLAUD_ACCOUNTS` (lidas pelo `docker:up`
 no host); as demais ficam fixas dentro do container. Opções: `npm run docker:up -- --no-build` (sobe sem reconstruir),
 `npm run docker:down` (para) e `npm run docker:logs` (acompanha os logs).
 
@@ -523,7 +546,7 @@ shared/   protocolo (types.ts), atividades em PT-BR, nomes, simulador de demonst
 server/   servidor HTTP + SSE: contas e uso, leitura das sessões e transcripts, modelo do escritório
 client/   Vite: src/art (pixel art procedural), src/world (o escritório no canvas), src/ui (interface)
 scripts/  build do servidor, docker-up, instaladores (mod, tap de statusline e hook de permissão) e screenshots
-mod/      o mod do CodeTown e o plugin de permissões (plugins do Claude Code; marketplace em .claude-plugin/)
+mod/      o mod do Habblaud e o plugin de permissões (plugins do Claude Code; marketplace em .claude-plugin/)
 ```
 
 | Rota | Descrição |
@@ -554,8 +577,8 @@ Mais detalhes do servidor em [`server/README.md`](server/README.md).
 | --- | --- | --- |
 | `<conta>/sessions/` | `/claude/<conta>/sessions` (somente leitura) | Sessões abertas e seus status. |
 | `<conta>/projects/` | `/claude/<conta>/projects` (somente leitura) | Transcripts das sessões e dos subagentes. |
-| `~/.codetown/usage/` | `/usage` (somente leitura) | Uso capturado pelo mod (ou pelo tap de statusline). |
-| volume `codetown-data` | `/data` | Dados do próprio CodeTown (nomes dos personagens, linha do tempo do timelapse e estatísticas do Meu dia). |
+| `~/.habblaud/usage/` | `/usage` (somente leitura) | Uso capturado pelo mod (ou pelo tap de statusline). |
+| volume `habblaud-data` | `/data` | Dados do próprio Habblaud (nomes dos personagens, linha do tempo do timelapse e estatísticas do Meu dia). |
 
 A pasta da conta **nunca** é montada inteira (lá ficam credenciais e configurações). O container roda como usuário sem
 privilégios, com sistema de arquivos somente leitura, sem capabilities extras e com `no-new-privileges`. Os metadados
@@ -565,48 +588,48 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
 
 ## Privacidade e segurança
 
-- **Só leitura:** o CodeTown nunca grava nas pastas do Claude Code. As exceções são os instaladores, que você roda:
+- **Só leitura:** o Habblaud nunca grava nas pastas do Claude Code. As exceções são os instaladores, que você roda:
   o `npm run mod:install` / `mod:uninstall` usa o próprio `claude plugin` (que registra o marketplace e os plugins
   no `settings.json` e em `<conta>/plugins/`) e, na instalação, tira o tap e o hook antigos com backup; no jeito
   antigo, o `npm run usage:install` / `usage:uninstall` muda só o `statusLine.command` do `settings.json` e o
   `npm run hooks:install` / `hooks:uninstall`, só a lista `hooks.PermissionRequest` — sempre com backup antes.
 - **O mod:** roda dentro de cada sessão do Claude Code, com as suas permissões (como todo mod), e faz só o que está
-  listado em [`mod/README.md`](mod/README.md) — `claude plugin validate mod/codetown` mostra os eventos e as chamadas,
+  listado em [`mod/README.md`](mod/README.md) — `claude plugin validate mod/habblaud` mostra os eventos e as chamadas,
   sem rodar nada. Grava só os percentuais de uso de 5 horas e da semana (e quando reiniciam) em
-  `~/.codetown/usage/<conta>.json`; para a linha de "precisa de você" e o `/codetown`, só fala com o CodeTown em
+  `~/.habblaud/usage/<conta>.json`; para a linha de "precisa de você" e o `/habblaud`, só fala com o Habblaud em
   `127.0.0.1`. Não lê a conversa, não chama o modelo e não envia nada para fora do computador. Ele é lido desta
   pasta: o que estiver nela (inclusive depois de um `git pull`) é o que roda.
 - **Só local, por padrão:** o servidor só aceita conexões do próprio computador; liberar a rede local é opcional.
   Não há telemetria. A única chamada externa é a verificação de versão nova: a cada 6 horas, uma consulta anônima,
-  sem token, à API pública do GitHub (`api.github.com/repos/marmottajr/codetown/releases/latest`). Ela não envia nada
+  sem token, à API pública do GitHub (`api.github.com/repos/marmottajr/habblaud/releases/latest`). Ela não envia nada
   sobre as suas sessões; o GitHub vê só o seu IP e a versão em uso, que vai no `User-Agent`.
-  `CODETOWN_UPDATE_CHECK=0` desliga a consulta.
-- **Sem credenciais:** o CodeTown não lê senhas nem tokens de acesso. Do `.claude.json` de cada conta aproveita só o
+  `HABBLAUD_UPDATE_CHECK=0` desliga a consulta.
+- **Sem credenciais:** o Habblaud não lê senhas nem tokens de acesso. Do `.claude.json` de cada conta aproveita só o
   e-mail, a organização e o cache do `/usage`; o uso ao vivo vem do mod (ou do tap de statusline).
 - **Segredos mascarados:** tokens e senhas com formato conhecido (`Bearer`, `-u usuário:senha`, `TOKEN=`, chaves
   `sk-…`, `ghp_…`, `AKIA…`, JWTs, senhas em URLs) viram `***` antes de chegar ao navegador.
 - **Protegido contra sites maliciosos:** o servidor recusa endereços que não sejam `localhost`/IP (DNS rebinding) e
   `POST` vindos de outras origens (CSRF), e não deixa a página ser embutida em outros sites.
 - **Terminal somente leitura só local:** a conversa completa das sessões (e o histórico das sessões encerradas, com os
-  títulos) só sai do servidor com o CodeTown acessível apenas pelo próprio computador (`CODETOWN_HOST` local no Node;
-  `CODETOWN_BIND` local no Docker) — não há como
+  títulos) só sai do servidor com o Habblaud acessível apenas pelo próprio computador (`HABBLAUD_HOST` local no Node;
+  `HABBLAUD_BIND` local no Docker) — não há como
   ligá-lo com a porta exposta — e cada pedido precisa vir por `localhost`/`127.0.0.1`: IPs da rede e nomes de
-  `CODETOWN_ALLOWED_HOSTS` (proxies, túneis) são recusados. Segredos são mascarados e textos longos truncados antes
-  de chegar ao navegador; no modo demonstração, a conversa é fictícia. `CODETOWN_TERMINAL=0` desliga de vez.
+  `HABBLAUD_ALLOWED_HOSTS` (proxies, túneis) são recusados. Segredos são mascarados e textos longos truncados antes
+  de chegar ao navegador; no modo demonstração, a conversa é fictícia. `HABBLAUD_TERMINAL=0` desliga de vez.
 - **Linha do tempo do timelapse:** só os resumos que já aparecem na tela (atividade em uma linha, status, títulos,
-  uso das contas, sem e-mails, comandos completos ou conversas), gravados em `~/.codetown/timeline/` e apagados depois
-  de 7 dias. `CODETOWN_TIMELINE=0` desliga a gravação.
+  uso das contas, sem e-mails, comandos completos ou conversas), gravados em `~/.habblaud/timeline/` e apagados depois
+  de 7 dias. `HABBLAUD_TIMELINE=0` desliga a gravação.
 - **Responder pelo escritório, só local:** aprovar ou recusar age sobre as sessões, então segue a mesma trava do
   terminal (bind local, `Host` local, nada de proxies ou túneis) e só existe com o hook de permissão (o do plugin
-  `codetown-permissoes` ou o do jeito antigo) instalado por você. As respostas exigem JSON e origem local (um site
-  aberto no navegador não consegue mandá-las), o hook só fala com `127.0.0.1` e, na dúvida — CodeTown fora do ar,
+  `habblaud-permissoes` ou o do jeito antigo) instalado por você. As respostas exigem JSON e origem local (um site
+  aberto no navegador não consegue mandá-las), o hook só fala com `127.0.0.1` e, na dúvida — Habblaud fora do ar,
   erro, tempo esgotado —, sai sem decidir: vale o terminal. O comando completo ou o diff só saem do servidor para
   quem abriu a página pelo próprio computador. "Sempre permitir" só aplica uma regra que o próprio Claude Code sugeriu
   para aquele pedido. Atenção: qualquer programa ou pessoa que consiga abrir `http://localhost:4747` nesta máquina
   também consegue responder; em computadores compartilhados com outros usuários, não instale o hook
   (`npm run mod:install -- --sem-permissoes`).
 - **Estatísticas do Meu dia:** só números agregados (tempo por status, contagens, tokens, custo) com nomes de projeto,
-  conta e agente, guardados em `CODETOWN_DATA_DIR/stats/` por 30 dias — nada da conversa.
+  conta e agente, guardados em `HABBLAUD_DATA_DIR/stats/` por 30 dias — nada da conversa.
 - **O que aparece na tela:** resumos das atividades (ferramenta, arquivo, comando ou consulta), títulos das sessões,
   tarefas e estatísticas (e, no terminal somente leitura, a conversa). Não exponha a porta em redes em que você não
   confia.
@@ -621,9 +644,9 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
 | `npm run build` / `npm start` | Compila e roda a versão de produção. |
 | `npm test` | Testes (Vitest). |
 | `npm run typecheck` | Verificação de tipos de cliente, servidor e scripts. |
-| `claude plugin test mod/codetown` | Testes do mod (sem sessão, conta nem rede). |
-| `claude plugin validate .` | Valida o marketplace (`.claude-plugin/marketplace.json`); com `mod/codetown` ou `mod/codetown-permissoes`, valida o plugin e lista os eventos e as chamadas do mod. |
-| `claude --plugin-dir mod/codetown` | Abre uma sessão com o mod desta pasta, sem instalar (edite e rode `/reload-plugins`). |
+| `claude plugin test mod/habblaud` | Testes do mod (sem sessão, conta nem rede). |
+| `claude plugin validate .` | Valida o marketplace (`.claude-plugin/marketplace.json`); com `mod/habblaud` ou `mod/habblaud-permissoes`, valida o plugin e lista os eventos e as chamadas do mod. |
+| `claude --plugin-dir mod/habblaud` | Abre uma sessão com o mod desta pasta, sem instalar (edite e rode `/reload-plugins`). |
 | `npm run mod:status` | Mostra, por conta, o marketplace, os plugins e as versões instaladas. |
 | `npm run demo:timeline` | Gera uma linha do tempo fictícia (simulador do modo demonstração) para o timelapse. |
 | `npm run release` | Publica a versão do `package.json` no GitHub (tag e release com as notas do `CHANGELOG.md`). |
@@ -632,25 +655,25 @@ Para tirar screenshots sem abrir o seu navegador, `scripts/shot.mjs` usa um Chro
 Na primeira vez, baixe o navegador (uma vez só): `npx playwright-core install chromium-headless-shell`.
 
 ```bash
-node scripts/shot.mjs 'http://localhost:4747/?mock=1&speed=3' /tmp/codetown.png --size 1400x900 --wait 4000
+node scripts/shot.mjs 'http://localhost:4747/?mock=1&speed=3' /tmp/habblaud.png --size 1400x900 --wait 4000
 ```
 
-No console do navegador, `codetown.world.debug` tem ferramentas para testar cenas (ex.:
-`codetown.world.debug.setHour(21)` para ver a noite). Para fixar a hora já ao abrir, use `?hora=21:30` na URL.
+No console do navegador, `habblaud.world.debug` tem ferramentas para testar cenas (ex.:
+`habblaud.world.debug.setHour(21)` para ver a noite). Para fixar a hora já ao abrir, use `?hora=21:30` na URL.
 
 **Timelapse só com dados fictícios** (ex.: para gravar um GIF): `npm run demo:timeline` roda o simulador do modo
 demonstração offline e grava um dia inteiro (por padrão, ontem das 9h às 19h, com manhã cheia, almoço mais vazio e
-pico à tarde) em `<tmp>/codetown-demo/timeline/`. Depois suba um CodeTown que só leia essa pasta e não mostre as suas
+pico à tarde) em `<tmp>/habblaud-demo/timeline/`. Depois suba um Habblaud que só leia essa pasta e não mostre as suas
 sessões, e abra o Timelapse:
 
 ```bash
-npm run demo:timeline -- --data-dir /tmp/codetown-demo        # opções: --date, --start 8:30, --hours, --sessions, --seed
-mkdir -p /tmp/codetown-demo/vazio
-CODETOWN_DATA_DIR=/tmp/codetown-demo CODETOWN_TIMELINE=0 CODETOWN_CLAUDE_DIRS=/tmp/codetown-demo/vazio \
-  CODETOWN_PORT=4848 npm start                                 # depois de npm run build; abra http://localhost:4848
+npm run demo:timeline -- --data-dir /tmp/habblaud-demo        # opções: --date, --start 8:30, --hours, --sessions, --seed
+mkdir -p /tmp/habblaud-demo/vazio
+HABBLAUD_DATA_DIR=/tmp/habblaud-demo HABBLAUD_TIMELINE=0 HABBLAUD_CLAUDE_DIRS=/tmp/habblaud-demo/vazio \
+  HABBLAUD_PORT=4848 npm start                                 # depois de npm run build; abra http://localhost:4848
 ```
 
-`CODETOWN_TIMELINE=0` evita gravar nessa pasta; com a gravação ligada, dias com mais de 7 dias são apagados.
+`HABBLAUD_TIMELINE=0` evita gravar nessa pasta; com a gravação ligada, dias com mais de 7 dias são apagados.
 
 **Publicar uma versão:** toda versão tem a sua seção no [`CHANGELOG.md`](CHANGELOG.md), com o que entrou. Durante o
 trabalho, anote as mudanças em "Não lançado". Para lançar:
@@ -660,7 +683,7 @@ trabalho, anote as mudanças em "Não lançado". Para lançar:
    atualize os links do fim. O `npm test` falha se a versão do `package.json` não tiver seção.
 3. Faça o merge na `main` e rode `npm run release` (precisa do [`gh`](https://cli.github.com/) autenticado; `-- --dry-run`
    só mostra as notas). O script cria a tag `v0.3.0` e a release com o texto da seção. A partir daí, quem usa o
-   CodeTown vê o selo **Nova versão**.
+   Habblaud vê o selo **Nova versão**.
 
 ## Solução de problemas
 
@@ -669,7 +692,7 @@ trabalho, anote as mudanças em "Não lançado". Para lançar:
 
 Só aparecem sessões **abertas** do Claude Code. Confira se há alguma rodando e se a conta foi detectada em
 `http://localhost:4747/api/health`. Se as pastas das contas estiverem em outro lugar, use
-`CODETOWN_CLAUDE_DIRS=/caminho/conta1,/caminho/conta2`.
+`HABBLAUD_CLAUDE_DIRS=/caminho/conta1,/caminho/conta2`.
 
 </details>
 
@@ -689,7 +712,7 @@ do percentual quer dizer que a janela reiniciou desde a última coleta.
 Rode `npm run mod:status`: ele mostra a versão do Claude Code (o mod precisa da 2.1.287 ou mais nova) e, por conta,
 se o marketplace aponta para esta pasta e se os plugins estão instalados e ligados. Numa sessão aberta antes da
 instalação, rode `/reload-plugins`; o `/plugin` mostra, embaixo das abas, os mods carregados (ex.:
-`1 mod active · codetown`). Mods não rodam com `"disableAllHooks": true` no `settings.json` da conta nem com
+`1 mod active · habblaud`). Mods não rodam com `"disableAllHooks": true` no `settings.json` da conta nem com
 `claude --safe-mode`.
 
 </details>
@@ -697,8 +720,8 @@ instalação, rode `/reload-plugins`; o `/plugin` mostra, embaixo das abas, os m
 <details>
 <summary><b>"A porta 4747 já está em uso"</b></summary>
 
-Outro CodeTown (Node ou Docker) já está rodando. Pare-o (`npm run docker:down`, ou Ctrl+C no terminal do
-`npm start`) ou use outra porta: `CODETOWN_PORT=4848 npm run docker:up` (Docker) ou `CODETOWN_PORT=4848 npm start`
+Outro Habblaud (Node ou Docker) já está rodando. Pare-o (`npm run docker:down`, ou Ctrl+C no terminal do
+`npm start`) ou use outra porta: `HABBLAUD_PORT=4848 npm run docker:up` (Docker) ou `HABBLAUD_PORT=4848 npm start`
 (Node).
 
 </details>
@@ -706,9 +729,9 @@ Outro CodeTown (Node ou Docker) já está rodando. Pare-o (`npm run docker:down`
 <details>
 <summary><b>Não abre no celular</b></summary>
 
-Confira se criou o `.env` com `CODETOWN_BIND=0.0.0.0` e recriou o container (`npm run docker:up -- --no-build`), se
+Confira se criou o `.env` com `HABBLAUD_BIND=0.0.0.0` e recriou o container (`npm run docker:up -- --no-build`), se
 o celular está no mesmo Wi-Fi e se o firewall do computador permite conexões na porta 4747. Por IP funciona direto;
-para abrir por um nome (ex.: `meu-mac.local`), acrescente `CODETOWN_ALLOWED_HOSTS=meu-mac.local` (no Docker, no mesmo
+para abrir por um nome (ex.: `meu-mac.local`), acrescente `HABBLAUD_ALLOWED_HOSTS=meu-mac.local` (no Docker, no mesmo
 `.env`).
 
 </details>
@@ -716,9 +739,9 @@ para abrir por um nome (ex.: `meu-mac.local`), acrescente `CODETOWN_ALLOWED_HOST
 <details>
 <summary><b>O terminal somente leitura não abre</b></summary>
 
-O terminal só existe com o CodeTown acessível apenas pelo próprio computador. Confira se o `.env` não tem
-`CODETOWN_BIND=0.0.0.0` (ou, no modo Node, se não usou `CODETOWN_HOST=0.0.0.0`) nem `CODETOWN_TERMINAL=0`, e abra por
-`http://localhost:4747` (pelo IP da rede ou por um nome de `CODETOWN_ALLOWED_HOSTS` ele é recusado). No Docker, um container
+O terminal só existe com o Habblaud acessível apenas pelo próprio computador. Confira se o `.env` não tem
+`HABBLAUD_BIND=0.0.0.0` (ou, no modo Node, se não usou `HABBLAUD_HOST=0.0.0.0`) nem `HABBLAUD_TERMINAL=0`, e abra por
+`http://localhost:4747` (pelo IP da rede ou por um nome de `HABBLAUD_ALLOWED_HOSTS` ele é recusado). No Docker, um container
 criado antes desse recurso precisa ser recriado: `npm run docker:up`. O log de inicialização (`npm run docker:logs`)
 diz se o terminal está ligado e, se não estiver, por quê.
 
@@ -727,12 +750,12 @@ diz se o terminal está ligado e, se não estiver, por quê.
 <details>
 <summary><b>O pedido de permissão não aparece no escritório</b></summary>
 
-Rode `npm run mod:status`: ele diz, por conta, se o plugin `codetown-permissoes` está instalado e ligado (e se
-sobrou o hook antigo junto, o que faria dois responderem) e se o CodeTown está respondendo pedidos. No jeito antigo,
+Rode `npm run mod:status`: ele diz, por conta, se o plugin `habblaud-permissoes` está instalado e ligado (e se
+sobrou o hook antigo junto, o que faria dois responderem) e se o Habblaud está respondendo pedidos. No jeito antigo,
 `npm run hooks:status` diz se o hook está instalado e apontando para esta pasta. O pedido só é desviado com alguma
-página do CodeTown aberta por `http://localhost` (ou `127.0.0.1`) e com o terminal somente leitura ligado (mesma
+página do Habblaud aberta por `http://localhost` (ou `127.0.0.1`) e com o terminal somente leitura ligado (mesma
 trava). Sessões abertas antes da instalação carregam o plugin com `/reload-plugins` (ou ao reabrir). No jeito antigo,
-se o CodeTown usa outra porta, reinstale com `npm run hooks:install -- --port <porta>`. Perguntas do agente
+se o Habblaud usa outra porta, reinstale com `npm run hooks:install -- --port <porta>`. Perguntas do agente
 (`AskUserQuestion`) não passam pelo hook.
 
 </details>
@@ -741,7 +764,7 @@ se o CodeTown usa outra porta, reinstale com `npm run hooks:install -- --port <p
 <summary><b>No Docker, uma sessão fechada continua no escritório</b></summary>
 
 Acontece se o Claude Code foi encerrado à força sem apagar o próprio registro em `sessions/` (no Docker não dá para
-conferir se o processo ainda existe). Rodando com Node (`npm start`), o CodeTown confere os processos e isso não
+conferir se o processo ainda existe). Rodando com Node (`npm start`), o Habblaud confere os processos e isso não
 acontece.
 
 </details>
@@ -757,19 +780,19 @@ O Docker Desktop só compartilha algumas pastas do Mac com os containers (por pa
 <details>
 <summary><b>Quero começar do zero</b></summary>
 
-`npm run docker:down`, depois `docker volume rm codetown_codetown-data` (apaga os nomes guardados) e
+`npm run docker:down`, depois `docker volume rm habblaud_habblaud-data` (apaga os nomes guardados) e
 `npm run docker:up`.
 
 </details>
 
 ## Aviso
 
-O CodeTown é um projeto independente, **não afiliado, patrocinado nem endossado pela Anthropic**. "Claude" e
+O Habblaud é um projeto independente, **não afiliado, patrocinado nem endossado pela Anthropic**. "Claude" e
 "Claude Code" são marcas da Anthropic, usadas aqui só para descrever com o que o projeto funciona.
 
-Para mostrar os agentes, o CodeTown lê apenas arquivos locais que o próprio Claude Code grava na sua máquina
+Para mostrar os agentes, o Habblaud lê apenas arquivos locais que o próprio Claude Code grava na sua máquina
 (registros das sessões abertas, transcripts e configurações das contas). Esse formato não é documentado e pode mudar entre versões do Claude Code:
-depois de uma atualização, o CodeTown pode deixar de funcionar, total ou parcialmente, até ser ajustado.
+depois de uma atualização, o Habblaud pode deixar de funcionar, total ou parcialmente, até ser ajustado.
 
 ## Licença
 
@@ -785,7 +808,7 @@ para uma roda (sozinho, continua na pipoca) e leva a ampulheta junto; quando o c
 um pedido novo para alguém —, ele avisa a turma ("Opa, me chamaram! 🏃") e corre de volta para a mesa.
 
 <p align="center">
-  <img src="docs/screenshots/social-lounge.gif" width="816" alt="Lounge do CodeTown com três rodas ao mesmo tempo: três colegas no sofá vendo futebol na TV (a tela pisca GOL), uma partida de pingue-pongue com torcida e um duelo nos fliperamas com provocações nos balões" />
+  <img src="docs/screenshots/social-lounge.gif" width="816" alt="Lounge do Habblaud com três rodas ao mesmo tempo: três colegas no sofá vendo futebol na TV (a tela pisca GOL), uma partida de pingue-pongue com torcida e um duelo nos fliperamas com provocações nos balões" />
 </p>
 
 ### As rodas
@@ -847,7 +870,7 @@ Cada ganho aparece como "+🪙10" sobre a cabeça; as partidas e apostas entram 
 e o extrato ficam salvos no navegador (cada navegador tem a sua economia: as apostas são sorteadas ali) e são
 esquecidos três dias depois de o agente sair.
 
-> Tudo isso é encenação do CodeTown: nada muda nos agentes do Claude Code, que continuam trabalhando normalmente.
+> Tudo isso é encenação do Habblaud: nada muda nos agentes do Claude Code, que continuam trabalhando normalmente.
 
 ---
 

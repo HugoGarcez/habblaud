@@ -1,10 +1,10 @@
-// Preferências da interface, persistidas em localStorage ('codetown:prefs').
+// Preferências da interface, persistidas em localStorage ('habblaud:prefs').
 // Puro: o armazenamento é injetado (testável em node).
 import { DEFAULT_SOUND_SETTINGS, sanitizeSoundSettings, type SoundSettings } from '../audio/scheduler';
 import type { DaylightMode, WorldOptions } from '../world/api';
 import { DEFAULT_WORLD_OPTIONS } from '../world/api';
 
-export const PREFS_KEY = 'codetown:prefs';
+export const PREFS_KEY = 'habblaud:prefs';
 
 export interface UiPrefs {
   showNames: boolean;
@@ -87,10 +87,55 @@ export function worldOptionsFrom(p: UiPrefs): Partial<WorldOptions> {
 }
 
 /** localStorage com proteção contra navegadores que lançam exceção ao acessá-lo. */
-export function safeLocalStorage(): StorageLike | null {
+export function safeLocalStorage(): Storage | null {
   try {
     return typeof localStorage === 'undefined' ? null : localStorage;
   } catch {
     return null;
   }
+}
+
+/**
+ * Migração do nome antigo (CodeTown, até a 0.3.2): as chaves eram `codetown:prefs`,
+ * `codetown:update-seen`, `codetown.wallets.v1`... e passaram a começar com `habblaud`.
+ */
+const LEGACY_NAME = 'codetown';
+const LEGACY_PREFIXES = [`${LEGACY_NAME}:`, `${LEGACY_NAME}.`];
+const NAME = 'habblaud';
+
+type ListableStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'key' | 'length'>;
+
+/**
+ * Renomeia as chaves do nome antigo para quem atualiza não perder as preferências nem as moedinhas.
+ * Roda no boot, antes de qualquer leitura. Se a chave nova já existe, ela vale e a antiga só é apagada.
+ * Retorna quantas chaves copiou.
+ */
+export function migrateLegacyKeys(storage: ListableStorage | null): number {
+  if (!storage) return 0;
+  const legacy: string[] = [];
+  try {
+    // Lista antes de mexer: apagar durante a varredura muda os índices de key(i).
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i);
+      if (key && LEGACY_PREFIXES.some((p) => key.startsWith(p))) legacy.push(key);
+    }
+  } catch {
+    return 0;
+  }
+  let copied = 0;
+  for (const old of legacy) {
+    try {
+      const value = storage.getItem(old);
+      const key = NAME + old.slice(LEGACY_NAME.length);
+      if (value !== null && storage.getItem(key) === null) {
+        storage.setItem(key, value);
+        copied++;
+      }
+      // Só apaga depois de copiar: se a gravação falhar (cota cheia), a antiga fica para a próxima vez.
+      storage.removeItem(old);
+    } catch {
+      // segue com as outras chaves
+    }
+  }
+  return copied;
 }

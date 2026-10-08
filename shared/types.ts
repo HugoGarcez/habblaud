@@ -141,7 +141,7 @@ export interface AgentInfo {
   /** Subagente rodando em segundo plano. */
   background?: boolean;
   /**
-   * Pedido de permissão que dá para responder pelo CodeTown (hook PermissionRequest; o mais antigo, se
+   * Pedido de permissão que dá para responder pelo Habblaud (hook PermissionRequest; o mais antigo, se
    * houver vários). Enquanto existe, o agente aparece como 'waiting'. Ver PermissionRequestInfo.
    */
   permission?: PermissionRequestInfo;
@@ -191,7 +191,7 @@ export interface RoomEffect {
  */
 export interface UpdateStatus {
   /**
-   * - off: verificação desligada (CODETOWN_UPDATE_CHECK=0 ou package.json sem repositório no GitHub);
+   * - off: verificação desligada (HABBLAUD_UPDATE_CHECK=0 ou package.json sem repositório no GitHub);
    * - pending: ainda não verificou;
    * - ok: verificou (com ou sem release publicada);
    * - error: a última tentativa falhou (sem internet, limite de consultas do GitHub...).
@@ -240,12 +240,12 @@ export interface AccountUsage {
   sevenDaySonnet?: UsageWindow;
   /**
    * Origem dos números (as duas são arquivos locais gravados a partir do próprio Claude Code):
-   * - 'statusline': capturado ao vivo e gravado em ~/.codetown/usage/<conta>.json pelo mod do CodeTown
-   *   (mod/codetown, recomendado) ou pelo scripts/statusline-tap.mjs (campo rate_limits do statusline);
+   * - 'statusline': capturado ao vivo e gravado em ~/.habblaud/usage/<conta>.json pelo mod do Habblaud
+   *   (mod/habblaud, recomendado) ou pelo scripts/statusline-tap.mjs (campo rate_limits do statusline);
    * - 'cache': `cachedUsageUtilization` gravado pelo próprio Claude Code (atualiza quando alguém roda /usage).
    */
   source: 'cache' | 'statusline';
-  /** Quem gravou o arquivo ao vivo ('statusline'): o mod do CodeTown no Claude Code ou o tap de statusline. */
+  /** Quem gravou o arquivo ao vivo ('statusline'): o mod do Habblaud no Claude Code ou o tap de statusline. */
   via?: 'mod' | 'tap';
   /** Quando os números foram obtidos na origem (epoch ms). */
   fetchedAt: number;
@@ -296,7 +296,7 @@ export interface OfficeSnapshot {
      */
     build?: string;
     /**
-     * Terminal somente leitura (GET /api/agents/:id/terminal) disponível: só quando o CodeTown não fica
+     * Terminal somente leitura (GET /api/agents/:id/terminal) disponível: só quando o Habblaud não fica
      * exposto além do próprio computador (bind local). Ausente/false = recurso desligado.
      */
     terminal?: boolean;
@@ -347,13 +347,13 @@ export interface AgentDetail {
 // ------------------------------------------------------------------ mod do Claude Code
 
 /**
- * Resposta de GET /api/mod/summary: o mínimo que o mod do Claude Code (mod/codetown) precisa para a linha
- * "precisa de você" embaixo do prompt e para o comando /codetown. Só agentes reais (o demo fica de fora)
+ * Resposta de GET /api/mod/summary: o mínimo que o mod do Claude Code (mod/habblaud) precisa para a linha
+ * "precisa de você" embaixo do prompt e para o comando /habblaud. Só agentes reais (o demo fica de fora)
  * e presentes (sem quem já encerrou ou entregou); com `?session=` (e `?account=`), sem a própria sessão
  * de quem pergunta: o agente principal dela e os subagentes.
  */
 export interface ModSummary {
-  /** Versão do CodeTown em uso. */
+  /** Versão do Habblaud em uso. */
   version: string;
   /** Agentes presentes e quantos estão trabalhando. */
   agents: number;
@@ -473,9 +473,9 @@ export interface PermissionSuggestionInfo {
 }
 
 /**
- * Pedido de permissão pendente que dá para responder pelo CodeTown: o hook PermissionRequest do Claude Code
- * (mod/codetown-permissoes/hooks/permission-hook.mjs) o registra e fica esperando a decisão. Só existe com bind local (a mesma
- * trava do terminal somente leitura) e com alguma página do CodeTown aberta.
+ * Pedido de permissão pendente que dá para responder pelo Habblaud: o hook PermissionRequest do Claude Code
+ * (mod/habblaud-permissoes/hooks/permission-hook.mjs) o registra e fica esperando a decisão. Só existe com bind local (a mesma
+ * trava do terminal somente leitura) e com alguma página do Habblaud aberta.
  * No snapshot vai sem `input` (os argumentos completos só saem por GET /api/permissions/:id, com acesso
  * local); os pedidos fictícios do demo já vêm com ele.
  */
@@ -491,7 +491,7 @@ export interface PermissionRequestInfo {
   /** Argumentos (comando, diff, JSON...), mascarados e truncados. */
   input?: string;
   inputKind?: TerminalInputKind;
-  /** Pedido de um subagente que o CodeTown ainda não mostra: o tipo dele (ex.: "Explore"). */
+  /** Pedido de um subagente que o Habblaud ainda não mostra: o tipo dele (ex.: "Explore"). */
   subagent?: string;
   /** Regras "sempre permitir" que podem ser aplicadas junto com a aprovação. */
   suggestions?: PermissionSuggestionInfo[];

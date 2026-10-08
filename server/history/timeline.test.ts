@@ -49,7 +49,7 @@ let dir: string;
 let now: number;
 
 beforeEach(() => {
-  tmp = tempDir('codetown-tl-');
+  tmp = tempDir('habblaud-tl-');
   dir = join(tmp.dir, 'timeline');
   now = T0;
 });

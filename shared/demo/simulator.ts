@@ -1,5 +1,5 @@
 // Simulador de escritório para demonstração e desenvolvimento.
-// Puro (sem Node/DOM): roda no servidor (CODETOWN_DEMO=1) e no navegador (?mock=1).
+// Puro (sem Node/DOM): roda no servidor (HABBLAUD_DEMO=1) e no navegador (?mock=1).
 //
 // Gera sessões fictícias com ciclos realistas: prompt -> trabalho -> (permissão, com pedido fictício
 // para responder pelo escritório) -> (subagentes)
@@ -313,9 +313,9 @@ export class DemoSimulator {
       return true;
     }
     if (d.behavior === 'allow') {
-      this.activity(a, now, { kind: 'other', icon: '✅', text: d.suggestion !== undefined ? 'Aprovado no CodeTown (sempre permitir)' : 'Aprovado no CodeTown', detail: title, tool: 'PermissionRequest' });
+      this.activity(a, now, { kind: 'other', icon: '✅', text: d.suggestion !== undefined ? 'Aprovado no Habblaud (sempre permitir)' : 'Aprovado no Habblaud', detail: title, tool: 'PermissionRequest' });
     } else {
-      this.activity(a, now, { kind: 'wait', icon: '🚫', text: 'Recusado no CodeTown', detail: d.message ? `${title} — ${d.message}` : title, tool: 'PermissionRequest' });
+      this.activity(a, now, { kind: 'wait', icon: '🚫', text: 'Recusado no Habblaud', detail: d.message ? `${title} — ${d.message}` : title, tool: 'PermissionRequest' });
     }
     this.resumeFromWaiting(a, now);
     return true;

@@ -51,7 +51,7 @@ describe('responder pelo escritório (peças puras)', () => {
   });
 
   it('isLocalHostname: a mesma regra do servidor para aceitar respostas', () => {
-    for (const h of ['localhost', 'codetown.localhost', '127.0.0.1', '127.1.2.3', '[::1]', '::1', 'LOCALHOST']) expect(isLocalHostname(h), h).toBe(true);
-    for (const h of ['192.168.0.10', 'meu-mac.local', 'codetown.lan', '128.0.0.1', '127.0.0.1.nip.io']) expect(isLocalHostname(h), h).toBe(false);
+    for (const h of ['localhost', 'habblaud.localhost', '127.0.0.1', '127.1.2.3', '[::1]', '::1', 'LOCALHOST']) expect(isLocalHostname(h), h).toBe(true);
+    for (const h of ['192.168.0.10', 'meu-mac.local', 'habblaud.lan', '128.0.0.1', '127.0.0.1.nip.io']) expect(isLocalHostname(h), h).toBe(false);
   });
 });

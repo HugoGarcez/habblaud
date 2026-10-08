@@ -10,6 +10,7 @@ import {
   cliMessage,
   cliSteps,
   describeStatus,
+  LEGACY_PLUGINS,
   MOD_PLUGIN,
   parseArgs,
   parseJsonOutput,
@@ -34,44 +35,50 @@ import {
 import { wrapCommand } from '../../scripts/statusline-install';
 import { tempDir } from './fixtures';
 
-const ROOT = '/repo/codetown';
+const ROOT = '/repo/habblaud';
 const same = (a: string, b: string) => a === b;
 const plugin = (id: string, extra: Partial<PluginInfo> = {}): PluginInfo => ({ id, version: '0.2.0', scope: 'user', enabled: true, errors: [], ...extra });
-const stateOf = (plugins: PluginInfo[] = [], path: string | null = ROOT): AccountState => ({
-  marketplace: path ? { name: 'codetown', source: 'directory', path } : undefined,
+const stateOf = (plugins: PluginInfo[] = [], path: string | null = ROOT, legacyPath?: string): AccountState => ({
+  marketplace: path ? { name: 'habblaud', source: 'directory', path } : undefined,
+  legacyMarketplace: legacyPath ? { name: 'codetown', source: 'directory', path: legacyPath } : undefined,
   plugins,
 });
+// O que o mod:install da 0.3 (nome antigo, CodeTown) deixou: o marketplace codetown nesta pasta e os dois plugins.
+const OLD_MOD = 'codetown@codetown';
+const OLD_PERM = 'codetown-permissoes@codetown';
+const legacyState = (plugins: PluginInfo[] = [], path: string | null = null) =>
+  stateOf([plugin(OLD_MOD, { version: '0.3.2' }), plugin(OLD_PERM, { version: '0.3.2' }), ...plugins], path, ROOT);
 const argsOf = (plan: ReturnType<typeof planInstall>) => cliSteps(plan).map((s) => s.args.join(' '));
 
 // Saídas reais do `claude plugin list --json` e `claude plugin marketplace list --json` (Claude Code 2.1.293),
 // copiadas de um CLAUDE_CONFIG_DIR temporário com um marketplace de brinquedo.
 const REAL_PLUGIN_LIST = `[
   {
-    "id": "codetown@codetown",
+    "id": "habblaud@habblaud",
     "version": "0.2.0",
     "scope": "user",
     "enabled": true,
-    "installPath": "/tmp/t/cfg/plugins/cache/codetown/codetown/0.2.0",
-    "readFromFolder": "/tmp/t/mkt/mod/codetown",
+    "installPath": "/tmp/t/cfg/plugins/cache/habblaud/habblaud/0.2.0",
+    "readFromFolder": "/tmp/t/mkt/mod/habblaud",
     "folderVersion": "0.3.0",
     "installedAt": "2026-10-08T10:36:58.924Z",
     "lastUpdated": "2026-10-08T10:36:58.924Z",
     "projectEnabled": false
   },
   {
-    "id": "codetown-permissoes@codetown",
+    "id": "habblaud-permissoes@habblaud",
     "version": "0.2.0",
     "scope": "user",
     "enabled": false,
-    "installPath": "/tmp/t/cfg/plugins/cache/codetown/codetown-permissoes/0.2.0",
-    "errors": ["Marketplace codetown failed to load: cache-miss"],
-    "errorDetails": [{ "type": "marketplace-load-failed", "marketplace": "codetown" }],
+    "installPath": "/tmp/t/cfg/plugins/cache/habblaud/habblaud-permissoes/0.2.0",
+    "errors": ["Marketplace habblaud failed to load: cache-miss"],
+    "errorDetails": [{ "type": "marketplace-load-failed", "marketplace": "habblaud" }],
     "projectEnabled": false
   }
 ]`;
 const REAL_MARKETPLACE_LIST = `[
   {
-    "name": "codetown",
+    "name": "habblaud",
     "source": "directory",
     "path": "/tmp/t/mkt",
     "installLocation": "/tmp/t/mkt"
@@ -102,8 +109,8 @@ describe('mod-install.ts (funções puras)', () => {
 
   it('lista de plugins e de marketplaces no formato real do CLI', () => {
     expect(parsePluginList(REAL_PLUGIN_LIST)).toEqual([
-      { id: MOD_PLUGIN, version: '0.2.0', scope: 'user', enabled: true, readFromFolder: '/tmp/t/mkt/mod/codetown', folderVersion: '0.3.0', errors: [] },
-      { id: PERMISSIONS_PLUGIN, version: '0.2.0', scope: 'user', enabled: false, readFromFolder: undefined, folderVersion: undefined, errors: ['Marketplace codetown failed to load: cache-miss'] },
+      { id: MOD_PLUGIN, version: '0.2.0', scope: 'user', enabled: true, readFromFolder: '/tmp/t/mkt/mod/habblaud', folderVersion: '0.3.0', errors: [] },
+      { id: PERMISSIONS_PLUGIN, version: '0.2.0', scope: 'user', enabled: false, readFromFolder: undefined, folderVersion: undefined, errors: ['Marketplace habblaud failed to load: cache-miss'] },
     ]);
     // `--available` devolve um objeto; itens sem id são ignorados; lixo = undefined (não "nada instalado").
     expect(parsePluginList(JSON.stringify({ installed: [{ id: 'x@y' }, { version: '1' }], available: [] }))).toEqual([
@@ -111,7 +118,7 @@ describe('mod-install.ts (funções puras)', () => {
     ]);
     expect(parsePluginList('[]')).toEqual([]);
     expect(parsePluginList('No plugins installed.')).toBeUndefined();
-    expect(parseMarketplaceList(REAL_MARKETPLACE_LIST)).toEqual([{ name: 'codetown', source: 'directory', path: '/tmp/t/mkt' }]);
+    expect(parseMarketplaceList(REAL_MARKETPLACE_LIST)).toEqual([{ name: 'habblaud', source: 'directory', path: '/tmp/t/mkt' }]);
     expect(parseMarketplaceList('[{"name":"oficial","source":"github","repo":"a/b","installLocation":"/x"}]')).toEqual([{ name: 'oficial', source: 'github' }]);
     expect(parseMarketplaceList('{}')).toBeUndefined();
   });
@@ -141,43 +148,128 @@ describe('mod-install.ts (funções puras)', () => {
   it('install: já instalado relê o catálogo e nada mais; desligado religa; versão diferente atualiza', () => {
     const base = { root: ROOT, version: '0.2.0', permissions: true, sameDir: same };
     const ok = planInstall(stateOf([plugin(MOD_PLUGIN), plugin(PERMISSIONS_PLUGIN)]), base);
-    expect(argsOf(ok)).toEqual(['plugin marketplace update codetown']);
-    expect(ok.items.filter((i) => 'unchanged' in i)).toEqual([{ unchanged: 'codetown: já instalado na versão 0.2.0' }, { unchanged: 'codetown-permissoes: já instalado na versão 0.2.0' }]);
+    expect(argsOf(ok)).toEqual(['plugin marketplace update habblaud']);
+    expect(ok.items.filter((i) => 'unchanged' in i)).toEqual([{ unchanged: 'habblaud: já instalado na versão 0.2.0' }, { unchanged: 'habblaud-permissoes: já instalado na versão 0.2.0' }]);
     const mixed = planInstall(stateOf([plugin(MOD_PLUGIN, { enabled: false }), plugin(PERMISSIONS_PLUGIN, { version: '0.1.0' })]), base);
     expect(argsOf(mixed)).toEqual([
-      'plugin marketplace update codetown',
+      'plugin marketplace update habblaud',
       `plugin enable ${MOD_PLUGIN} --scope user`,
       `plugin update ${PERMISSIONS_PLUGIN} --scope user`,
     ]);
-    expect(cliSteps(mixed)[2].message).toBe('codetown-permissoes: atualizado de 0.1.0 para 0.2.0');
+    expect(cliSteps(mixed)[2].message).toBe('habblaud-permissoes: atualizado de 0.1.0 para 0.2.0');
     // Instalado só no escopo de um projeto: o do usuário ainda falta.
     expect(argsOf(planInstall(stateOf([plugin(MOD_PLUGIN, { scope: 'project' })]), { ...base, permissions: false }))).toContain(`plugin install ${MOD_PLUGIN} --scope user`);
   });
 
   it('install: marketplace de outra pasta passa a apontar para esta; --sem-permissoes mantém (e atualiza) o de permissões', () => {
-    const moved = planInstall(stateOf([plugin(MOD_PLUGIN)], '/antigo/codetown'), { root: ROOT, version: '0.2.0', permissions: false, sameDir: same });
+    const moved = planInstall(stateOf([plugin(MOD_PLUGIN)], '/antigo/habblaud'), { root: ROOT, version: '0.2.0', permissions: false, sameDir: same });
     expect(argsOf(moved)).toEqual([`plugin marketplace add ${ROOT}`]);
-    expect(cliSteps(moved)[0].message).toContain('antes: /antigo/codetown');
+    expect(cliSteps(moved)[0].message).toContain('antes: /antigo/habblaud');
     const keep = planInstall(stateOf([plugin(MOD_PLUGIN, { version: '0.3.0' }), plugin(PERMISSIONS_PLUGIN)]), { root: ROOT, version: '0.3.0', permissions: false, sameDir: same });
-    expect(argsOf(keep)).toEqual(['plugin marketplace update codetown', `plugin update ${PERMISSIONS_PLUGIN} --scope user`]);
+    expect(argsOf(keep)).toEqual(['plugin marketplace update habblaud', `plugin update ${PERMISSIONS_PLUGIN} --scope user`]);
     expect(keep.plugins).toEqual([MOD_PLUGIN, PERMISSIONS_PLUGIN]);
-    expect(keep.notes[0]).toMatch(/continua.*claude plugin uninstall codetown-permissoes@codetown/);
+    expect(keep.notes[0]).toMatch(/continua.*claude plugin uninstall habblaud-permissoes@habblaud/);
   });
 
   it('uninstall: tira só o que existe, na ordem plugins → marketplace', () => {
     expect(argsOf(planUninstall(stateOf([plugin(MOD_PLUGIN), plugin(PERMISSIONS_PLUGIN)])))).toEqual([
       `plugin uninstall ${MOD_PLUGIN} --scope user`,
       `plugin uninstall ${PERMISSIONS_PLUGIN} --scope user`,
-      'plugin marketplace remove codetown',
+      'plugin marketplace remove habblaud',
     ]);
     const none = planUninstall(stateOf([], null));
     expect(cliSteps(none)).toEqual([]);
     expect(none.items).toHaveLength(3);
   });
 
+  describe('nome antigo (codetown, até a 0.3.2)', () => {
+    it('os registros antigos derivam do nome antigo', () => {
+      expect(LEGACY_PLUGINS).toEqual([OLD_MOD, OLD_PERM]);
+    });
+
+    it('install: tira os plugins antigos e o marketplace codetown ANTES de adicionar o habblaud (mesma pasta)', () => {
+      const plan = planInstall(legacyState(), { root: ROOT, version: '0.4.0', permissions: true, sameDir: same });
+      expect(argsOf(plan)).toEqual([
+        `plugin uninstall ${OLD_MOD} --scope user`,
+        `plugin uninstall ${OLD_PERM} --scope user`,
+        'plugin marketplace remove codetown',
+        `plugin marketplace add ${ROOT}`,
+        `plugin install ${MOD_PLUGIN} --scope user`,
+        `plugin install ${PERMISSIONS_PLUGIN} --scope user`,
+      ]);
+      const steps = cliSteps(plan);
+      expect(steps.slice(0, 3).map((s) => s.message)).toEqual(['codetown (nome antigo): removido', 'codetown-permissoes (nome antigo): removido', 'marketplace codetown (nome antigo): removido']);
+      // Plugin antigo que não sai não segura a instalação (o marketplace o leva junto); o marketplace segura.
+      expect(steps.slice(0, 3).map((s) => !!s.keepGoing)).toEqual([true, true, false]);
+      expect(steps.slice(0, 3).some((s) => s.plugin)).toBe(false);
+      expect(plan.plugins).toEqual([MOD_PLUGIN, PERMISSIONS_PLUGIN]);
+      // Só o marketplace sobrou (ou outra pasta, de um clone antigo): sai do mesmo jeito. Plugin antigo num escopo
+      // de projeto não é deste script.
+      expect(argsOf(planInstall(stateOf([plugin(OLD_MOD, { scope: 'project' })], null, '/clone/antigo'), { root: ROOT, version: '0.4.0', permissions: false, sameDir: same }))).toEqual([
+        'plugin marketplace remove codetown',
+        `plugin marketplace add ${ROOT}`,
+        `plugin install ${MOD_PLUGIN} --scope user`,
+      ]);
+      // Migração pela metade (habblaud já instalado, plugin antigo ainda lá): tira o antigo e segue como sempre.
+      expect(argsOf(planInstall(stateOf([plugin(MOD_PLUGIN, { version: '0.4.0' }), plugin(OLD_MOD)]), { root: ROOT, version: '0.4.0', permissions: false, sameDir: same }))).toEqual([
+        `plugin uninstall ${OLD_MOD} --scope user`,
+        'plugin marketplace update habblaud',
+      ]);
+    });
+
+    it('uninstall: tira também os restos antigos; sem eles, nada muda', () => {
+      expect(argsOf(planUninstall(legacyState([plugin(MOD_PLUGIN)], ROOT)))).toEqual([
+        `plugin uninstall ${OLD_MOD} --scope user`,
+        `plugin uninstall ${OLD_PERM} --scope user`,
+        'plugin marketplace remove codetown',
+        `plugin uninstall ${MOD_PLUGIN} --scope user`,
+        'plugin marketplace remove habblaud',
+      ]);
+      const onlyOld = planUninstall(legacyState());
+      expect(argsOf(onlyOld)).toEqual([`plugin uninstall ${OLD_MOD} --scope user`, `plugin uninstall ${OLD_PERM} --scope user`, 'plugin marketplace remove codetown']);
+      expect(onlyOld.items.filter((i) => 'unchanged' in i)).toHaveLength(3);
+    });
+
+    it('docker:up: com restos antigos só avisa (nunca migra sozinho) e conta como instalado', () => {
+      const o = { root: ROOT, version: '0.4.0', sameDir: same };
+      const warn = planUpdate(legacyState(), o);
+      expect(warn).toEqual({
+        action: 'warn',
+        message: 'ainda com o nome antigo (marketplace codetown, codetown@codetown 0.3.2, codetown-permissoes@codetown 0.3.2); o docker:up não troca sozinho: rode npm run mod:install',
+      });
+      // Mesmo com o habblaud em dia, ou só com o marketplace antigo: aviso, nenhum passo.
+      expect(planUpdate(stateOf([plugin(MOD_PLUGIN, { version: '0.4.0' })], ROOT, ROOT), o)).toEqual({
+        action: 'warn',
+        message: 'ainda com o nome antigo (marketplace codetown); o docker:up não troca sozinho: rode npm run mod:install',
+      });
+      expect(modHint({ installed: true, unavailable: false })).toEqual([]);
+    });
+
+    it('status: mostra os restos antigos e manda rodar npm run mod:install', () => {
+      const lines = describeStatus(legacyState(), {}, { root: ROOT, version: '0.4.0', home: '/h', sameDir: same });
+      expect(lines).toEqual([
+        'marketplace habblaud: não adicionado',
+        'habblaud: não instalado',
+        'habblaud-permissoes: não instalado',
+        '! nome antigo ainda registrado: marketplace codetown (esta pasta), codetown@codetown 0.3.2, codetown-permissoes@codetown 0.3.2; npm run mod:install troca pelo habblaud',
+      ]);
+      const elsewhere = describeStatus(stateOf([], null, '/h/clone/codetown'), {}, { root: ROOT, version: '0.4.0', home: '/h', sameDir: same });
+      expect(elsewhere[3]).toBe('! nome antigo ainda registrado: marketplace codetown (~/clone/codetown); npm run mod:install troca pelo habblaud');
+      expect(describeStatus(stateOf([]), {}, { root: ROOT, version: '0.4.0', home: '/h', sameDir: same }).join('\n')).not.toContain('nome antigo');
+    });
+
+    it('migração do jeito antigo: hook e tap de uma pasta com o nome antigo também são reconhecidos', () => {
+      const tap = wrapCommand('node', '/x/codetown/scripts/statusline-tap.mjs', 'ccstatusline');
+      const hook = hookEntry(hookCommand('node', '/x/codetown/mod/codetown-permissoes/hooks/permission-hook.mjs', { port: 4747, timeoutS: 300 }), { port: 4747, timeoutS: 300 });
+      const m = planMigration({ statusLine: { type: 'command', command: tap }, hooks: { PermissionRequest: [{ matcher: '*', hooks: [hook] }] } }, { modInstalled: true, permissionsInstalled: true, permissions: true });
+      expect(m.settings).toEqual({ statusLine: { type: 'command', command: 'ccstatusline' } });
+      expect(m.done).toHaveLength(2);
+    });
+  });
+
   describe('migração do jeito antigo', () => {
-    const tap = wrapCommand('node', '/repo/codetown/scripts/statusline-tap.mjs', 'npx -y ccstatusline');
-    const hook = hookEntry(hookCommand('node', '/repo/codetown/scripts/permission-hook.mjs', { port: 4747, timeoutS: 300 }), { port: 4747, timeoutS: 300 });
+    const tap = wrapCommand('node', '/repo/habblaud/scripts/statusline-tap.mjs', 'npx -y ccstatusline');
+    const hook = hookEntry(hookCommand('node', '/repo/habblaud/scripts/permission-hook.mjs', { port: 4747, timeoutS: 300 }), { port: 4747, timeoutS: 300 });
     const mine = { type: 'command', command: 'meu-hook' };
     const settings = {
       model: 'opus',
@@ -186,7 +278,7 @@ describe('mod-install.ts (funções puras)', () => {
       enabledPlugins: { [MOD_PLUGIN]: true },
     };
 
-    it('com os dois plugins instalados: devolve o statusline original e tira só o hook do CodeTown, numa gravação', () => {
+    it('com os dois plugins instalados: devolve o statusline original e tira só o hook do Habblaud, numa gravação', () => {
       const m = planMigration(settings, { modInstalled: true, permissionsInstalled: true, permissions: true });
       expect(m.settings).toEqual({
         model: 'opus',
@@ -221,7 +313,7 @@ describe('mod-install.ts (funções puras)', () => {
     expect(planUpdate(stateOf([]), o)).toEqual({ action: 'none', installed: false });
     expect(planUpdate(stateOf([plugin(MOD_PLUGIN, { version: '0.3.0' })]), o)).toEqual({ action: 'none', installed: true });
     const up = planUpdate(stateOf([plugin(MOD_PLUGIN), plugin(PERMISSIONS_PLUGIN, { version: '0.3.0' })]), o);
-    expect(up.action === 'update' && up.steps.map((s) => s.args.join(' '))).toEqual(['plugin marketplace update codetown', `plugin update ${MOD_PLUGIN} --scope user`]);
+    expect(up.action === 'update' && up.steps.map((s) => s.args.join(' '))).toEqual(['plugin marketplace update habblaud', `plugin update ${MOD_PLUGIN} --scope user`]);
     const elsewhere = planUpdate(stateOf([plugin(MOD_PLUGIN)], '/outro/clone'), o);
     expect(elsewhere.action === 'warn' && elsewhere.message).toMatch(/outra pasta \(\/outro\/clone\).*npm run mod:install/);
     expect(planUpdate(stateOf([plugin(MOD_PLUGIN)], null), o).action).toBe('warn');
@@ -233,10 +325,10 @@ describe('mod-install.ts (funções puras)', () => {
 
   it('conferência depois de instalar, mensagem de falha do CLI e status', () => {
     const after = stateOf([plugin(MOD_PLUGIN, { version: '0.1.0' }), plugin(PERMISSIONS_PLUGIN, { enabled: false, errors: ['boom'] })]);
-    expect(verifyInstall(after, [MOD_PLUGIN, PERMISSIONS_PLUGIN, 'outro@codetown'], '0.2.0')).toEqual([
-      'codetown: o Claude Code registra a versão 0.1.0, não a 0.2.0 (o manifesto em mod/ está com outra versão?)',
-      `codetown-permissoes: instalado, mas desligado (claude plugin enable ${PERMISSIONS_PLUGIN})`,
-      'codetown-permissoes: boom',
+    expect(verifyInstall(after, [MOD_PLUGIN, PERMISSIONS_PLUGIN, 'outro@habblaud'], '0.2.0')).toEqual([
+      'habblaud: o Claude Code registra a versão 0.1.0, não a 0.2.0 (o manifesto em mod/ está com outra versão?)',
+      `habblaud-permissoes: instalado, mas desligado (claude plugin enable ${PERMISSIONS_PLUGIN})`,
+      'habblaud-permissoes: boom',
       'outro: não aparece instalado na lista do Claude Code',
     ]);
     expect(cliMessage({ code: 1, stdout: 'Installing…\n', stderr: '\x1b[31m✘ Failed to install plugin "x": not found\x1b[0m\n' })).toBe('Installing… · Failed to install plugin "x": not found');
@@ -246,9 +338,9 @@ describe('mod-install.ts (funções puras)', () => {
     const tap = wrapCommand('node', '/r/scripts/statusline-tap.mjs', 'ccstatusline');
     const lines = describeStatus(stateOf([plugin(MOD_PLUGIN, { version: '0.1.0', folderVersion: '0.2.0', readFromFolder: '/h/x' })]), { statusLine: { command: tap }, disableAllHooks: true }, { root: ROOT, version: '0.2.0', home: '/h', sameDir: same });
     expect(lines).toEqual([
-      'marketplace codetown: esta pasta',
-      'codetown: instalado, ligado, versão 0.1.0 (esta pasta: 0.2.0; npm run mod:install ou npm run docker:up atualiza), carrega 0.2.0 de ~/x',
-      'codetown-permissoes: não instalado',
+      'marketplace habblaud: esta pasta',
+      'habblaud: instalado, ligado, versão 0.1.0 (esta pasta: 0.2.0; npm run mod:install ou npm run docker:up atualiza), carrega 0.2.0 de ~/x',
+      'habblaud-permissoes: não instalado',
       '! tap de statusline antigo ainda instalado junto com o mod: npm run mod:install tira (ou npm run usage:uninstall)',
       '! disableAllHooks está ligado no settings.json desta conta: nenhum mod (nem hook) roda',
     ]);
@@ -275,7 +367,8 @@ describe('mod-install.ts (funções puras)', () => {
 // ---------------------------------------------------------------------------------------------
 
 interface FakeAccount {
-  marketplace?: string;
+  /** Marketplaces por nome → pasta. */
+  marketplaces: Map<string, string>;
   plugins: Map<string, { version: string; enabled: boolean }>;
 }
 
@@ -292,7 +385,7 @@ class FakeClaude {
 
   account(configDir: string): FakeAccount {
     let a = this.accounts.get(configDir);
-    if (!a) this.accounts.set(configDir, (a = { plugins: new Map() }));
+    if (!a) this.accounts.set(configDir, (a = { marketplaces: new Map(), plugins: new Map() }));
     return a;
   }
 
@@ -310,26 +403,41 @@ class FakeClaude {
     const a = this.account(configDir);
     const cmd = args.join(' ');
     if (cmd === '--version') return ok(`${this.version}\n`);
-    if (cmd === 'plugin marketplace list --json') return ok(JSON.stringify(a.marketplace ? [{ name: 'codetown', source: 'directory', path: a.marketplace, installLocation: a.marketplace }] : []));
+    if (cmd === 'plugin marketplace list --json') {
+      return ok(JSON.stringify([...a.marketplaces].map(([name, path]) => ({ name, source: 'directory', path, installLocation: path }))));
+    }
     if (cmd === 'plugin list --json') {
-      return ok(JSON.stringify([...a.plugins].map(([id, p]) => ({ id, version: p.version, scope: 'user', enabled: p.enabled, installPath: '/cache', readFromFolder: `${a.marketplace}/mod`, folderVersion: this.folderVersion }))));
+      return ok(
+        JSON.stringify(
+          [...a.plugins].map(([id, p]) => ({ id, version: p.version, scope: 'user', enabled: p.enabled, installPath: '/cache', readFromFolder: `${a.marketplaces.get(id.split('@')[1])}/mod`, folderVersion: this.folderVersion })),
+        ),
+      );
     }
     const [, sub, third, fourth] = args;
     if (sub === 'marketplace') {
       if (third === 'add') {
-        a.marketplace = fourth;
-        return ok('✔ Successfully added marketplace: codetown\n');
+        // Como o de verdade: o nome vem do manifesto da pasta (o mesmo nome só troca a origem).
+        let name: string | undefined;
+        try {
+          name = (JSON.parse(readFileSync(join(fourth, '.claude-plugin', 'marketplace.json'), 'utf8')) as { name?: string }).name;
+        } catch {
+          name = undefined;
+        }
+        if (!name) return no(`✘ No marketplace.json in ${fourth}\n`);
+        a.marketplaces.set(name, fourth);
+        return ok(`✔ Successfully added marketplace: ${name}\n`);
       }
-      if (!a.marketplace) return no("✘ Marketplace 'codetown' not found\n");
+      if (!a.marketplaces.has(fourth)) return no(`✘ Marketplace '${fourth}' not found\n`);
       if (third === 'update') return ok();
       if (third === 'remove') {
-        a.marketplace = undefined;
-        a.plugins.clear();
+        // Tirar o marketplace leva junto os plugins que vieram dele.
+        a.marketplaces.delete(fourth);
+        for (const id of [...a.plugins.keys()]) if (id.endsWith(`@${fourth}`)) a.plugins.delete(id);
         return ok();
       }
     }
     if (sub === 'install') {
-      if (!a.marketplace) return no(`✘ Plugin "${third}" not found in any marketplace\n`);
+      if (!a.marketplaces.has(third.split('@')[1])) return no(`✘ Plugin "${third}" not found in any marketplace\n`);
       a.plugins.set(third, { version: this.folderVersion, enabled: true });
       return ok();
     }
@@ -350,8 +458,8 @@ describe('mod-install.ts (CLI falso, HOME falso)', () => {
   let usageDir: string;
   let out: string[];
   let fake: FakeClaude;
-  const tap = wrapCommand('node', '/x/codetown/scripts/statusline-tap.mjs', 'npx -y ccstatusline');
-  const hook = hookEntry(hookCommand('node', '/x/codetown/scripts/permission-hook.mjs', { port: 4747, timeoutS: 300 }), { port: 4747, timeoutS: 300 });
+  const tap = wrapCommand('node', '/x/habblaud/scripts/statusline-tap.mjs', 'npx -y ccstatusline');
+  const hook = hookEntry(hookCommand('node', '/x/habblaud/scripts/permission-hook.mjs', { port: 4747, timeoutS: 300 }), { port: 4747, timeoutS: 300 });
   const original = {
     model: 'opus',
     statusLine: { type: 'command', command: tap },
@@ -361,24 +469,24 @@ describe('mod-install.ts (CLI falso, HOME falso)', () => {
   beforeEach(() => {
     tmp = tempDir();
     home = join(tmp.dir, 'home');
-    root = join(tmp.dir, 'codetown');
+    root = join(tmp.dir, 'habblaud');
     usageDir = join(tmp.dir, 'usage');
     out = [];
     fake = new FakeClaude(home);
     mkdirSync(join(home, '.claude', 'projects'), { recursive: true });
     mkdirSync(join(home, '.claude-conta2', 'sessions'), { recursive: true });
     mkdirSync(join(root, '.claude-plugin'), { recursive: true });
-    writeFileSync(join(root, '.claude-plugin', 'marketplace.json'), '{"name":"codetown","plugins":[]}');
+    writeFileSync(join(root, '.claude-plugin', 'marketplace.json'), '{"name":"habblaud","plugins":[]}');
     writeFileSync(join(home, '.claude', 'settings.json'), `${JSON.stringify(original, null, 2)}\n`);
   });
   afterEach(() => tmp.cleanup());
 
   // CLAUDE_CONFIG_DIR herdado, como quando o comando roda de dentro de uma sessão da conta 2.
-  const exec = (command: RunOptions['command'], extra: Partial<RunOptions> = {}, health?: { permissions?: boolean }) =>
+  const exec = (command: RunOptions['command'], extra: Partial<RunOptions> = {}, health?: { permissions?: boolean }, env: NodeJS.ProcessEnv = {}) =>
     run(
       { command, dryRun: false, permissions: true, accounts: [], ...extra },
       {
-        env: { HOME: home, PATH: '/usr/bin', CODETOWN_USAGE_DIR: usageDir, CLAUDE_CONFIG_DIR: join(home, '.claude-conta2') },
+        env: { HOME: home, PATH: '/usr/bin', HABBLAUD_USAGE_DIR: usageDir, CLAUDE_CONFIG_DIR: join(home, '.claude-conta2'), ...env },
         home,
         now: new Date(2026, 9, 8, 9, 30, 0),
         root,
@@ -395,14 +503,14 @@ describe('mod-install.ts (CLI falso, HOME falso)', () => {
   it('install: as duas contas, cada uma com a sua pasta; migra o tap e o hook com backup; de novo = nada a fazer', async () => {
     expect(await exec('install')).toBe(0);
     for (const acc of ['.claude', '.claude-conta2']) {
-      expect(fake.account(join(home, acc)).marketplace).toBe(root);
+      expect(Object.fromEntries(fake.account(join(home, acc)).marketplaces)).toEqual({ habblaud: root });
       expect(installed(acc)).toEqual({ [MOD_PLUGIN]: { version: '0.2.0', enabled: true }, [PERMISSIONS_PLUGIN]: { version: '0.2.0', enabled: true } });
     }
     // A conta padrão nunca recebe o CLAUDE_CONFIG_DIR herdado da outra.
     expect(fake.accounts.size).toBe(2);
     expect(fake.calls.filter((c) => c.args[1] === 'install' && c.args[2] === MOD_PLUGIN).map((c) => c.configDir)).toEqual([join(home, '.claude'), join(home, '.claude-conta2')]);
     expect(read('.claude')).toEqual({ model: 'opus', statusLine: { type: 'command', command: 'npx -y ccstatusline' }, hooks: { Stop: original.hooks.Stop } });
-    expect(JSON.parse(readFileSync(join(home, '.claude', 'settings.json.codetown-backup-20261008-093000'), 'utf8'))).toEqual(original);
+    expect(JSON.parse(readFileSync(join(home, '.claude', 'settings.json.habblaud-backup-20261008-093000'), 'utf8'))).toEqual(original);
     // Conta sem nada do jeito antigo: o settings.json nem é criado.
     expect(existsSync(join(home, '.claude-conta2', 'settings.json'))).toBe(false);
     expect(existsSync(usageDir)).toBe(true);
@@ -414,8 +522,8 @@ describe('mod-install.ts (CLI falso, HOME falso)', () => {
     out = [];
     fake.calls = [];
     expect(await exec('install')).toBe(0);
-    expect(fake.mutating).toEqual(['plugin marketplace update codetown', 'plugin marketplace update codetown']);
-    expect(out.join('\n')).toContain('codetown: já instalado na versão 0.2.0');
+    expect(fake.mutating).toEqual(['plugin marketplace update habblaud', 'plugin marketplace update habblaud']);
+    expect(out.join('\n')).toContain('habblaud: já instalado na versão 0.2.0');
     expect(readdirSync(join(home, '.claude')).filter((f) => f.includes('backup'))).toHaveLength(1);
   });
 
@@ -462,7 +570,7 @@ describe('mod-install.ts (CLI falso, HOME falso)', () => {
     expect(read('.claude')).toEqual(original);
     expect(existsSync(usageDir)).toBe(false);
     const text = out.join('\n');
-    expect(text).toContain(`~ marketplace codetown: adicionado (esta pasta) (simulação: claude plugin marketplace add ${root})`);
+    expect(text).toContain(`~ marketplace habblaud: adicionado (esta pasta) (simulação: claude plugin marketplace add ${root})`);
     expect(text).toContain('~ tap de statusline antigo removido');
   });
 
@@ -470,7 +578,7 @@ describe('mod-install.ts (CLI falso, HOME falso)', () => {
     fake.fail = (args) => args[1] === 'install' && args[2] === MOD_PLUGIN;
     expect(await exec('install', { accounts: [join(home, '.claude')] })).toBe(1);
     const text = out.join('\n');
-    expect(text).toContain('✗ codetown: falhou (Failed: boom)');
+    expect(text).toContain('✗ habblaud: falhou (Failed: boom)');
     expect(fake.mutating).toEqual([`plugin marketplace add ${root}`, `plugin install ${MOD_PLUGIN} --scope user`]);
     expect(read('.claude')).toEqual(original);
     expect(text).toContain('tap de statusline antigo mantido');
@@ -485,15 +593,15 @@ describe('mod-install.ts (CLI falso, HOME falso)', () => {
     out = [];
     expect(await exec('status')).toBe(0);
     const text = out.join('\n');
-    expect(text).toContain('Claude Code 2.1.293 · CodeTown 0.2.0');
-    expect(text).toMatch(/• \.claude \(~\/\.claude\)\n {4}marketplace codetown: esta pasta\n {4}codetown: instalado, ligado, versão 0.2.0\n {4}codetown-permissoes: não instalado/);
+    expect(text).toContain('Claude Code 2.1.293 · Habblaud 0.2.0');
+    expect(text).toMatch(/• \.claude \(~\/\.claude\)\n {4}marketplace habblaud: esta pasta\n {4}habblaud: instalado, ligado, versão 0.2.0\n {4}habblaud-permissoes: não instalado/);
     expect(text).toContain('! tap de statusline antigo ainda instalado junto com o mod');
     expect(text).toContain('hook de permissão antigo instalado (jeito antigo');
     expect(text).toContain('último uso capturado há 5 min (pelo mod)');
-    expect(text).toContain('CodeTown em http://127.0.0.1:4747: fora do ar');
+    expect(text).toContain('Habblaud em http://127.0.0.1:4747: fora do ar');
     out = [];
     await exec('status', {}, { permissions: true });
-    expect(out.join('\n')).toContain('CodeTown em http://127.0.0.1:4747: no ar e respondendo pedidos de permissão');
+    expect(out.join('\n')).toContain('Habblaud em http://127.0.0.1:4747: no ar e respondendo pedidos de permissão');
     expect(fake.mutating).toEqual([`plugin marketplace add ${root}`, `plugin install ${MOD_PLUGIN} --scope user`, `plugin marketplace add ${root}`, `plugin install ${MOD_PLUGIN} --scope user`]);
 
     out = [];
@@ -501,18 +609,168 @@ describe('mod-install.ts (CLI falso, HOME falso)', () => {
     expect(await exec('uninstall')).toBe(0);
     expect(fake.mutating).toEqual([
       `plugin uninstall ${MOD_PLUGIN} --scope user`,
-      'plugin marketplace remove codetown',
+      'plugin marketplace remove habblaud',
       `plugin uninstall ${MOD_PLUGIN} --scope user`,
-      'plugin marketplace remove codetown',
+      'plugin marketplace remove habblaud',
     ]);
     expect(installed('.claude')).toEqual({});
-    expect(fake.account(join(home, '.claude')).marketplace).toBeUndefined();
+    expect(fake.account(join(home, '.claude')).marketplaces.size).toBe(0);
     // O desinstalador não mexe no settings.json (o tap e o hook antigos são do usage/hooks:uninstall).
     expect(read('.claude')).toEqual(original);
     expect(out.join('\n')).toContain('npm run usage:install e npm run hooks:install');
     out = [];
     expect(await exec('uninstall')).toBe(0);
-    expect(out.join('\n')).toContain('= marketplace codetown: não estava adicionado');
+    expect(out.join('\n')).toContain('= marketplace habblaud: não estava adicionado');
+  });
+
+  describe('nome antigo (codetown): o que o mod:install da 0.3 deixou', () => {
+    const oldHook = hookEntry(hookCommand('node', '/x/codetown/mod/codetown-permissoes/hooks/permission-hook.mjs', { port: 4747, timeoutS: 300 }), { port: 4747, timeoutS: 300 });
+    const oldSettings = { model: 'opus', hooks: { PermissionRequest: [{ matcher: '*', hooks: [oldHook] }] } };
+    const OLD = ['plugin uninstall codetown@codetown --scope user', 'plugin uninstall codetown-permissoes@codetown --scope user', 'plugin marketplace remove codetown'];
+
+    beforeEach(() => {
+      // Conta padrão: marketplace codetown NESTA pasta, os dois plugins antigos, um hook de settings do caminho
+      // antigo (hooks:install da 0.3) e o uso em ~/.codetown. A conta 2 não tem nada.
+      const acc = fake.account(join(home, '.claude'));
+      acc.marketplaces.set('codetown', root);
+      acc.plugins.set('codetown@codetown', { version: '0.3.2', enabled: true });
+      acc.plugins.set('codetown-permissoes@codetown', { version: '0.3.2', enabled: true });
+      writeFileSync(join(home, '.claude', 'settings.json'), JSON.stringify(oldSettings));
+      mkdirSync(join(home, '.codetown', 'usage'), { recursive: true });
+      writeFileSync(join(home, '.codetown', 'usage', '.claude.json'), '{"source":"mod"}');
+    });
+
+    it('install: tira os antigos ANTES de adicionar o habblaud, leva ~/.codetown para ~/.habblaud e tira o hook antigo', async () => {
+      expect(await exec('install')).toBe(0);
+      expect(fake.mutating).toEqual([
+        ...OLD,
+        `plugin marketplace add ${root}`,
+        `plugin install ${MOD_PLUGIN} --scope user`,
+        `plugin install ${PERMISSIONS_PLUGIN} --scope user`,
+        // Conta 2, sem restos.
+        `plugin marketplace add ${root}`,
+        `plugin install ${MOD_PLUGIN} --scope user`,
+        `plugin install ${PERMISSIONS_PLUGIN} --scope user`,
+      ]);
+      expect(Object.fromEntries(fake.account(join(home, '.claude')).marketplaces)).toEqual({ habblaud: root });
+      expect(Object.keys(installed('.claude'))).toEqual([MOD_PLUGIN, PERMISSIONS_PLUGIN]);
+      expect(read('.claude')).toEqual({ model: 'opus' });
+      // A pasta de estado muda de nome mesmo com HABBLAUD_USAGE_DIR em outro lugar (criada à parte).
+      expect(existsSync(join(home, '.codetown'))).toBe(false);
+      expect(readFileSync(join(home, '.habblaud', 'usage', '.claude.json'), 'utf8')).toBe('{"source":"mod"}');
+      expect(existsSync(usageDir)).toBe(true);
+      const text = out.join('\n');
+      expect(text.split('\n')[0]).toBe('✓ ~/.codetown (nome antigo) agora é ~/.habblaud.');
+      expect(text).toContain(
+        [
+          '.claude (~/.claude):',
+          '  ✓ codetown (nome antigo): removido',
+          '  ✓ codetown-permissoes (nome antigo): removido',
+          '  ✓ marketplace codetown (nome antigo): removido',
+          '  ✓ marketplace habblaud: adicionado (esta pasta)',
+          '  ✓ habblaud: instalado',
+          '  ✓ habblaud-permissoes: instalado',
+          '  ✓ hook de permissão antigo removido: o plugin habblaud-permissoes responde no lugar dele',
+        ].join('\n'),
+      );
+      expect(text).not.toContain('ainda registrado');
+      expect(text).toContain('Pronto.');
+
+      // De novo: nada mais do nome antigo.
+      out = [];
+      fake.calls = [];
+      expect(await exec('install')).toBe(0);
+      expect(fake.mutating).toEqual(['plugin marketplace update habblaud', 'plugin marketplace update habblaud']);
+      expect(out.join('\n')).not.toContain('nome antigo');
+    });
+
+    it('sem HABBLAUD_USAGE_DIR: o uso antigo já vira a pasta do uso; com ~/.habblaud existente, só o que falta vai', async () => {
+      mkdirSync(join(home, '.habblaud'), { recursive: true });
+      writeFileSync(join(home, '.habblaud', 'names.json'), '{}');
+      expect(await exec('install', { accounts: [join(home, '.claude')] }, undefined, { HABBLAUD_USAGE_DIR: undefined })).toBe(0);
+      expect(readFileSync(join(home, '.habblaud', 'usage', '.claude.json'), 'utf8')).toBe('{"source":"mod"}');
+      expect(readFileSync(join(home, '.habblaud', 'names.json'), 'utf8')).toBe('{}');
+      expect(existsSync(join(home, '.codetown'))).toBe(false);
+      const text = out.join('\n');
+      expect(text).toContain('✓ de ~/.codetown (nome antigo) para ~/.habblaud: usage.');
+      expect(text).not.toContain('pasta do uso criada');
+    });
+
+    it('plugin antigo que não sai não segura a instalação: o marketplace codetown o leva junto (mas a falha conta)', async () => {
+      fake.fail = (args) => args[1] === 'uninstall' && args[2] === 'codetown@codetown';
+      expect(await exec('install', { accounts: [join(home, '.claude')] })).toBe(1);
+      expect(fake.mutating).toEqual([...OLD, `plugin marketplace add ${root}`, `plugin install ${MOD_PLUGIN} --scope user`, `plugin install ${PERMISSIONS_PLUGIN} --scope user`]);
+      expect(Object.keys(installed('.claude'))).toEqual([MOD_PLUGIN, PERMISSIONS_PLUGIN]);
+      expect(read('.claude')).toEqual({ model: 'opus' });
+      const text = out.join('\n');
+      expect(text).toContain('  ✗ codetown (nome antigo): falhou (Failed: boom)');
+      expect(text).not.toContain('ainda registrado');
+      expect(text).not.toContain('Pronto.');
+    });
+
+    it('marketplace codetown que não sai: para ali (nunca dois nomes para a mesma pasta), avisa e o hook antigo fica', async () => {
+      fake.fail = (args) => args.join(' ') === 'plugin marketplace remove codetown';
+      expect(await exec('install', { accounts: [join(home, '.claude')] })).toBe(1);
+      expect(fake.mutating).toEqual(OLD);
+      expect(Object.fromEntries(fake.account(join(home, '.claude')).marketplaces)).toEqual({ codetown: root });
+      expect(read('.claude')).toEqual(oldSettings);
+      const text = out.join('\n');
+      expect(text).toContain('  ✗ marketplace codetown (nome antigo): falhou (Failed: boom)');
+      expect(text).toContain('  ! nome antigo ainda registrado: marketplace codetown; rode npm run mod:install de novo');
+      expect(text).toContain('hook de permissão antigo mantido (o plugin de permissões não ficou instalado)');
+    });
+
+    it('--dry-run: mostra a limpeza e a pasta que mudaria, sem mexer em nada', async () => {
+      expect(await exec('install', { dryRun: true, accounts: [join(home, '.claude')] })).toBe(0);
+      expect(fake.mutating).toEqual([]);
+      expect(existsSync(join(home, '.codetown', 'usage', '.claude.json'))).toBe(true);
+      expect(existsSync(join(home, '.habblaud'))).toBe(false);
+      expect(read('.claude')).toEqual(oldSettings);
+      const text = out.join('\n');
+      expect(text).toContain('~ ~/.codetown (nome antigo) vai para ~/.habblaud (simulação: nada movido)');
+      expect(text).toContain('  ~ codetown (nome antigo): removido (simulação: claude plugin uninstall codetown@codetown --scope user)');
+      expect(text).toContain('  ~ marketplace codetown (nome antigo): removido (simulação: claude plugin marketplace remove codetown)');
+    });
+
+    it('status mostra os restos antigos; uninstall tira também eles (e não mexe na pasta de estado)', async () => {
+      expect(await exec('status', { accounts: [join(home, '.claude')] })).toBe(0);
+      let text = out.join('\n');
+      expect(text).toContain('    ! nome antigo ainda registrado: marketplace codetown (esta pasta), codetown@codetown 0.3.2, codetown-permissoes@codetown 0.3.2; npm run mod:install troca pelo habblaud');
+      expect(text).toContain('    hook de permissão antigo instalado (jeito antigo');
+      expect(fake.mutating).toEqual([]);
+
+      out = [];
+      expect(await exec('uninstall', { accounts: [join(home, '.claude')] })).toBe(0);
+      expect(fake.mutating).toEqual(OLD);
+      expect(fake.account(join(home, '.claude')).marketplaces.size).toBe(0);
+      expect(installed('.claude')).toEqual({});
+      text = out.join('\n');
+      expect(text).toContain('  ✓ marketplace codetown (nome antigo): removido');
+      expect(text).toContain('  = habblaud: não estava instalado');
+      expect(text).toContain('Pronto.');
+      expect(existsSync(join(home, '.codetown', 'usage', '.claude.json'))).toBe(true);
+    });
+
+    it('docker:up: só avisa, não troca nada sozinho e não mostra a dica de instalar do zero', () => {
+      const accounts = [
+        { dir: join(home, '.claude'), label: 'Conta C' },
+        { dir: join(home, '.claude-conta2'), label: 'Conta D' },
+      ];
+      const res = updateInstalledMods(accounts, { env: { HOME: home }, home, root, version: '0.4.0', claude: fake.runner });
+      expect(res).toEqual({
+        installed: true,
+        unavailable: false,
+        lines: [
+          {
+            level: 'warn',
+            text: 'mod na Conta C: ainda com o nome antigo (marketplace codetown, codetown@codetown 0.3.2, codetown-permissoes@codetown 0.3.2); o docker:up não troca sozinho: rode npm run mod:install',
+          },
+        ],
+      });
+      expect(fake.mutating).toEqual([]);
+      expect(modHint(res)).toEqual([]);
+      expect(existsSync(join(home, '.codetown'))).toBe(true);
+    });
   });
 
   it('docker:up: atualiza para a versão nova só quem tem o mod; nunca instala; nunca lança', async () => {
@@ -533,14 +791,14 @@ describe('mod-install.ts (CLI falso, HOME falso)', () => {
     fake.folderVersion = '0.3.0';
     const res = updateInstalledMods(accounts, { ...ctx, version: '0.3.0' });
     expect(res.lines).toEqual([{ level: 'info', text: 'Mod atualizado para 0.3.0 na Conta D; sessões abertas: /reload-plugins' }]);
-    expect(fake.mutating).toEqual(['plugin marketplace update codetown', `plugin update ${MOD_PLUGIN} --scope user`, `plugin update ${PERMISSIONS_PLUGIN} --scope user`]);
+    expect(fake.mutating).toEqual(['plugin marketplace update habblaud', `plugin update ${MOD_PLUGIN} --scope user`, `plugin update ${PERMISSIONS_PLUGIN} --scope user`]);
     expect(installed('.claude-conta2')[MOD_PLUGIN]).toEqual({ version: '0.3.0', enabled: true });
     expect(installed('.claude')).toEqual({});
 
     // O update "dá certo" mas a versão não muda (manifesto atrasado): aviso, não "atualizado".
     const stuck = updateInstalledMods(accounts, { ...ctx, version: '0.4.0' });
     expect(stuck.lines[0].level).toBe('warn');
-    expect(stuck.lines[0].text).toMatch(/Conta D: codetown: o Claude Code registra a versão 0.3.0, não a 0.4.0/);
+    expect(stuck.lines[0].text).toMatch(/Conta D: habblaud: o Claude Code registra a versão 0.3.0, não a 0.4.0/);
 
     // Sem o claude, ou com o runner lançando: um aviso só e nada de exceção.
     fake.missing = true;

@@ -1,4 +1,4 @@
-// Testes do mod do CodeTown, rodados pelo próprio Claude Code: `claude plugin test` dentro de mod/codetown
+// Testes do mod do Habblaud, rodados pelo próprio Claude Code: `claude plugin test` dentro de mod/habblaud
 // (sem sessão, sem login, sem rede). Os stubs respondem no lugar do Claude Code: env, relógio
 // (mock.clock), $.session.usage, $.session.id, $.session.surfaces, $.fs.write, $.http.fetch e $.ui.status.
 import type { CommandRunInput, HttpResponse, On, SessionRateLimit } from 'claude-code'
@@ -30,7 +30,7 @@ interface World {
   env?: Record<string, string>
   limits?: SessionRateLimit[]
   surfaces?: ReadonlyArray<'terminal' | 'desktop'>
-  /** Resposta do CodeTown: um resumo, 'offline' (conexão recusada), 'hang' (não responde) ou um HTTP cru. */
+  /** Resposta do Habblaud: um resumo, 'offline' (conexão recusada), 'hang' (não responde) ou um HTTP cru. */
   answer?: () => Summary | 'offline' | 'hang' | { status: number; text: string }
   /** $.fs.write falha (pasta sem permissão, disco cheio...). */
   writeFails?: boolean
@@ -39,7 +39,7 @@ interface World {
 /** Registra todos os stubs (antes da primeira chamada em $, como o kit exige) e devolve o que foi capturado. */
 function world(on: On, w: World = {}) {
   const clock = mock.clock(on, { now: NOW })
-  mock.env(on, w.env ?? { HOME: '/home/fulano', CLAUDE_CONFIG_DIR: '~/.claude-conta2,/outra/pasta', CODETOWN_PORT: PORT })
+  mock.env(on, w.env ?? { HOME: '/home/fulano', CLAUDE_CONFIG_DIR: '~/.claude-conta2,/outra/pasta', HABBLAUD_PORT: PORT })
   const writes: Array<{ path: string; text: string }> = []
   const fetches: string[] = []
   const statuses: Array<string | undefined> = []
@@ -76,8 +76,8 @@ function world(on: On, w: World = {}) {
 }
 
 const START = { cwd: '/work', surface: 'terminal', isInteractive: true } as const
-/** /codetown digitado no terminal (o kit pede a origem e onde a resposta aparece). */
-const RUN: CommandRunInput = { command: 'codetown', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 120 } }
+/** /habblaud digitado no terminal (o kit pede a origem e onde a resposta aparece). */
+const RUN: CommandRunInput = { command: 'habblaud', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 120 } }
 
 function response(status: number, text: string): HttpResponse {
   return { status, ok: status >= 200 && status < 300, headers: { 'content-type': 'application/json' }, text }
@@ -87,9 +87,9 @@ describe('uso do plano', () => {
   test('session.start grava o arquivo no formato do tap, com source "mod"', async ($, on) => {
     const w = world(on)
     await $.session.start(START)
-    expect(w.commands).toEqual(['codetown'])
+    expect(w.commands).toEqual(['habblaud'])
     expect(w.writes.length).toBe(1)
-    expect(w.writes[0]?.path).toBe('/home/fulano/.codetown/usage/.claude-conta2.json')
+    expect(w.writes[0]?.path).toBe('/home/fulano/.habblaud/usage/.claude-conta2.json')
     expect(w.writes[0]?.text.endsWith('}\n')).toBe(true)
     expect(JSON.parse(w.writes[0]?.text ?? '')).toEqual({
       accountId: '.claude-conta2',
@@ -101,8 +101,8 @@ describe('uso do plano', () => {
     })
   })
 
-  test('CODETOWN_USAGE_DIR com ~ e, sem CLAUDE_CONFIG_DIR, a conta ~/.claude', async ($, on) => {
-    const w = world(on, { env: { HOME: '/home/fulano', CODETOWN_USAGE_DIR: '~/uso/' } })
+  test('HABBLAUD_USAGE_DIR com ~ e, sem CLAUDE_CONFIG_DIR, a conta ~/.claude', async ($, on) => {
+    const w = world(on, { env: { HOME: '/home/fulano', HABBLAUD_USAGE_DIR: '~/uso/' } })
     await $.session.measure({ context: CONTEXT, rateLimits: LIMITS, changed: ['rateLimits'] })
     expect(w.writes.map((x) => x.path)).toEqual(['/home/fulano/uso/.claude.json'])
     expect(JSON.parse(w.writes[0]?.text ?? '')).toMatchObject({ accountId: '.claude', configDir: '/home/fulano/.claude' })
@@ -136,7 +136,7 @@ describe('uso do plano', () => {
     const w = world(on, { writeFails: true })
     expect(await $.session.start(START)).toEqual({ cwd: '/work' })
     expect(await $.session.measure({ context: CONTEXT, rateLimits: LIMITS, changed: ['rateLimits'] })).toEqual({ changed: ['rateLimits'] })
-    expect(w.commands).toEqual(['codetown'])
+    expect(w.commands).toEqual(['habblaud'])
     expect(w.writes).toEqual([])
   })
 })
@@ -167,7 +167,7 @@ describe('linha embaixo do prompt', () => {
     expect(w.statuses.length).toBe(5)
   })
 
-  test('CodeTown fora do ar: limpa a linha e recua para 30 s até voltar', async ($, on) => {
+  test('Habblaud fora do ar: limpa a linha e recua para 30 s até voltar', async ($, on) => {
     let up = false
     const w = world(on, { answer: () => (up ? summary([waiting('Valentina', 'loja-virtual')]) : 'offline') })
     await $.session.start(START)
@@ -184,7 +184,7 @@ describe('linha embaixo do prompt', () => {
     expect(w.fetches.length).toBe(3)
   })
 
-  test('CodeTown travado: desiste depois de 2 s e limpa a linha', async ($, on) => {
+  test('Habblaud travado: desiste depois de 2 s e limpa a linha', async ($, on) => {
     let hang = false
     const w = world(on, { answer: () => (hang ? 'hang' : summary([waiting('Valentina', 'loja-virtual')])) })
     await $.session.start(START)
@@ -197,7 +197,7 @@ describe('linha embaixo do prompt', () => {
     expect(w.statuses).toEqual(['🏢 Valentina precisa de você em loja-virtual', undefined])
   })
 
-  test('sessão sem superfície (claude -p, SDK): nem pergunta ao CodeTown', async ($, on) => {
+  test('sessão sem superfície (claude -p, SDK): nem pergunta ao Habblaud', async ($, on) => {
     const w = world(on, { surfaces: [] })
     await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
     await w.clock.advance(15_000)
@@ -206,7 +206,7 @@ describe('linha embaixo do prompt', () => {
   })
 })
 
-describe('/codetown', () => {
+describe('/habblaud', () => {
   test('no ar: versão, endereço, contagem e uma linha por quem espera (o escritório inteiro)', async ($, on) => {
     const w = world(on, {
       answer: () => summary([waiting('Valentina', 'loja-virtual', { answerable: true }), waiting('Elias', 'app-mobile', { waitingFor: 'responder no terminal' })]),
@@ -215,7 +215,7 @@ describe('/codetown', () => {
     expect(w.fetches).toEqual([SUMMARY_URL])
     expect(out.text).toBe(
       [
-        'CodeTown 0.3.0 em http://localhost:4850',
+        'Habblaud 0.3.0 em http://localhost:4850',
         '7 agentes · 3 trabalhando · 2 precisam de você',
         '✋ Valentina (loja-virtual): aprovar uma permissão · dá para responder pelo escritório',
         '✋ Elias (app-mobile): responder no terminal',
@@ -226,19 +226,19 @@ describe('/codetown', () => {
   test('no ar e ninguém esperando', async ($, on) => {
     world(on, { answer: () => summary([], { agents: 1, working: 0 }) })
     const out = await $.command.run(RUN)
-    expect(out.text).toBe('CodeTown 0.3.0 em http://localhost:4850\n1 agente · 0 trabalhando · ninguém precisa de você')
+    expect(out.text).toBe('Habblaud 0.3.0 em http://localhost:4850\n1 agente · 0 trabalhando · ninguém precisa de você')
   })
 
   test('fora do ar: diz como subir', async ($, on) => {
     world(on, { answer: () => 'offline' })
     const out = await $.command.run(RUN)
-    expect(out.text).toBe('O CodeTown não respondeu em http://localhost:4850. Para subir: npm run docker:up na pasta do CodeTown.')
+    expect(out.text).toBe('O Habblaud não respondeu em http://localhost:4850. Para subir: npm run docker:up na pasta do Habblaud.')
   })
 
-  test('CodeTown de antes do mod (404 "rota desconhecida"): pede para atualizar', async ($, on) => {
+  test('Habblaud de antes do mod (404 "rota desconhecida"): pede para atualizar', async ($, on) => {
     world(on, { env: { HOME: '/home/fulano' }, answer: () => ({ status: 404, text: '{"error":"rota desconhecida"}' }) })
     const out = await $.command.run(RUN)
-    expect(out.text).toMatch(/^O CodeTown em http:\/\/localhost:4747 está numa versão sem a rota do mod/)
+    expect(out.text).toMatch(/^O Habblaud em http:\/\/localhost:4747 está numa versão sem a rota do mod/)
   })
 })
 
@@ -248,7 +248,7 @@ describe('funções puras', () => {
     expect(configDirOf(' ~/.claude-conta2 , /x', '/home/f')).toBe('/home/f/.claude-conta2')
     expect(configDirOf(undefined, '/home/f/')).toBe('/home/f/.claude')
     expect(configDirOf('', undefined)).toBeUndefined()
-    expect(usageDirOf(undefined, '/home/f')).toBe('/home/f/.codetown/usage')
+    expect(usageDirOf(undefined, '/home/f')).toBe('/home/f/.habblaud/usage')
     expect(usageDirOf(undefined, undefined)).toBeUndefined()
   })
 

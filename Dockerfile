@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1
 #
-# CodeTown em container: escritório virtual dos agentes do Claude Code.
+# Habblaud em container: escritório virtual dos agentes do Claude Code.
 #
 # Use `npm run docker:up` (scripts/docker-up.ts): ele detecta as contas do Claude Code no host,
 # gera o docker-compose.override.yml com as montagens SOMENTE LEITURA de <conta>/projects,
-# <conta>/sessions e ~/.codetown/usage e sobe o serviço. Este Dockerfile sozinho não monta nada do host.
+# <conta>/sessions e ~/.habblaud/usage e sobe o serviço. Este Dockerfile sozinho não monta nada do host.
 
 # ---------------------------------------------------------------------------------------------
 # Estágio 1: compila o cliente (Vite) e empacota o servidor (esbuild) em dist/.
@@ -25,20 +25,20 @@ RUN npm run build
 # ---------------------------------------------------------------------------------------------
 FROM node:24-alpine AS runtime
 
-# CODETOWN_USAGE_DIR: onde o docker-up monta (somente leitura) o uso capturado pelo tap de statusline.
+# HABBLAUD_USAGE_DIR: onde o docker-up monta (somente leitura) o uso capturado pelo tap de statusline.
 ENV NODE_ENV=production \
-    CODETOWN_HOST=0.0.0.0 \
-    CODETOWN_PORT=4747 \
-    CODETOWN_IN_DOCKER=1 \
-    CODETOWN_DATA_DIR=/data \
-    CODETOWN_USAGE_DIR=/usage
+    HABBLAUD_HOST=0.0.0.0 \
+    HABBLAUD_PORT=4747 \
+    HABBLAUD_IN_DOCKER=1 \
+    HABBLAUD_DATA_DIR=/data \
+    HABBLAUD_USAGE_DIR=/usage
 
 WORKDIR /app
 
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/dist ./dist
 
-# Estado do CodeTown (nomes persistidos). O volume nomeado herda este dono na primeira montagem.
+# Estado do Habblaud (nomes persistidos). O volume nomeado herda este dono na primeira montagem.
 RUN mkdir -p /data && chown node:node /data
 
 # Usuário sem privilégios (já existe na imagem oficial do Node). O código fica com dono root,

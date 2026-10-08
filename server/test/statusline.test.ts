@@ -1,7 +1,7 @@
 // Tap de statusline (scripts/statusline-tap.mjs, testado como processo de verdade) e o instalador
 // (scripts/statusline-install.ts). Tudo com HOME e config dirs FALSOS em pastas temporárias.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -46,8 +46,8 @@ describe('statusline-tap.mjs', () => {
   beforeEach(() => {
     tmp = tempDir();
     usageDir = join(tmp.dir, 'usage');
-    // HOME falso e pasta de uso explícita: o teste nunca toca em ~/.codetown nem em ~/.claude*.
-    env = { PATH: process.env.PATH, HOME: join(tmp.dir, 'home'), CODETOWN_USAGE_DIR: usageDir };
+    // HOME falso e pasta de uso explícita: o teste nunca toca em ~/.habblaud nem em ~/.claude*.
+    env = { PATH: process.env.PATH, HOME: join(tmp.dir, 'home'), HABBLAUD_USAGE_DIR: usageDir };
   });
   afterEach(() => tmp.cleanup());
 
@@ -103,9 +103,9 @@ describe('statusline-tap.mjs', () => {
     expect(tap(['--', 'cat'], noLimits).stdout).toBe(noLimits);
     expect(tap(['--', 'cat'], 'isto não é json').stdout).toBe('isto não é json');
     expect(existsSync(usageDir)).toBe(false);
-    // CODETOWN_USAGE_DIR aponta para um arquivo: a gravação falha em silêncio.
+    // HABBLAUD_USAGE_DIR aponta para um arquivo: a gravação falha em silêncio.
     writeFileSync(join(tmp.dir, 'arquivo'), 'x');
-    const r = tap(['--', 'echo', 'ok'], statusJson(), { CODETOWN_USAGE_DIR: join(tmp.dir, 'arquivo') });
+    const r = tap(['--', 'echo', 'ok'], statusJson(), { HABBLAUD_USAGE_DIR: join(tmp.dir, 'arquivo') });
     expect(r.status).toBe(0);
     expect(r.stdout).toBe('ok\n');
     expect(r.stderr).toBe('');
@@ -132,11 +132,11 @@ describe('statusline-tap.mjs', () => {
 });
 
 describe('statusline-install.ts (funções puras)', () => {
-  const tapPath = '/repo/codetown/scripts/statusline-tap.mjs';
+  const tapPath = '/repo/habblaud/scripts/statusline-tap.mjs';
 
   it('envolve e desembrulha preservando o comando original', () => {
-    expect(wrapCommand('node', tapPath, 'npx -y ccstatusline')).toBe('node "/repo/codetown/scripts/statusline-tap.mjs" -- npx -y ccstatusline');
-    expect(wrapCommand('node', tapPath)).toBe('node "/repo/codetown/scripts/statusline-tap.mjs"');
+    expect(wrapCommand('node', tapPath, 'npx -y ccstatusline')).toBe('node "/repo/habblaud/scripts/statusline-tap.mjs" -- npx -y ccstatusline');
+    expect(wrapCommand('node', tapPath)).toBe('node "/repo/habblaud/scripts/statusline-tap.mjs"');
     for (const original of ['npx -y ccstatusline', `bash -c 'echo "oi" | head -1'`, '~/.claude/statusline.sh 2>/dev/null', `echo 'it'"'"'s'`]) {
       const wrapped = wrapCommand('/opt/homebrew/bin/node', tapPath, original);
       expect(unwrapCommand(wrapped)).toEqual({ tapPath, original });
@@ -196,7 +196,7 @@ describe('statusline-install.ts (arquivos, HOME falso)', () => {
   const exec = (command: RunOptions['command'], extra: Partial<RunOptions> = {}) =>
     run(
       { command, dryRun: false, nodeCmd: process.execPath, ...extra },
-      { env: { HOME: home, CODETOWN_USAGE_DIR: join(tmp.dir, 'usage') }, home, now: new Date(2026, 9, 6, 14, 5, 9), tapPath: TAP_SCRIPT, out: (l) => out.push(l) },
+      { env: { HOME: home, HABBLAUD_USAGE_DIR: join(tmp.dir, 'usage') }, home, now: new Date(2026, 9, 6, 14, 5, 9), tapPath: TAP_SCRIPT, out: (l) => out.push(l) },
     );
   const read = (acc: string) => JSON.parse(readFileSync(join(home, acc, 'settings.json'), 'utf8'));
 
@@ -207,7 +207,7 @@ describe('statusline-install.ts (arquivos, HOME falso)', () => {
     expect(c.env).toEqual({ FOO: '1' });
     expect(c.statusLine).toEqual({ type: 'command', command: wrapCommand(process.execPath, TAP_SCRIPT, 'npx -y ccstatusline'), padding: 0 });
     expect(statSync(join(home, '.claude', 'settings.json')).mode & 0o777).toBe(0o644);
-    const backup = join(home, '.claude', 'settings.json.codetown-backup-20261006-140509');
+    const backup = join(home, '.claude', 'settings.json.habblaud-backup-20261006-140509');
     expect(JSON.parse(readFileSync(backup, 'utf8'))).toEqual(original);
     // Conta sem settings.json: cria um só com o statusline do tap (sem backup, não havia nada).
     expect(read('.claude-conta2')).toEqual({ statusLine: { type: 'command', command: wrapCommand(process.execPath, TAP_SCRIPT) } });
@@ -224,7 +224,7 @@ describe('statusline-install.ts (arquivos, HOME falso)', () => {
     const cmd: string = read('.claude').statusLine.command.replace('npx -y ccstatusline', 'cat');
     const usageDir = join(tmp.dir, 'usage');
     const input = statusJson({ transcript_path: join(home, '.claude', 'projects', '-p', 's.jsonl') });
-    const r = spawnSync('/bin/sh', ['-c', cmd], { input, encoding: 'utf8', env: { PATH: process.env.PATH, HOME: home, CODETOWN_USAGE_DIR: usageDir } });
+    const r = spawnSync('/bin/sh', ['-c', cmd], { input, encoding: 'utf8', env: { PATH: process.env.PATH, HOME: home, HABBLAUD_USAGE_DIR: usageDir } });
     expect(r.stdout).toBe(input);
     expect(JSON.parse(readFileSync(join(usageDir, '.claude.json'), 'utf8')).five_hour.utilization).toBe(42.5);
   });
@@ -240,6 +240,40 @@ describe('statusline-install.ts (arquivos, HOME falso)', () => {
     out = [];
     exec('uninstall');
     expect(out.join('\n')).toContain('não estava instalado');
+  });
+
+  it('nome antigo: o install leva ~/.codetown para ~/.habblaud (mesmo com HABBLAUD_USAGE_DIR em outro lugar); status e uninstall não', () => {
+    mkdirSync(join(home, '.codetown', 'usage'), { recursive: true });
+    writeFileSync(join(home, '.codetown', 'usage', '.claude.json'), '{"fetchedAt":1}');
+    exec('status');
+    exec('uninstall');
+    exec('install', { dryRun: true });
+    expect(existsSync(join(home, '.codetown', 'usage', '.claude.json'))).toBe(true);
+    expect(out.filter((l) => l.includes('nome antigo'))).toEqual(['~ ~/.codetown (nome antigo) vai para ~/.habblaud (simulação: nada movido)']);
+    out = [];
+    expect(exec('install')).toBe(0);
+    expect(out[0]).toBe('✓ ~/.codetown (nome antigo) agora é ~/.habblaud.');
+    expect(existsSync(join(home, '.codetown'))).toBe(false);
+    expect(readFileSync(join(home, '.habblaud', 'usage', '.claude.json'), 'utf8')).toBe('{"fetchedAt":1}');
+    expect(read('.claude').statusLine.command).toBe(wrapCommand(process.execPath, TAP_SCRIPT, 'npx -y ccstatusline'));
+    // Já migrado: nada a dizer.
+    out = [];
+    exec('install');
+    expect(out.join('\n')).not.toContain('nome antigo');
+  });
+
+  it('nome antigo: se não der para mover, avisa e instala assim mesmo', () => {
+    mkdirSync(join(home, '.codetown', 'usage'), { recursive: true });
+    // HOME só de leitura: o rename de ~/.codetown falha (as contas, por dentro, seguem graváveis).
+    chmodSync(home, 0o555);
+    try {
+      expect(exec('install')).toBe(0);
+    } finally {
+      chmodSync(home, 0o755);
+    }
+    expect(out[0]).toMatch(/^! não consegui levar ~\/\.codetown para ~\/\.habblaud \(.+\); mova a pasta à mão\.$/);
+    expect(existsSync(join(home, '.codetown', 'usage'))).toBe(true);
+    expect(read('.claude').statusLine.command).toContain('statusline-tap.mjs');
   });
 
   it('--dry-run não grava; JSON inválido nunca é sobrescrito', () => {

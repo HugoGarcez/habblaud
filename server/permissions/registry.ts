@@ -1,7 +1,7 @@
 // Responder pelo escritório: registro dos pedidos de permissão pendentes.
 //
-// O hook PermissionRequest do Claude Code (mod/codetown-permissoes/hooks/permission-hook.mjs, pelo plugin
-// codetown-permissoes ou pelo npm run hooks:install) manda cada pedido para POST /api/permissions e fica esperando a decisão em GET /api/permissions/:id/wait (long-poll).
+// O hook PermissionRequest do Claude Code (mod/habblaud-permissoes/hooks/permission-hook.mjs, pelo plugin
+// habblaud-permissoes ou pelo npm run hooks:install) manda cada pedido para POST /api/permissions e fica esperando a decisão em GET /api/permissions/:id/wait (long-poll).
 // A página responde em POST /api/permissions/:id/decision. O registro:
 // - só aceita o pedido se alguma página local estiver aberta e a sessão for conhecida (senão o hook sai
 //   na hora e o terminal segue normal);
@@ -135,7 +135,7 @@ function ruleText(raw: unknown): string | undefined {
 }
 
 /**
- * Sugestões "sempre permitir" que o CodeTown oferece: só `addRules` com `behavior: "allow"` num destino
+ * Sugestões "sempre permitir" que o Habblaud oferece: só `addRules` com `behavior: "allow"` num destino
  * conhecido. A página escolhe pela posição e o hook aplica a sugestão ORIGINAL que recebeu do Claude Code
  * (o servidor nunca inventa regras).
  */
@@ -366,8 +366,8 @@ export class PermissionRegistry {
     const now = this.now();
     const act: Activity =
       d.behavior === 'allow'
-        ? { id: `${p.agentId}#perm-ok:${id}`, at: now, kind: 'other', icon: '✅', text: d.suggestion !== undefined ? 'Aprovado no CodeTown (sempre permitir)' : 'Aprovado no CodeTown', detail: p.info.title, tool: 'PermissionRequest' }
-        : { id: `${p.agentId}#perm-no:${id}`, at: now, kind: 'wait', icon: '🚫', text: 'Recusado no CodeTown', detail: d.message ? `${p.info.title} — ${d.message}` : p.info.title, tool: 'PermissionRequest' };
+        ? { id: `${p.agentId}#perm-ok:${id}`, at: now, kind: 'other', icon: '✅', text: d.suggestion !== undefined ? 'Aprovado no Habblaud (sempre permitir)' : 'Aprovado no Habblaud', detail: p.info.title, tool: 'PermissionRequest' }
+        : { id: `${p.agentId}#perm-no:${id}`, at: now, kind: 'wait', icon: '🚫', text: 'Recusado no Habblaud', detail: d.message ? `${p.info.title} — ${d.message}` : p.info.title, tool: 'PermissionRequest' };
     this.opts.office.addActivity(p.agentId, act, false);
     return 'ok';
   }
@@ -410,7 +410,7 @@ export class PermissionRegistry {
   /** O tool_result da chamada apareceu no transcript (respondido no terminal)? Nunca lança. */
   private answeredInTerminal(p: Pending, now: number): boolean {
     p.lastScanAt = now;
-    // Subagente que o CodeTown não acompanha (pedido mostrado no principal): o transcript dele não é
+    // Subagente que o Habblaud não acompanha (pedido mostrado no principal): o transcript dele não é
     // conhecido e o do principal não tem a chamada; sobram a expiração e o órfão.
     if (p.hookAgentId && p.agentId !== `${p.sessionId}:${p.hookAgentId}`) return false;
     const path = this.opts.transcriptPathOf?.(p.agentId);

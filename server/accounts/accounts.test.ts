@@ -70,7 +70,7 @@ describe('detecção de contas', () => {
     const extra = join(home, 'outra');
     mkdirSync(extra);
     expect(discoverClaudeDirs({ CLAUDE_CONFIG_DIR: extra }, home)).toContain(extra);
-    expect(discoverClaudeDirs({ CODETOWN_CLAUDE_DIRS: ' /x/a , ~/b ' }, home)).toEqual(['/x/a', join(home, 'b')]);
+    expect(discoverClaudeDirs({ HABBLAUD_CLAUDE_DIRS: ' /x/a , ~/b ' }, home)).toEqual(['/x/a', join(home, 'b')]);
   });
 
   it('lê só os campos permitidos do .claude.json, atalhos e cores', () => {
@@ -105,9 +105,9 @@ describe('detecção de contas', () => {
     expect(JSON.stringify(accs)).not.toContain('nao-pode-vazar');
   });
 
-  it('CODETOWN_ACCOUNTS (Docker) sobrepõe metadados casando por id ou mountDir', () => {
+  it('HABBLAUD_ACCOUNTS (Docker) sobrepõe metadados casando por id ou mountDir', () => {
     const env = {
-      CODETOWN_ACCOUNTS: JSON.stringify([
+      HABBLAUD_ACCOUNTS: JSON.stringify([
         { id: '.claude', configDir: '/Users/x/.claude', mountDir: join(home, '.claude'), short: 'C', email: 'host@x.com', plan: 'Max', color: '#000000' },
         { mountDir: join(home, '.claude-conta2'), configDir: '/Users/x/.claude-conta2', short: 'D', name: 'Pessoal', cachedUsage: { fetchedAtMs: 5 } },
       ]),

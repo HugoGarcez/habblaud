@@ -1,4 +1,4 @@
-// Versão do CodeTown: o número na barra superior, o selo "Nova versão" quando o GitHub tem uma release mais
+// Versão do Habblaud: o número na barra superior, o selo "Nova versão" quando o GitHub tem uma release mais
 // nova (quem consulta é o servidor, server/updates/checker.ts), o aviso único por versão e a seção "Sobre"
 // das configurações (estado da verificação, "Verificar agora", novidades e como atualizar).
 import type { Notice, OfficeSnapshot, UpdateStatus } from '../../../shared/types';
@@ -9,7 +9,7 @@ import { pixelIcon } from './icons';
 import { safeLocalStorage } from './prefs';
 
 /** Última versão nova já avisada neste navegador (o aviso sai uma vez por versão). */
-export const UPDATE_SEEN_KEY = 'codetown:update-seen';
+export const UPDATE_SEEN_KEY = 'habblaud:update-seen';
 
 export const VERSION_ICONS = {
   up: pixelIcon(['...##...', '..####..', '.######.', '########', '..####..', '..####..', '..####..', '..####..']),
@@ -38,7 +38,7 @@ export function updateStatusLine(version: string, s: UpdateStatus | undefined, n
       return {
         tone: 'off',
         text: s.repo
-          ? 'Verificação de versão nova desligada (CODETOWN_UPDATE_CHECK=0).'
+          ? 'Verificação de versão nova desligada (HABBLAUD_UPDATE_CHECK=0).'
           : 'Verificação de versão nova desligada: o package.json não aponta um repositório no GitHub.',
       };
     case 'pending':
@@ -56,8 +56,8 @@ export function updateStatusLine(version: string, s: UpdateStatus | undefined, n
 
 /** Dica do número de versão na barra superior. */
 export function versionChipTitle(version: string, s: UpdateStatus | undefined, now: number): string {
-  if (s?.available && s.latest) return `Nova versão do CodeTown: v${s.latest} (você usa a v${version}). Clique para ver as novidades e como atualizar.`;
-  return `CodeTown v${version}. ${updateStatusLine(version, s, now).text} Clique para ver detalhes.`;
+  if (s?.available && s.latest) return `Nova versão do Habblaud: v${s.latest} (você usa a v${version}). Clique para ver as novidades e como atualizar.`;
+  return `Habblaud v${version}. ${updateStatusLine(version, s, now).text} Clique para ver detalhes.`;
 }
 
 /** Número da versão na barra superior; vira o selo "Nova versão" quando há release mais nova. */
@@ -113,7 +113,7 @@ export class UpdateToaster implements UiComponent {
     } catch {
       // Sem armazenamento: avisa uma vez por página aberta.
     }
-    this.push({ id: `update:${s.latest}`, level: 'success', text: `Nova versão do CodeTown: v${s.latest}. Veja as novidades e como atualizar em Configurações › Sobre.`, at: this.ctx.now() });
+    this.push({ id: `update:${s.latest}`, level: 'success', text: `Nova versão do Habblaud: v${s.latest}. Veja as novidades e como atualizar em Configurações › Sobre.`, at: this.ctx.now() });
   }
 }
 
@@ -141,7 +141,7 @@ export class AboutGroup {
       h(
         'p',
         { class: 'ui-set__hint' },
-        'Para atualizar, na pasta do CodeTown: ',
+        'Para atualizar, na pasta do Habblaud: ',
         h('code', { class: 'ui-usage-setup__cmd', text: 'git pull' }),
         ' e de novo ',
         h('code', { class: 'ui-usage-setup__cmd', text: 'npm run docker:up' }),
@@ -155,7 +155,7 @@ export class AboutGroup {
       'div',
       { class: 'ui-set-group ui-about', attrs: { id: 'ui-about' } },
       h('h3', { text: 'Sobre', tabIndex: -1 }),
-      h('div', { class: 'ui-about__head' }, h('span', { class: 'ui-about__name' }, 'CodeTown ', this.name), this.checkBtn),
+      h('div', { class: 'ui-about__head' }, h('span', { class: 'ui-about__name' }, 'Habblaud ', this.name), this.checkBtn),
       this.status,
       this.fresh,
       this.repo,
@@ -201,9 +201,9 @@ export class AboutGroup {
     this.failure = undefined;
     this.render();
     try {
-      if (!(await this.ctx.store.checkUpdates())) this.failure = 'Não deu para falar com o servidor do CodeTown.';
+      if (!(await this.ctx.store.checkUpdates())) this.failure = 'Não deu para falar com o servidor do Habblaud.';
     } catch {
-      this.failure = 'Não deu para falar com o servidor do CodeTown.';
+      this.failure = 'Não deu para falar com o servidor do Habblaud.';
     } finally {
       this.checking = false;
       this.render();

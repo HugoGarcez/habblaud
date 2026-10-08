@@ -1,6 +1,6 @@
 // Plugins do Claude Code no próprio repositório (.claude-plugin/marketplace.json + mod/): versões alinhadas
 // com o package.json e estrutura que o Claude Code consegue carregar. O comportamento do mod em si é
-// testado pelo Claude Code (`claude plugin test` em mod/codetown); aqui fica o que o vitest consegue
+// testado pelo Claude Code (`claude plugin test` em mod/habblaud); aqui fica o que o vitest consegue
 // conferir sem o Claude Code: arquivos, versões, o hook de permissão do plugin rodando de verdade.
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_TIMEOUT_S, hookCommand, hookEntry, STATUS_MESSAGE } from '../../scripts/hooks-install';
 
 const ROOT = resolve(__dirname, '../..');
-const PLUGINS = ['codetown', 'codetown-permissoes'];
+const PLUGINS = ['habblaud', 'habblaud-permissoes'];
 
 type Rec = Record<string, unknown>;
 
@@ -49,8 +49,8 @@ describe('marketplace e plugins do Claude Code', () => {
     }
   });
 
-  it('marketplace "codetown" com os dois plugins, cada um numa pasta que existe e com o mesmo nome', () => {
-    expect(market.name).toBe('codetown');
+  it('marketplace "habblaud" com os dois plugins, cada um numa pasta que existe e com o mesmo nome', () => {
+    expect(market.name).toBe('habblaud');
     expect(entries.map((e) => e.name)).toEqual(PLUGINS);
     for (const e of entries) {
       const source = String(e.source);
@@ -78,19 +78,19 @@ describe('marketplace e plugins do Claude Code', () => {
         expect(existsSync(join(dir, path!)), path).toBe(true);
       }
     }
-    expect(json('mod/codetown/hooks/hooks.json').modules).toEqual(['./register.ts']);
+    expect(json('mod/habblaud/hooks/hooks.json').modules).toEqual(['./register.ts']);
   });
 
   it('o mod só importa arquivos dele mesmo e tipos de "claude-code" (regra do Claude Code)', () => {
-    for (const spec of importsOf(join(ROOT, 'mod/codetown/hooks/register.ts'))) {
+    for (const spec of importsOf(join(ROOT, 'mod/habblaud/hooks/register.ts'))) {
       expect(spec === 'claude-code' || spec.startsWith('./') || spec.startsWith('../'), spec).toBe(true);
     }
   });
 });
 
-describe('plugin codetown-permissoes', () => {
-  const dir = join(ROOT, 'mod/codetown-permissoes');
-  const hooks = settingsHooks(json('mod/codetown-permissoes/hooks/hooks.json'));
+describe('plugin habblaud-permissoes', () => {
+  const dir = join(ROOT, 'mod/habblaud-permissoes');
+  const hooks = settingsHooks(json('mod/habblaud-permissoes/hooks/hooks.json'));
 
   it('o mesmo hook do instalador: PermissionRequest, matcher "*", tempo limite e mensagem iguais', () => {
     const installed = hookEntry(hookCommand('node', '/x/permission-hook.mjs', { port: 4747, timeoutS: DEFAULT_TIMEOUT_S }), { port: 4747, timeoutS: DEFAULT_TIMEOUT_S });
@@ -108,14 +108,14 @@ describe('plugin codetown-permissoes', () => {
     for (const spec of specs) expect(spec.startsWith('node:'), spec).toBe(true);
   });
 
-  it('o comando do plugin roda de verdade: com o CodeTown fora do ar, sai rápido e sem decisão', () => {
+  it('o comando do plugin roda de verdade: com o Habblaud fora do ar, sai rápido e sem decisão', () => {
     const input = JSON.stringify({ session_id: 's', hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: { command: 'ls' } });
     const t0 = Date.now();
     // O Claude Code troca ${CLAUDE_PLUGIN_ROOT} no comando e também o exporta; o sh expande do ambiente igual.
     const r = spawnSync('/bin/sh', ['-c', String(hooks[0]?.hook.command)], {
       input,
       encoding: 'utf8',
-      env: { PATH: `${dirname(process.execPath)}:${process.env.PATH ?? ''}`, CLAUDE_PLUGIN_ROOT: dir, CODETOWN_PORT: '1' },
+      env: { PATH: `${dirname(process.execPath)}:${process.env.PATH ?? ''}`, CLAUDE_PLUGIN_ROOT: dir, HABBLAUD_PORT: '1' },
       timeout: 10_000,
     });
     expect(r.status).toBe(0);
@@ -129,11 +129,11 @@ describe('plugin codetown-permissoes', () => {
       input,
       encoding: 'utf8',
       // Com o debug ligado o script conta no stderr o que fez: prova que o main do script novo rodou.
-      env: { PATH: process.env.PATH ?? '', CODETOWN_PORT: '1', CODETOWN_HOOK_DEBUG: '1' },
+      env: { PATH: process.env.PATH ?? '', HABBLAUD_PORT: '1', HABBLAUD_HOOK_DEBUG: '1' },
       timeout: 10_000,
     });
     expect(r.status).toBe(0);
     expect(r.stdout).toBe('');
-    expect(r.stderr).toMatch(/codetown/i);
+    expect(r.stderr).toMatch(/habblaud/i);
   });
 });

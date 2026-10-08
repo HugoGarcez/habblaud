@@ -1,6 +1,6 @@
-// Instala (ou remove) o mod do CodeTown no Claude Code de cada conta. Roda no HOST, com tsx:
+// Instala (ou remove) o mod do Habblaud no Claude Code de cada conta. Roda no HOST, com tsx:
 //
-//   npm run mod:install      # marketplace "codetown" (esta pasta) + plugins codetown e codetown-permissoes
+//   npm run mod:install      # marketplace "habblaud" (esta pasta) + plugins habblaud e habblaud-permissoes
 //   npm run mod:uninstall    # tira os dois plugins e o marketplace de cada conta
 //   npm run mod:status       # por conta: marketplace, plugins (e versões) e restos do jeito antigo
 //   (opções: --sem-permissoes, --conta <pasta>, --dry-run, --claude <comando>)
@@ -11,7 +11,7 @@
 // Claude Code, no formato que ele conhece: este script não edita esses campos.
 //
 // O marketplace é ESTA pasta (.claude-plugin/marketplace.json na raiz do repositório), adicionado como diretório
-// local: o Claude Code carrega os plugins direto de mod/codetown e mod/codetown-permissoes, sem copiar. Depois de
+// local: o Claude Code carrega os plugins direto de mod/habblaud e mod/habblaud-permissoes, sem copiar. Depois de
 // um `git pull`, sessões novas (ou /reload-plugins) já rodam o código novo; o `claude plugin update` acerta a
 // versão registrada (o `npm run docker:up` faz isso sozinho para quem já instalou).
 //
@@ -19,6 +19,10 @@
 // de permissões faz o mesmo que o settings hook PermissionRequest (hooks:install). Na instalação, cada um sai do
 // settings.json da conta (com backup), pelas funções dos instaladores antigos, para não ficarem dois capturando
 // o uso nem dois respondendo o mesmo pedido. Com --sem-permissoes, o hook antigo fica como está.
+//
+// Nome antigo (CodeTown, até a 0.3.2): o install tira os plugins codetown e codetown-permissoes e o marketplace
+// codetown (esta mesma pasta, com o nome que o manifesto não tem mais) ANTES de adicionar o habblaud, e leva
+// ~/.codetown para ~/.habblaud. O uninstall também os tira, o status os mostra e o docker:up só avisa.
 //
 // Status (e o plano de cada conta): vem de `claude plugin list --json` e `claude plugin marketplace list --json`,
 // saídas documentadas que já resolvem escopo, ligado/desligado e CLAUDE_CODE_PLUGIN_CACHE_DIR. Os arquivos
@@ -30,10 +34,12 @@ import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { discoverClaudeDirs, expandHome, isDefaultDir } from '../server/accounts/detect';
+import { LEGACY_NAME } from '../server/legacy';
 import { DEFAULT_PORT, installedHook, planUninstall as planHookUninstall } from './hooks-install';
 import {
   formatAge,
   isTapCommand,
+  migrateLegacyState,
   planUninstall as planTapUninstall,
   readSettings,
   tildify,
@@ -45,11 +51,15 @@ import {
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Nome do marketplace em .claude-plugin/marketplace.json (contrato com mod/). */
-export const MARKETPLACE = 'codetown';
-/** O mod: uso do plano, aviso de "precisa de você" no terminal e /codetown. */
-export const MOD_PLUGIN = `codetown@${MARKETPLACE}`;
+export const MARKETPLACE = 'habblaud';
+/** O mod: uso do plano, aviso de "precisa de você" no terminal e /habblaud. */
+export const MOD_PLUGIN = `habblaud@${MARKETPLACE}`;
 /** O settings hook PermissionRequest de responder pelo escritório, empacotado como plugin. */
-export const PERMISSIONS_PLUGIN = `codetown-permissoes@${MARKETPLACE}`;
+export const PERMISSIONS_PLUGIN = `habblaud-permissoes@${MARKETPLACE}`;
+/** Marketplace do nome antigo (CodeTown, até a 0.3.2): a mesma pasta, registrada com o nome que ela tinha. */
+export const LEGACY_MARKETPLACE = LEGACY_NAME;
+/** Os plugins que vinham dele (o mod e o de permissões, com o nome antigo). */
+export const LEGACY_PLUGINS = [`${LEGACY_NAME}@${LEGACY_MARKETPLACE}`, `${LEGACY_NAME}-permissoes@${LEGACY_MARKETPLACE}`] as const;
 /** Primeira versão do Claude Code (terminal) que carrega mods. */
 export const MIN_CLAUDE_VERSION = '2.1.287';
 /** Os plugins vão sempre para o escopo do usuário: valem em todos os projetos da conta. */
@@ -59,9 +69,10 @@ const CLI_TIMEOUT_MS = 120_000;
 
 const USAGE = `Uso: npm run mod:<install|uninstall|status> [-- opções]
 
-  install     instala o mod do CodeTown no Claude Code de cada conta (marketplace desta pasta + plugins)
-              e tira o tap de statusline e o hook de permissão antigos, que o mod substitui
-  uninstall   tira os plugins e o marketplace do CodeTown de cada conta
+  install     instala o mod do Habblaud no Claude Code de cada conta (marketplace desta pasta + plugins)
+              e tira o que ele substitui: o tap de statusline e o hook de permissão antigos e o mod do
+              nome antigo (codetown)
+  uninstall   tira os plugins e o marketplace do Habblaud de cada conta (e os do nome antigo, se sobraram)
   status      mostra, por conta, o marketplace, os plugins (e versões) e o que sobrou do jeito antigo
 
 Opções:
@@ -75,7 +86,7 @@ Precisa do Claude Code ${MIN_CLAUDE_VERSION} ou mais novo. Em versões anteriore
 npm run usage:install (uso ao vivo) e npm run hooks:install (responder permissões).
 
 Contas: as mesmas do servidor (~/.claude* com projects/ ou sessions/, CLAUDE_CONFIG_DIR ou
-CODETOWN_CLAUDE_DIRS). Uso capturado em CODETOWN_USAGE_DIR (padrão ~/.codetown/usage).`;
+HABBLAUD_CLAUDE_DIRS). Uso capturado em HABBLAUD_USAGE_DIR (padrão ~/.habblaud/usage).`;
 
 // ---------------------------------------------------------------------------------------------
 // O CLI do Claude Code (injetável: os testes nunca chamam o de verdade)
@@ -232,9 +243,11 @@ export function parseMarketplaceList(stdout: string): MarketplaceInfo[] | undefi
   return out;
 }
 
-/** O que uma conta tem do CodeTown no Claude Code. */
+/** O que uma conta tem do Habblaud no Claude Code. */
 export interface AccountState {
   marketplace?: MarketplaceInfo;
+  /** O marketplace do nome antigo (codetown), se ainda estiver registrado. */
+  legacyMarketplace?: MarketplaceInfo;
   plugins: PluginInfo[];
 }
 
@@ -243,13 +256,31 @@ export function userInstall(state: AccountState, id: string): PluginInfo | undef
   return state.plugins.find((p) => p.id === id && (p.scope === SCOPE || p.scope === undefined));
 }
 
+/** Plugins do nome antigo no escopo do usuário (onde o mod:install da 0.3 os pôs). */
+export function legacyPlugins(state: AccountState): PluginInfo[] {
+  return LEGACY_PLUGINS.map((id) => userInstall(state, id)).filter((p): p is PluginInfo => !!p);
+}
+
+/**
+ * Os restos do nome antigo numa frase ("marketplace codetown, codetown@codetown 0.3.2"), ou undefined se não
+ * sobrou nada. `where` descreve a pasta do marketplace (o status diz se é esta).
+ */
+export function legacySummary(state: AccountState, where?: (m: MarketplaceInfo) => string): string | undefined {
+  const parts = legacyPlugins(state).map((p) => `${p.id}${p.version ? ` ${p.version}` : ''}`);
+  const m = state.legacyMarketplace;
+  if (m) parts.unshift(`marketplace ${LEGACY_MARKETPLACE}${where ? ` (${where(m)})` : ''}`);
+  return parts.length ? parts.join(', ') : undefined;
+}
+
 /** Uma chamada ao CLI, com a frase que conta o que ela faz. */
 export interface CliStep {
   args: string[];
-  /** "codetown: instalado" (vira ✓, ~ ou ✗ na saída). */
+  /** "habblaud: instalado" (vira ✓, ~ ou ✗ na saída). */
   message: string;
   /** Plugin que depende deste passo (falhou = não conta como instalado). */
   plugin?: string;
+  /** Se falhar, os passos seguintes da instalação rodam assim mesmo (a falha ainda conta no fim). */
+  keepGoing?: boolean;
 }
 
 /** Item do plano, na ordem da saída: uma chamada ao CLI ou algo que já está certo (vira "="). */
@@ -295,20 +326,40 @@ export function sameDir(a: string, b: string): boolean {
 const shortName = (id: string) => id.split('@')[0];
 
 /**
- * Passos de instalação de uma conta, a partir do que ela já tem. O marketplace é adicionado (ou, se já existe,
- * tem o catálogo relido; se apontava para outra pasta, passa a apontar para esta). Cada plugin é instalado,
- * religado (se estava desligado) ou atualizado (se a versão registrada difere da do package.json).
+ * Passos que tiram os restos do nome antigo: os plugins (escopo do usuário) e depois o marketplace. Um plugin
+ * que não sair não segura os passos seguintes: tirar o marketplace leva junto o que veio dele.
+ */
+function legacySteps(state: AccountState): CliStep[] {
+  const steps: CliStep[] = legacyPlugins(state).map((p) => ({
+    args: ['plugin', 'uninstall', p.id, '--scope', SCOPE],
+    message: `${shortName(p.id)} (nome antigo): removido`,
+    keepGoing: true,
+  }));
+  if (state.legacyMarketplace) {
+    steps.push({ args: ['plugin', 'marketplace', 'remove', LEGACY_MARKETPLACE], message: `marketplace ${LEGACY_MARKETPLACE} (nome antigo): removido` });
+  }
+  return steps;
+}
+
+/**
+ * Passos de instalação de uma conta, a partir do que ela já tem. Os restos do nome antigo saem primeiro. O
+ * marketplace é adicionado (ou, se já existe, tem o catálogo relido; se apontava para outra pasta, passa a
+ * apontar para esta). Cada plugin é instalado, religado (se estava desligado) ou atualizado (se a versão
+ * registrada difere da do package.json).
  */
 export function planInstall(state: AccountState, o: PlanOptions): InstallPlan {
   const same = o.sameDir ?? sameDir;
   const plan: InstallPlan = { items: [], notes: [], plugins: [] };
+  // O marketplace codetown aponta para esta mesma pasta: ele sai antes de o habblaud entrar, para nunca ficarem
+  // dois nomes registrados para a mesma pasta (um deles que o manifesto não tem mais).
+  plan.items.push(...legacySteps(state));
   const m = state.marketplace;
   if (!m) {
     plan.items.push({ args: ['plugin', 'marketplace', 'add', o.root], message: `marketplace ${MARKETPLACE}: adicionado (esta pasta)` });
   } else if (m.path && same(m.path, o.root)) {
     plan.items.push({ args: ['plugin', 'marketplace', 'update', MARKETPLACE], message: `marketplace ${MARKETPLACE}: catálogo relido desta pasta` });
   } else {
-    // Outra pasta (o CodeTown mudou de lugar) ou outra origem: o add com a mesma chave só troca a origem e
+    // Outra pasta (o Habblaud mudou de lugar) ou outra origem: o add com a mesma chave só troca a origem e
     // mantém os plugins instalados.
     plan.items.push({
       args: ['plugin', 'marketplace', 'add', o.root],
@@ -355,11 +406,12 @@ export function planInstall(state: AccountState, o: PlanOptions): InstallPlan {
 }
 
 /**
- * Passos de remoção: os plugins do escopo do usuário e o marketplace, só o que existir. (Tirar o marketplace já
- * desinstalaria o que veio dele, mas um passo por plugin deixa claro, na saída, o que saiu.)
+ * Passos de remoção: os restos do nome antigo (se houver), os plugins do escopo do usuário e o marketplace, só o
+ * que existir. (Tirar o marketplace já desinstalaria o que veio dele, mas um passo por plugin deixa claro, na
+ * saída, o que saiu.)
  */
 export function planUninstall(state: AccountState): InstallPlan {
-  const plan: InstallPlan = { items: [], notes: [], plugins: [] };
+  const plan: InstallPlan = { items: [...legacySteps(state)], notes: [], plugins: [] };
   for (const id of [MOD_PLUGIN, PERMISSIONS_PLUGIN]) {
     const name = shortName(id);
     if (userInstall(state, id)) plan.items.push({ args: ['plugin', 'uninstall', id, '--scope', SCOPE], message: `${name}: removido`, plugin: id });
@@ -436,6 +488,10 @@ export type UpdatePlan =
 
 export function planUpdate(state: AccountState, o: { root: string; version: string; sameDir?: (a: string, b: string) => boolean }): UpdatePlan {
   const same = o.sameDir ?? sameDir;
+  // Nome antigo: a troca (tirar o codetown, instalar o habblaud) é do mod:install; aqui só o aviso. Um aviso conta
+  // como "instalado", então a dica de instalar do zero não aparece para quem já usava o mod.
+  const legacy = legacySummary(state);
+  if (legacy) return { action: 'warn', message: `ainda com o nome antigo (${legacy}); o docker:up não troca sozinho: rode npm run mod:install` };
   const installed = [MOD_PLUGIN, PERMISSIONS_PLUGIN].map((id) => userInstall(state, id)).filter((p): p is PluginInfo => !!p);
   if (!installed.length) return { action: 'none', installed: false };
   const stale = installed.filter((p) => p.version !== o.version);
@@ -488,6 +544,8 @@ export function describeStatus(state: AccountState, settings: Settings, o: { roo
       lines.push(`${name}: ${parts.join(', ')}`);
     }
   }
+  const legacy = legacySummary(state, (lm) => (lm.path && same(lm.path, o.root) ? 'esta pasta' : lm.path ? tildify(lm.path, o.home) : (lm.source ?? '?')));
+  if (legacy) lines.push(`! nome antigo ainda registrado: ${legacy}; npm run mod:install troca pelo habblaud`);
   const sl = rec(settings.statusLine);
   const hook = installedHook(settings);
   const modOn = !!userInstall(state, MOD_PLUGIN);
@@ -534,7 +592,7 @@ export interface RunContext {
   version: string;
   claude: ClaudeRunner;
   out: (line: string) => void;
-  /** Consulta o /api/health do CodeTown no status (testes injetam um falso). */
+  /** Consulta o /api/health do Habblaud no status (testes injetam um falso). */
   health?: (port: number) => Promise<{ permissions?: boolean } | undefined>;
 }
 
@@ -550,9 +608,9 @@ async function fetchHealth(port: number): Promise<{ permissions?: boolean } | un
   }
 }
 
-/** Porta do CodeTown (CODETOWN_PORT ou a padrão). */
-function codetownPort(env: NodeJS.ProcessEnv): number {
-  const p = Number.parseInt(env.CODETOWN_PORT ?? '', 10);
+/** Porta do Habblaud (HABBLAUD_PORT ou a padrão). */
+function habblaudPort(env: NodeJS.ProcessEnv): number {
+  const p = Number.parseInt(env.HABBLAUD_PORT ?? '', 10);
   return Number.isInteger(p) && p > 0 && p < 65_536 ? p : DEFAULT_PORT;
 }
 
@@ -598,7 +656,7 @@ export function readAccountState(claude: ClaudeRunner, env: NodeJS.ProcessEnv): 
   if (pr.error || pr.code !== 0) return { error: `não consegui listar os plugins (${cliMessage(pr)})` };
   const plugins = parsePluginList(pr.stdout);
   if (!plugins) return { error: 'não entendi a lista de plugins do Claude Code' };
-  return { marketplace: markets.find((m) => m.name === MARKETPLACE), plugins };
+  return { marketplace: markets.find((m) => m.name === MARKETPLACE), legacyMarketplace: markets.find((m) => m.name === LEGACY_MARKETPLACE), plugins };
 }
 
 /** Pastas das contas: as de --conta (que precisam existir) ou as detectadas. */
@@ -633,12 +691,12 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
   const { env, home, out } = ctx;
   const dirs = accountDirs(opts, env, home);
   if (!dirs.length) {
-    out('Nenhuma conta do Claude Code encontrada (~/.claude* com projects/ ou sessions/). Use --conta <pasta> ou CODETOWN_CLAUDE_DIRS.');
+    out('Nenhuma conta do Claude Code encontrada (~/.claude* com projects/ ou sessions/). Use --conta <pasta> ou HABBLAUD_CLAUDE_DIRS.');
     return 1;
   }
   const manifest = join(ctx.root, '.claude-plugin', 'marketplace.json');
   if (opts.command === 'install' && !existsSync(manifest)) {
-    out(`Não achei ${tildify(manifest, home)}: esta pasta não tem o mod (versão antiga do CodeTown? rode git pull).`);
+    out(`Não achei ${tildify(manifest, home)}: esta pasta não tem o mod (versão antiga do Habblaud? rode git pull).`);
     return 1;
   }
 
@@ -661,10 +719,15 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
     }
   }
   if (opts.command === 'status') {
-    out(`Claude Code ${cliVersion ?? '(versão desconhecida)'}${cliVersion && !versionAtLeast(cliVersion, MIN_CLAUDE_VERSION) ? ` — o mod precisa do ${MIN_CLAUDE_VERSION}+` : ''} · CodeTown ${ctx.version} em ${tildify(ctx.root, home)}`);
+    out(`Claude Code ${cliVersion ?? '(versão desconhecida)'}${cliVersion && !versionAtLeast(cliVersion, MIN_CLAUDE_VERSION) ? ` — o mod precisa do ${MIN_CLAUDE_VERSION}+` : ''} · Habblaud ${ctx.version} em ${tildify(ctx.root, home)}`);
   }
 
-  // O mod grava o uso em ~/.codetown/usage, mas não cria a pasta (o docker:up também a monta no container).
+  // Nome antigo: ~/.codetown vira ~/.habblaud antes de criar (ou usar) a pasta do uso.
+  if (opts.command === 'install') {
+    const moved = migrateLegacyState(home, opts.dryRun);
+    if (moved) out(moved);
+  }
+  // O mod grava o uso em ~/.habblaud/usage, mas não cria a pasta (o docker:up também a monta no container).
   if (opts.command === 'install' && !opts.dryRun) {
     const usageDir = usageDirOf(env, home);
     try {
@@ -706,6 +769,7 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
     const plan = opts.command === 'install' ? planInstall(state, { root: ctx.root, version: ctx.version, permissions: opts.permissions }) : planUninstall(state);
     const failed = new Set<string>();
     let broken = false;
+    let stepFailed = false;
     for (const item of plan.items) {
       if (!('args' in item)) {
         out(`  = ${item.unchanged}`);
@@ -716,7 +780,8 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
         continue;
       }
       // Na instalação, depois de uma falha os passos seguintes desta conta não rodam (sem marketplace não há
-      // plugin). Na remoção, segue: o que der para tirar, sai.
+      // plugin), menos depois de um plugin do nome antigo que não saiu (o marketplace dele o leva junto). Na
+      // remoção, segue: o que der para tirar, sai.
       if (broken && opts.command === 'install') {
         if (item.plugin) failed.add(item.plugin);
         continue;
@@ -728,10 +793,11 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
       } else {
         out(`  ✗ ${item.message.split(':')[0]}: falhou (${cliMessage(r)})`);
         if (item.plugin) failed.add(item.plugin);
-        broken = true;
+        stepFailed = true;
+        if (!item.keepGoing) broken = true;
       }
     }
-    if (broken) failures++;
+    if (stepFailed) failures++;
     for (const n of plan.notes) out(`  ! ${n}`);
     if (opts.command !== 'install') continue;
 
@@ -742,6 +808,8 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
       const after = readAccountState(ctx.claude, cenv);
       if (!('error' in after)) {
         for (const w of verifyInstall(after, plan.plugins, ctx.version)) out(`  ! ${w}`);
+        const legacy = legacySummary(after);
+        if (legacy) out(`  ! nome antigo ainda registrado: ${legacy}; rode npm run mod:install de novo (ou confira com npm run mod:status)`);
         ok = (id: string) => userInstall(after, id)?.enabled === true;
       }
     }
@@ -776,7 +844,7 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
   if (opts.command === 'install' && !opts.dryRun && !failures) {
     out('');
     out('Pronto. Sessões novas do Claude Code já carregam o mod; nas que já estão abertas, rode /reload-plugins (ou');
-    out('reabra a sessão). O uso de 5h/semanal chega ao CodeTown depois da próxima resposta de cada sessão.');
+    out('reabra a sessão). O uso de 5h/semanal chega ao Habblaud depois da próxima resposta de cada sessão.');
     out('Para conferir: npm run mod:status · Para desfazer: npm run mod:uninstall');
   }
   if (opts.command === 'uninstall' && !opts.dryRun && changed) {
@@ -785,13 +853,13 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
     out('Para voltar ao jeito antigo (Claude Code anterior ao 2.1.287): npm run usage:install e npm run hooks:install');
   }
   if (opts.command === 'status') {
-    // O mod e o plugin de permissões só falam com o CodeTown local: diz se ele está lá para responder.
-    const port = codetownPort(env);
+    // O mod e o plugin de permissões só falam com o Habblaud local: diz se ele está lá para responder.
+    const port = habblaudPort(env);
     const health = await (ctx.health ?? fetchHealth)(port);
-    const at = `CodeTown em http://127.0.0.1:${port}`;
+    const at = `Habblaud em http://127.0.0.1:${port}`;
     if (!health) out(`${at}: fora do ar (o mod segue gravando o uso; os pedidos de permissão ficam só no terminal).`);
     else if (health.permissions) out(`${at}: no ar e respondendo pedidos de permissão (com alguma página aberta).`);
-    else out(`${at}: no ar, mas responder pelo escritório está desligado (porta exposta na rede ou CODETOWN_TERMINAL=0).`);
+    else out(`${at}: no ar, mas responder pelo escritório está desligado (porta exposta na rede ou HABBLAUD_TERMINAL=0).`);
   }
   return failures ? 1 : 0;
 }
@@ -809,7 +877,7 @@ export interface ModUpdateContext {
 }
 
 export interface ModUpdateResult {
-  /** Alguma conta tem o mod (ou o plugin de permissões) instalado. */
+  /** Alguma conta tem o mod (ou o plugin de permissões) instalado, mesmo que com o nome antigo. */
   installed: boolean;
   /** Não deu para consultar o Claude Code em nenhuma conta (ex.: `claude` fora do PATH). */
   unavailable: boolean;
@@ -818,7 +886,8 @@ export interface ModUpdateResult {
 
 /**
  * Para cada conta com o mod instalado numa versão diferente da do package.json: relê o catálogo e atualiza os
- * plugins instalados. Nunca instala nada e nunca lança: qualquer falha vira um aviso.
+ * plugins instalados. Com restos do nome antigo, só avisa (a troca é do mod:install). Nunca instala nada e nunca
+ * lança: qualquer falha vira um aviso.
  */
 export function updateInstalledMods(accounts: Array<{ dir: string; label: string }>, ctx: ModUpdateContext): ModUpdateResult {
   const res: ModUpdateResult = { installed: false, unavailable: false, lines: [] };

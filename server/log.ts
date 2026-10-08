@@ -11,7 +11,7 @@ export function setQuiet(q: boolean): void {
 
 function write(level: Level, msg: string): void {
   if (quiet) return;
-  const line = `[codetown] ${msg}`;
+  const line = `[habblaud] ${msg}`;
   if (level === 'info') console.log(line);
   else if (level === 'warn') console.warn(line);
   else console.error(line);

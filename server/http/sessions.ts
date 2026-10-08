@@ -25,7 +25,7 @@ const TERMINAL_ROUTE = /^\/api\/sessions\/([^/]+)\/([^/]+)\/terminal$/;
 
 /** Por que a trava recusa a requisição (undefined = liberada): os mesmos textos do terminal do agente. */
 export function sessionsLockError(enabled: boolean, host: string | undefined): string | undefined {
-  if (!enabled) return 'terminal somente leitura desligado: ele só funciona com o CodeTown acessível apenas pelo próprio computador';
+  if (!enabled) return 'terminal somente leitura desligado: ele só funciona com o Habblaud acessível apenas pelo próprio computador';
   if (!isLoopbackHost(host)) return 'o terminal somente leitura só abre pelo próprio computador (http://localhost ou http://127.0.0.1)';
   return undefined;
 }

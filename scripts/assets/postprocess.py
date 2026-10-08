@@ -1,4 +1,4 @@
-"""Pós-processamento e composição dos assets do CodeTown (pixel art a partir das imagens da IA).
+"""Pós-processamento e composição dos assets do Habblaud (pixel art a partir das imagens da IA).
 
 Uso (a partir da raiz do projeto; requer Pillow e numpy):
     python3 -E scripts/assets/postprocess.py                  # gera tudo + manifest + folha de contato
@@ -215,7 +215,7 @@ def build_brand(detailed: Image.Image | None, out_root: Path) -> dict:
 
 
 def build_og(detailed: Image.Image | None, illustration: Image.Image | None, out_root: Path) -> str:
-    """Card de compartilhamento: ilustração no alto, painel com o prédio, "CodeTown" e a frase."""
+    """Card de compartilhamento: ilustração no alto, painel com o prédio, "Habblaud" e a frase."""
     w, h = 600, 315
     # fundo = azul-marinho do canto da ilustração, para a emenda com ela não aparecer
     night = illustration.convert("RGBA").getpixel((0, 0)) if illustration is not None else px.hex_rgb(NIGHT) + (255,)
@@ -238,8 +238,8 @@ def build_og(detailed: Image.Image | None, illustration: Image.Image | None, out
     mx = 28
     og.alpha_composite(mark, (mx, h - 12 - mark.height))
     tx, ty = mx + mark.width + 20, panel_top + 12
-    og.alpha_composite(art.text_image("Code", "#f4f1ea", 4, shadow="#05070c"), (tx, ty))
-    og.alpha_composite(art.text_image("Town", "#fac665", 4, shadow="#05070c"), (tx + (art.text_width("Code") + 1) * 4, ty))
+    og.alpha_composite(art.text_image("Hab", "#f4f1ea", 4, shadow="#05070c"), (tx, ty))
+    og.alpha_composite(art.text_image("blaud", "#fac665", 4, shadow="#05070c"), (tx + (art.text_width("Hab") + 1) * 4, ty))
     lines = ["Seus agentes do Claude Code, ao vivo,", "num escritório em pixel art."]
     for i, line in enumerate(lines):
         img = art.text_image(line, "#c9d3e3", 2)

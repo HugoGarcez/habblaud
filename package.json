@@ -1,14 +1,14 @@
 {
-  "name": "codetown",
+  "name": "habblaud",
   "version": "0.3.2",
   "private": true,
   "description": "Escritório virtual animado que mostra, em tempo real, o que seus agentes do Claude Code estão fazendo.",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/marmottajr/codetown.git"
+    "url": "git+https://github.com/marmottajr/habblaud.git"
   },
-  "homepage": "https://github.com/marmottajr/codetown#readme",
+  "homepage": "https://github.com/marmottajr/habblaud#readme",
   "type": "module",
   "engines": {
     "node": ">=22.12"
@@ -16,7 +16,7 @@
   "scripts": {
     "dev": "tsx watch --clear-screen=false --exclude './client/**' server/index.ts --dev",
     "dev:client": "vite --config vite.config.ts",
-    "demo": "CODETOWN_DEMO=1 npm run dev",
+    "demo": "HABBLAUD_DEMO=1 npm run dev",
     "demo:timeline": "tsx scripts/demo-timeline.ts",
     "build": "npm run build:client && npm run build:server",
     "build:client": "vite build --config vite.config.ts",
@@ -26,7 +26,7 @@
     "test": "vitest run",
     "docker:up": "tsx scripts/docker-up.ts",
     "docker:down": "tsx scripts/docker-up.ts --down",
-    "docker:logs": "docker compose logs -f codetown",
+    "docker:logs": "docker compose logs -f habblaud",
     "usage:install": "tsx scripts/statusline-install.ts install",
     "usage:uninstall": "tsx scripts/statusline-install.ts uninstall",
     "usage:status": "tsx scripts/statusline-install.ts status",

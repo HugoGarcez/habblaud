@@ -3,7 +3,7 @@
 // - número velho nunca passa por atual: janela que já renovou depois da leitura mostra "—" e "renovada";
 //   números antigos ficam acinzentados com a idade ("há 6 d") no cabeçalho ou, no celular, um selo no chip;
 // - o reinício vem com verbo implícito no ícone ↻ e contagem regressiva quando falta menos de um dia;
-// - conta sem números diz "sem dados de uso" e oferece "Como ativar" (mod do CodeTown, recomendado).
+// - conta sem números diz "sem dados de uso" e oferece "Como ativar" (mod do Habblaud, recomendado).
 import type { AccountInfo } from '../../../shared/types';
 import type { UiContext } from './context';
 import { h, KeyedList, setAttr, setHidden, setStyleVar, setText, setTitle, setVariant } from './dom';
@@ -16,9 +16,9 @@ export const SOURCE_LABEL: Record<NonNullable<AccountInfo['usage']>['source'], s
   statusline: 'ao vivo (statusline do Claude Code)',
 };
 
-/** Origem para mostrar: o arquivo ao vivo pode ter sido gravado pelo mod do CodeTown ou pelo tap. */
+/** Origem para mostrar: o arquivo ao vivo pode ter sido gravado pelo mod do Habblaud ou pelo tap. */
 export function sourceLabel(u: NonNullable<AccountInfo['usage']>): string {
-  if (u.source === 'statusline' && u.via === 'mod') return 'ao vivo (mod do CodeTown)';
+  if (u.source === 'statusline' && u.via === 'mod') return 'ao vivo (mod do Habblaud)';
   return SOURCE_LABEL[u.source] ?? u.source;
 }
 
@@ -29,7 +29,7 @@ export function sourceLabel(u: NonNullable<AccountInfo['usage']>): string {
 export const USAGE_SETUP_STEPS: readonly [string, string][] = [
   [
     'npm run mod:install',
-    'Recomendado: instala o mod do CodeTown no Claude Code (2.1.287 ou mais novo), que passa o uso de 5 h e da semana ao vivo. Rode na pasta do CodeTown, no computador onde o Claude Code roda; nas sessões já abertas, `/reload-plugins`.',
+    'Recomendado: instala o mod do Habblaud no Claude Code (2.1.287 ou mais novo), que passa o uso de 5 h e da semana ao vivo. Rode na pasta do Habblaud, no computador onde o Claude Code roda; nas sessões já abertas, `/reload-plugins`.',
   ],
   [
     'npm run usage:install',

@@ -34,7 +34,7 @@ describe('describeCommand em português (casos reais que caíam no inglês)', ()
 
   it('primeira linha com comando de verdade; prefixos e atribuições não contam', () => {
     expect(t('S=/tmp/x\nnode scripts/shot.mjs x $S/a.png', 'Screenshot real-data UI on port 4763')).toBe('Executando shot.mjs');
-    expect(t('CODETOWN_PORT=1 nohup npx tsx server/index.ts --dev > /tmp/s.log 2>&1 &', 'Start real-data server')).toBe('Executando index.ts');
+    expect(t('HABBLAUD_PORT=1 nohup npx tsx server/index.ts --dev > /tmp/s.log 2>&1 &', 'Start real-data server')).toBe('Executando index.ts');
     expect(t('set -e\nexport A=1\n# comentário\nnpm test')).toBe('Rodando testes');
     expect(t('sleep 5 && curl -s localhost:4771/')).toBe('Testando o servidor local (:4771/)');
     expect(t('(cd client && npm test)')).toBe('Rodando testes');

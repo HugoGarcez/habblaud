@@ -7,10 +7,10 @@ import { compareVersions, MANUAL_GAP_MS, parseGithubRepo, parseVersion, UpdateCh
 
 setQuiet(true);
 
-const REPO = 'marmottajr/codetown';
+const REPO = 'marmottajr/habblaud';
 const RELEASE = {
   tag_name: 'v0.3.0',
-  html_url: 'https://github.com/marmottajr/codetown/releases/tag/v0.3.0',
+  html_url: 'https://github.com/marmottajr/habblaud/releases/tag/v0.3.0',
   published_at: '2026-10-08T12:00:00Z',
 };
 
@@ -65,12 +65,12 @@ describe('versões', () => {
 
 describe('parseGithubRepo', () => {
   it('aceita as formas do campo repository', () => {
-    expect(parseGithubRepo('marmottajr/codetown')).toBe(REPO);
-    expect(parseGithubRepo('github:marmottajr/codetown')).toBe(REPO);
-    expect(parseGithubRepo('https://github.com/marmottajr/codetown')).toBe(REPO);
-    expect(parseGithubRepo({ type: 'git', url: 'git+https://github.com/marmottajr/codetown.git' })).toBe(REPO);
-    expect(parseGithubRepo('git@github.com:marmottajr/codetown.git')).toBe(REPO);
-    expect(parseGithubRepo('git+ssh://git@github.com/marmottajr/codetown.git')).toBe(REPO);
+    expect(parseGithubRepo('marmottajr/habblaud')).toBe(REPO);
+    expect(parseGithubRepo('github:marmottajr/habblaud')).toBe(REPO);
+    expect(parseGithubRepo('https://github.com/marmottajr/habblaud')).toBe(REPO);
+    expect(parseGithubRepo({ type: 'git', url: 'git+https://github.com/marmottajr/habblaud.git' })).toBe(REPO);
+    expect(parseGithubRepo('git@github.com:marmottajr/habblaud.git')).toBe(REPO);
+    expect(parseGithubRepo('git+ssh://git@github.com/marmottajr/habblaud.git')).toBe(REPO);
   });
 
   it('recusa o que não é um repositório do GitHub', () => {
@@ -90,7 +90,7 @@ describe('UpdateChecker', () => {
     expect(c.status()).toMatchObject({ state: 'pending', available: false });
     const s = await c.check();
     expect(f.calls[0].url).toBe(`https://api.github.com/repos/${REPO}/releases/latest`);
-    expect(f.calls[0].headers['User-Agent']).toBe('codetown/0.2.0');
+    expect(f.calls[0].headers['User-Agent']).toBe('habblaud/0.2.0');
     expect(s).toEqual({
       state: 'ok',
       repo: REPO,

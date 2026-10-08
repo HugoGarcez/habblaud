@@ -1,4 +1,0 @@
-{
-  "description": "Módulo de hooks do mod do CodeTown (uso do plano, aviso embaixo do prompt e /codetown)",
-  "modules": ["./register.ts"]
-}

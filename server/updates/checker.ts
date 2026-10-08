@@ -69,7 +69,7 @@ export interface UpdateCheckerOptions {
   current: string;
   /** "dono/nome"; ausente = verificação desligada. */
   repo?: string;
-  /** CODETOWN_UPDATE_CHECK=0 desliga. */
+  /** HABBLAUD_UPDATE_CHECK=0 desliga. */
   enabled: boolean;
   /** Onde guardar o último resultado; null = só em memória (testes). */
   file: string | null;
@@ -183,7 +183,7 @@ export class UpdateChecker {
     const repo = this.opts.repo!;
     const headers: Record<string, string> = {
       Accept: 'application/vnd.github+json',
-      'User-Agent': `codetown/${this.opts.current}`,
+      'User-Agent': `habblaud/${this.opts.current}`,
       'X-GitHub-Api-Version': '2022-11-28',
     };
     if (this.cache?.etag) headers['If-None-Match'] = this.cache.etag;
@@ -244,7 +244,7 @@ export class UpdateChecker {
     const s = this.status();
     if (!s.available || s.latest === this.announced) return;
     this.announced = s.latest;
-    log.info(`⬆️  Nova versão do CodeTown: v${s.latest} (em uso: v${this.opts.current}). Novidades: ${s.url}`);
+    log.info(`⬆️  Nova versão do Habblaud: v${s.latest} (em uso: v${this.opts.current}). Novidades: ${s.url}`);
   }
 }
 

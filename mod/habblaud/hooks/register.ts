@@ -1,18 +1,18 @@
-// Mod do CodeTown (Claude Code 2.1.287+): liga cada sessão ao escritório sem ler a conversa.
+// Mod do Habblaud (Claude Code 2.1.287+): liga cada sessão ao escritório sem ler a conversa.
 //
 // Faz três coisas pequenas, e `claude plugin validate` lista exatamente o que o módulo chama (a saída
 // está no mod/README.md):
 //
 // 1. Uso do plano (substitui o tap de statusline): em `session.start` e a cada `session.measure`
 //    (depois de cada turno e quando um limite anda um ponto inteiro) grava
-//    <CODETOWN_USAGE_DIR ou ~/.codetown/usage>/<conta>.json no MESMO formato do scripts/statusline-tap.mjs
+//    <HABBLAUD_USAGE_DIR ou ~/.habblaud/usage>/<conta>.json no MESMO formato do scripts/statusline-tap.mjs
 //    ({accountId, configDir, fetchedAt, five_hour, seven_day}, `resets_at` em segundos) mais
 //    `source: "mod"`. O servidor lê esses arquivos em server/accounts/statusline.ts.
-// 2. Uma linha embaixo do prompt quando OUTRA sessão precisa de você: a cada 5 s pergunta ao CodeTown
+// 2. Uma linha embaixo do prompt quando OUTRA sessão precisa de você: a cada 5 s pergunta ao Habblaud
 //    local (GET /api/mod/summary, que já tira da lista esta sessão e os subagentes dela). Fora do ar, a
 //    linha some e as perguntas passam a ser a cada 30 s até ele voltar. Só onde a sessão desenha
 //    (`$.session.surfaces()` vazia = `claude -p`/SDK: nada a mostrar, nada a perguntar).
-// 3. /codetown: resumo do escritório, respondido pelo próprio mod (não chama o modelo, não gasta uso).
+// 3. /habblaud: resumo do escritório, respondido pelo próprio mod (não chama o modelo, não gasta uso).
 //
 // Regras: nenhum hook lança (um hook que lança é pulado, mas o que ele deixou pela metade fica): cada
 // passo tem seu try/catch e falha = silêncio. Nada de $.process, $.model, $.prompt, decisão de
@@ -23,12 +23,12 @@
 // sempre uma string literal e `$` só é passado para funções declaradas no topo deste arquivo.
 import type { EngineInterface, Register, SessionRateLimit } from 'claude-code'
 
-/** Porta padrão do CodeTown (a mesma do servidor, do hook de permissão e do docker-compose). */
+/** Porta padrão do Habblaud (a mesma do servidor, do hook de permissão e do docker-compose). */
 export const DEFAULT_PORT = 4747
-/** Intervalo das perguntas ao CodeTown; fora do ar, recua para o segundo até ele voltar. */
+/** Intervalo das perguntas ao Habblaud; fora do ar, recua para o segundo até ele voltar. */
 export const POLL_MS = 5_000
 export const OFFLINE_POLL_MS = 30_000
-/** Quanto esperar o CodeTown local responder (`$.http.fetch` não aceita AbortSignal: a corrida é com um timer). */
+/** Quanto esperar o Habblaud local responder (`$.http.fetch` não aceita AbortSignal: a corrida é com um timer). */
 export const FETCH_TIMEOUT_MS = 2_000
 /** Valores idênticos gravados há menos que isto não são regravados (a mesma regra do tap). */
 export const MIN_REWRITE_MS = 10_000
@@ -70,20 +70,20 @@ export interface Summary {
   waiting: WaitingAgent[]
 }
 
-/** Resultado de uma pergunta ao CodeTown: resposta, fora do ar ou uma versão antiga, sem a rota do mod. */
+/** Resultado de uma pergunta ao Habblaud: resposta, fora do ar ou uma versão antiga, sem a rota do mod. */
 type Asked = { kind: 'ok'; summary: Summary } | { kind: 'offline' } | { kind: 'outdated' }
 
 interface ModEnv {
   /** Config dir da conta e o id dela (basename), como o tap calcula; sem HOME nem CLAUDE_CONFIG_DIR, ausentes. */
   configDir?: string
   accountId?: string
-  /** Pasta do uso; ausente sem HOME nem CODETOWN_USAGE_DIR. */
+  /** Pasta do uso; ausente sem HOME nem HABBLAUD_USAGE_DIR. */
   usageDir?: string
   port: number
 }
 
 // ---------------------------------------------------------------------------------------------
-// Funções puras (testadas em tests/codetown.test.ts)
+// Funções puras (testadas em tests/habblaud.test.ts)
 // ---------------------------------------------------------------------------------------------
 
 /** Normaliza um caminho (barras repetidas, `.`, `..` e a barra do fim): o ambiente do mod não tem node:path. */
@@ -103,7 +103,7 @@ export function normalizePath(p: string): string {
   return abs ? `/${joined}` : joined || '.'
 }
 
-/** `~` no começo vira o HOME (como o tap faz com CLAUDE_CONFIG_DIR e CODETOWN_USAGE_DIR). */
+/** `~` no começo vira o HOME (como o tap faz com CLAUDE_CONFIG_DIR e HABBLAUD_USAGE_DIR). */
 function expandHome(p: string, home: string | undefined): string {
   return home && /^~(?=\/|$)/.test(p) ? home + p.slice(1) : p
 }
@@ -121,10 +121,10 @@ export function accountIdOf(configDir: string): string | undefined {
   return name && name !== '.' && name !== '..' ? name : undefined
 }
 
-export function usageDirOf(codetownUsageDir: string | undefined, home: string | undefined): string | undefined {
-  const d = (codetownUsageDir ?? '').trim()
+export function usageDirOf(habblaudUsageDir: string | undefined, home: string | undefined): string | undefined {
+  const d = (habblaudUsageDir ?? '').trim()
   if (d) return normalizePath(expandHome(d, home))
-  return home ? normalizePath(`${home}/.codetown/usage`) : undefined
+  return home ? normalizePath(`${home}/.habblaud/usage`) : undefined
 }
 
 export function portOf(raw: string | undefined): number {
@@ -215,21 +215,21 @@ export function statusText(waiting: readonly WaitingAgent[]): string | undefined
   return `🏢 ${waiting.length} precisam de você: ${shown.join(', ')}${rest > 0 ? ` e mais ${rest}` : ''}`
 }
 
-/** A resposta do /codetown com o CodeTown no ar. */
+/** A resposta do /habblaud com o Habblaud no ar. */
 export function summaryText(s: Summary, url: string): string {
   const agents = s.agents === 1 ? '1 agente' : `${s.agents} agentes`
   const waiting = s.waiting.length === 0 ? 'ninguém precisa de você' : s.waiting.length === 1 ? '1 precisa de você' : `${s.waiting.length} precisam de você`
-  const lines = [`CodeTown ${s.version} em ${url}`, `${agents} · ${s.working} trabalhando · ${waiting}`]
+  const lines = [`Habblaud ${s.version} em ${url}`, `${agents} · ${s.working} trabalhando · ${waiting}`]
   for (const w of s.waiting) lines.push(`✋ ${w.name} (${w.room}): ${w.waitingFor}${w.answerable ? ' · dá para responder pelo escritório' : ''}`)
   return lines.join('\n')
 }
 
 export function offlineText(url: string): string {
-  return `O CodeTown não respondeu em ${url}. Para subir: npm run docker:up na pasta do CodeTown.`
+  return `O Habblaud não respondeu em ${url}. Para subir: npm run docker:up na pasta do Habblaud.`
 }
 
 export function outdatedText(url: string): string {
-  return `O CodeTown em ${url} está numa versão sem a rota do mod. Para atualizar: git pull e npm run docker:up na pasta do CodeTown.`
+  return `O Habblaud em ${url} está numa versão sem a rota do mod. Para atualizar: git pull e npm run docker:up na pasta do Habblaud.`
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -243,7 +243,7 @@ let lastWrite: { key: string; at: number } | undefined
 let lastStatus: string | undefined | null = null
 let timer: { cancel: () => void } | undefined
 let timerMs = 0
-/** Uma pergunta por vez: um CodeTown lento não acumula perguntas. */
+/** Uma pergunta por vez: um Habblaud lento não acumula perguntas. */
 let polling = false
 
 /** O ambiente da sessão, lido uma vez por carga (cada nome escrito por extenso, como a análise exige). */
@@ -252,8 +252,8 @@ async function readEnv($: EngineInterface): Promise<ModEnv> {
   const home = (await $.env.get('HOME'))?.trim() || undefined
   const configDir = configDirOf(await $.env.get('CLAUDE_CONFIG_DIR'), home)
   const next: ModEnv = {
-    port: portOf(await $.env.get('CODETOWN_PORT')),
-    usageDir: usageDirOf(await $.env.get('CODETOWN_USAGE_DIR'), home),
+    port: portOf(await $.env.get('HABBLAUD_PORT')),
+    usageDir: usageDirOf(await $.env.get('HABBLAUD_USAGE_DIR'), home),
   }
   if (configDir) {
     next.configDir = configDir
@@ -282,7 +282,7 @@ async function writeUsage($: EngineInterface, rateLimits: readonly SessionRateLi
 }
 
 /** GET /api/mod/summary com prazo de 2 s; nunca lança. */
-async function askCodeTown($: EngineInterface, port: number, query: string): Promise<Asked> {
+async function askHabblaud($: EngineInterface, port: number, query: string): Promise<Asked> {
   let wait: { cancel: () => void } | undefined
   const timeout = new Promise<undefined>((resolve) => {
     wait = $.clock.after(FETCH_TIMEOUT_MS, () => resolve(undefined))
@@ -290,7 +290,7 @@ async function askCodeTown($: EngineInterface, port: number, query: string): Pro
   try {
     const res = await Promise.race([$.http.fetch(`http://127.0.0.1:${port}/api/mod/summary${query}`, { headers: { accept: 'application/json' } }), timeout])
     if (!res) return { kind: 'offline' }
-    // 404 JSON = um CodeTown de antes do mod (rota desconhecida); outro 404 qualquer = não é o CodeTown.
+    // 404 JSON = um Habblaud de antes do mod (rota desconhecida); outro 404 qualquer = não é o Habblaud.
     if (res.status === 404 && res.text.includes('rota desconhecida')) return { kind: 'outdated' }
     const summary = res.ok ? parseSummary(res.text) : undefined
     return summary ? { kind: 'ok', summary } : { kind: 'offline' }
@@ -308,7 +308,7 @@ function setStatus($: EngineInterface, text: string | undefined): void {
   $.ui.status(text)
 }
 
-/** (Re)agenda as perguntas: 5 s com o CodeTown no ar, 30 s fora do ar. */
+/** (Re)agenda as perguntas: 5 s com o Habblaud no ar, 30 s fora do ar. */
 function schedule($: EngineInterface, ms: number): void {
   if (timer && timerMs === ms) return
   timer?.cancel()
@@ -332,7 +332,7 @@ async function poll($: EngineInterface): Promise<void> {
     const params = new URLSearchParams()
     if (e.accountId) params.set('account', e.accountId)
     params.set('session', await $.session.id())
-    const asked = await askCodeTown($, e.port, `?${params.toString()}`)
+    const asked = await askHabblaud($, e.port, `?${params.toString()}`)
     if (asked.kind !== 'ok') {
       setStatus($, undefined)
       schedule($, OFFLINE_POLL_MS)
@@ -347,11 +347,11 @@ async function poll($: EngineInterface): Promise<void> {
   }
 }
 
-/** O texto do /codetown: o escritório inteiro (sem filtrar esta sessão, para os números baterem com a tela). */
-async function codetownText($: EngineInterface): Promise<string> {
+/** O texto do /habblaud: o escritório inteiro (sem filtrar esta sessão, para os números baterem com a tela). */
+async function habblaudText($: EngineInterface): Promise<string> {
   const e = await readEnv($)
   const url = `http://localhost:${e.port}`
-  const asked = await askCodeTown($, e.port, '')
+  const asked = await askHabblaud($, e.port, '')
   if (asked.kind === 'outdated') return outdatedText(url)
   if (asked.kind === 'offline') return offlineText(url)
   return summaryText(asked.summary, url)
@@ -360,7 +360,7 @@ async function codetownText($: EngineInterface): Promise<string> {
 export const register: Register = (on) => {
   on('session.start', async ($, e, next) => {
     try {
-      await $.command.register({ name: 'codetown', description: 'Resumo do CodeTown: quantos agentes, quem trabalha e quem precisa de você' })
+      await $.command.register({ name: 'habblaud', description: 'Resumo do Habblaud: quantos agentes, quem trabalha e quem precisa de você' })
     } catch {
       // sem o comando, o resto segue
     }
@@ -368,7 +368,7 @@ export const register: Register = (on) => {
       const usage = await $.session.usage()
       await writeUsage($, usage.rateLimits)
     } catch {
-      // falha ao gravar = silêncio (o CodeTown continua com o último número que tinha)
+      // falha ao gravar = silêncio (o Habblaud continua com o último número que tinha)
     }
     try {
       schedule($, POLL_MS)
@@ -389,9 +389,9 @@ export const register: Register = (on) => {
     return next(e)
   })
 
-  on('command.run', { command: 'codetown' }, async ($) => {
+  on('command.run', { command: 'habblaud' }, async ($) => {
     try {
-      return { text: await codetownText($) }
+      return { text: await habblaudText($) }
     } catch {
       return { text: offlineText(`http://localhost:${env?.port ?? DEFAULT_PORT}`) }
     }

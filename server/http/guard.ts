@@ -3,14 +3,14 @@
 // 1) DNS rebinding: um site malicioso pode fazer o próprio domínio resolver para 127.0.0.1 e,
 //    assim, ler /api/snapshot "como se fosse a mesma origem". O navegador manda o cabeçalho Host
 //    com o domínio do atacante, então só aceitamos Host que seja um IP literal, `localhost`
-//    (ou `*.localhost`) ou um nome liberado em CODETOWN_ALLOWED_HOSTS.
+//    (ou `*.localhost`) ou um nome liberado em HABBLAUD_ALLOWED_HOSTS.
 // 2) CSRF: requisições que mudam estado (POST) exigem `Content-Type: application/json` — o que um
 //    formulário ou um fetch "simples" de outro site não consegue enviar sem preflight de CORS, que
 //    este servidor nunca autoriza — e, quando há `Origin`, ele precisa ser da mesma origem ou local.
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { isIP } from 'node:net';
 
-/** Nomes liberados por CODETOWN_ALLOWED_HOSTS (lista separada por vírgula; porta é ignorada). */
+/** Nomes liberados por HABBLAUD_ALLOWED_HOSTS (lista separada por vírgula; porta é ignorada). */
 export function parseAllowedHosts(raw: string | undefined): Set<string> {
   const out = new Set<string>();
   for (const item of (raw ?? '').split(',')) {
@@ -47,8 +47,8 @@ function isLoopbackName(name: string): boolean {
 
 /**
  * Cabeçalho Host local (`localhost`, `*.localhost`, 127.x ou `[::1]`; porta ignorada)? Usado pelo terminal
- * somente leitura, que só atende quem abriu o CodeTown pelo próprio computador: um IP da rede ou um nome
- * de CODETOWN_ALLOWED_HOSTS (proxy, túnel) não serve. Ausente ou inválido: false.
+ * somente leitura, que só atende quem abriu o Habblaud pelo próprio computador: um IP da rede ou um nome
+ * de HABBLAUD_ALLOWED_HOSTS (proxy, túnel) não serve. Ausente ou inválido: false.
  */
 export function isLoopbackHost(host: string | undefined): boolean {
   const name = hostnameOf(host);
@@ -57,7 +57,7 @@ export function isLoopbackHost(host: string | undefined): boolean {
 
 /**
  * Host aceito? IP literal (não há DNS envolvido, logo não há rebinding), `localhost`/`*.localhost`
- * (os navegadores resolvem sempre para o loopback) ou um nome de CODETOWN_ALLOWED_HOSTS.
+ * (os navegadores resolvem sempre para o loopback) ou um nome de HABBLAUD_ALLOWED_HOSTS.
  * Sem cabeçalho Host (HTTP/1.0, ferramentas de linha de comando): aceito — navegadores sempre enviam.
  */
 export function hostAllowed(host: string | undefined, allowed: ReadonlySet<string>): boolean {
@@ -69,7 +69,7 @@ export function hostAllowed(host: string | undefined, allowed: ReadonlySet<strin
 
 /**
  * Origin aceito para requisições que mudam estado: ausente (curl, scripts), da mesma origem que o
- * Host da requisição, local (localhost/loopback) ou um nome de CODETOWN_ALLOWED_HOSTS.
+ * Host da requisição, local (localhost/loopback) ou um nome de HABBLAUD_ALLOWED_HOSTS.
  */
 export function originAllowed(origin: string | undefined, host: string | undefined, allowed: ReadonlySet<string>): boolean {
   if (origin === undefined) return true;
@@ -102,7 +102,7 @@ function reject(res: ServerResponse, status: number, message: string): void {
 }
 
 export interface GuardOptions {
-  /** Nomes extras aceitos no Host/Origin (CODETOWN_ALLOWED_HOSTS). */
+  /** Nomes extras aceitos no Host/Origin (HABBLAUD_ALLOWED_HOSTS). */
   allowedHosts?: ReadonlySet<string>;
 }
 
@@ -118,8 +118,8 @@ export function createRequestGuard(opts: GuardOptions = {}): (req: IncomingMessa
       reject(
         res,
         403,
-        `Host não permitido: ${String(host).slice(0, 100)}. Abra o CodeTown por http://localhost (ou pelo IP) ` +
-          'ou libere o nome em CODETOWN_ALLOWED_HOSTS.',
+        `Host não permitido: ${String(host).slice(0, 100)}. Abra o Habblaud por http://localhost (ou pelo IP) ` +
+          'ou libere o nome em HABBLAUD_ALLOWED_HOSTS.',
       );
       return true;
     }

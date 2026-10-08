@@ -26,7 +26,7 @@ export const ACCOUNT_COLORS = ['#f08a3c', '#4aa8e8', '#5cc97b', '#a77bf3', '#f06
 
 const RC_FILES = ['.zshrc', '.bashrc', '.zprofile', '.bash_profile'];
 
-/** Override vindo de CODETOWN_ACCOUNTS (o host passa os metadados prontos para o container). */
+/** Override vindo de HABBLAUD_ACCOUNTS (o host passa os metadados prontos para o container). */
 export interface AccountOverride {
   id?: string;
   configDir?: string;
@@ -92,13 +92,13 @@ export function parseAccountOverrides(raw: string | undefined): AccountOverride[
 }
 
 /**
- * Config dirs observados. CODETOWN_CLAUDE_DIRS (lista separada por vírgula) substitui tudo;
+ * Config dirs observados. HABBLAUD_CLAUDE_DIRS (lista separada por vírgula) substitui tudo;
  * senão: diretórios `$HOME/.claude*` com `projects/` ou `sessions/`, mais CLAUDE_CONFIG_DIR
- * (também aceita lista) e os `mountDir` de CODETOWN_ACCOUNTS que existirem.
+ * (também aceita lista) e os `mountDir` de HABBLAUD_ACCOUNTS que existirem.
  * Ordem estável: a conta padrão primeiro, depois alfabética.
  */
 export function discoverClaudeDirs(env: NodeJS.ProcessEnv = process.env, home: string = env.HOME || homedir()): string[] {
-  const override = splitList(env.CODETOWN_CLAUDE_DIRS);
+  const override = splitList(env.HABBLAUD_CLAUDE_DIRS);
   if (override.length) return [...new Set(override.map((p) => expandHome(p, home)))];
 
   const found: string[] = [];
@@ -116,7 +116,7 @@ export function discoverClaudeDirs(env: NodeJS.ProcessEnv = process.env, home: s
     const abs = expandHome(p, home);
     if (isDir(abs)) found.push(abs);
   }
-  for (const o of parseAccountOverrides(env.CODETOWN_ACCOUNTS)) {
+  for (const o of parseAccountOverrides(env.HABBLAUD_ACCOUNTS)) {
     if (typeof o.mountDir === 'string' && isClaudeDir(o.mountDir)) found.push(expandHome(o.mountDir, home));
   }
   const unique = [...new Set(found.map((p) => expandHome(p, home)))];
@@ -246,12 +246,12 @@ export function accountIds(dirs: string[]): string[] {
 
 /**
  * Uma conta por config dir, NA MESMA ORDEM de `dirs`.
- * `configDir` é o caminho para exibição (no Docker, o do host, vindo de CODETOWN_ACCOUNTS).
+ * `configDir` é o caminho para exibição (no Docker, o do host, vindo de HABBLAUD_ACCOUNTS).
  */
 export function detectAccounts(dirs: string[], opts: { home?: string; env?: NodeJS.ProcessEnv } = {}): DetectedAccount[] {
   const env = opts.env ?? process.env;
   const home = opts.home ?? (env.HOME || homedir());
-  const overrides = parseAccountOverrides(env.CODETOWN_ACCOUNTS);
+  const overrides = parseAccountOverrides(env.HABBLAUD_ACCOUNTS);
   const shortcuts = shortcutsByDir(readShellAliases(home), home);
   const ids = accountIds(dirs);
 
