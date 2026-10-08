@@ -335,3 +335,36 @@ export interface TerminalInit {
  * 429 (terminais abertos demais).
  */
 export type TerminalMessage = { type: 'init'; data: TerminalInit } | { type: 'append'; data: TerminalEntry[] };
+
+/**
+ * Uma sessão recente (aberta ou já encerrada) no histórico do terminal somente leitura, em
+ * GET /api/sessions/recent. A conversa de uma sessão encerrada sai, com o mesmo protocolo do terminal
+ * do agente (TerminalMessage), de GET /api/sessions/:conta/:sessionId/terminal.
+ */
+export interface RecentSession {
+  /** = AccountInfo.id. */
+  account: string;
+  sessionId: string;
+  /** Caminho do projeto (o `cwd` das primeiras linhas do transcript); ausente se não deu para descobrir. */
+  project?: string;
+  /** Nome da pasta do projeto em `projects/` (o cwd codificado), para quando `project` falta. */
+  projectDir: string;
+  /** Título como o do agente: /rename > nome do agente > título automático > último prompt (ou o primeiro). */
+  title?: string;
+  /** Primeira e última atividade com horário (epoch ms); `lastAt` cai no mtime do arquivo sem horário no fim. */
+  firstAt?: number;
+  lastAt: number;
+  /** Tamanho do transcript em bytes. */
+  size: number;
+  /** A sessão ainda está aberta: `agentId` é o agente principal dela no escritório. */
+  open: boolean;
+  agentId?: string;
+}
+
+/** Resposta de GET /api/sessions/recent: da atividade mais recente para a mais antiga. */
+export interface RecentSessionsResponse {
+  sessions: RecentSession[];
+  /** Janela da listagem (dias) e máximo de sessões. */
+  days: number;
+  limit: number;
+}

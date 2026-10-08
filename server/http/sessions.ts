@@ -1,0 +1,75 @@
+// Histórico do terminal somente leitura (rotas /api/sessions/*):
+//   GET /api/sessions/recent                       -> RecentSessionsResponse (sessões dos últimos 7 dias)
+//   GET /api/sessions/:conta/:sessionId/terminal   -> SSE com o mesmo protocolo do terminal do agente
+// Mesma trava do terminal (ServerConfig.terminal + Host local), porque expõem títulos e conversas. A conta
+// precisa ser uma das conhecidas, o id precisa ter formato de UUID e o transcript precisa ficar dentro da
+// pasta projects/ da conta (sources/history.ts): nada de path traversal.
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { RecentSessionsResponse } from '../../shared/types';
+import { errMsg, log } from '../log';
+import { HISTORY_DAYS, HISTORY_LIMIT, type SessionHistory } from '../sources/history';
+import { sendJson } from './app';
+import { isLoopbackHost } from './guard';
+import type { TerminalStreams } from './terminal';
+
+export interface SessionRoutesDeps {
+  /** Ausente = recurso desligado (sem bind local). */
+  history?: SessionHistory;
+  /** Ausente = terminal somente leitura desligado. */
+  terminals?: TerminalStreams;
+}
+
+const RECENT_ROUTE = '/api/sessions/recent';
+/** GET /api/sessions/:conta/:sessionId/terminal (segmentos sem '/'; um %2F só aparece depois de decodificar). */
+const TERMINAL_ROUTE = /^\/api\/sessions\/([^/]+)\/([^/]+)\/terminal$/;
+
+/** Por que a trava recusa a requisição (undefined = liberada): os mesmos textos do terminal do agente. */
+export function sessionsLockError(enabled: boolean, host: string | undefined): string | undefined {
+  if (!enabled) return 'terminal somente leitura desligado: ele só funciona com o CodeTown acessível apenas pelo próprio computador';
+  if (!isLoopbackHost(host)) return 'o terminal somente leitura só abre pelo próprio computador (http://localhost ou http://127.0.0.1)';
+  return undefined;
+}
+
+function decode(segment: string): string | undefined {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Atende /api/sessions/* (a rota já foi reconhecida pelo prefixo em http/app.ts). */
+export function handleSessionsRoute(req: IncomingMessage, res: ServerResponse, path: string, deps: SessionRoutesDeps): void {
+  const method = req.method ?? 'GET';
+  const terminalMatch = TERMINAL_ROUTE.exec(path);
+  const recent = path === RECENT_ROUTE;
+  if (!recent && !terminalMatch) return sendJson(res, 404, { error: 'rota desconhecida' });
+  if (method !== 'GET' && !(recent && method === 'HEAD')) {
+    res.setHeader('Allow', recent ? 'GET, HEAD' : 'GET');
+    return sendJson(res, 405, { error: 'método não permitido' });
+  }
+  const { history, terminals } = deps;
+  const locked = sessionsLockError(!!history && !!terminals, req.headers.host);
+  if (locked || !history || !terminals) return sendJson(res, 403, { error: locked });
+
+  if (recent) {
+    history
+      .list()
+      .then((sessions) => {
+        const body: RecentSessionsResponse = { sessions, days: HISTORY_DAYS, limit: HISTORY_LIMIT };
+        sendJson(res, 200, body);
+      })
+      .catch((err) => {
+        log.warnOnce(`history-list:${errMsg(err)}`, `Histórico de sessões: falha ao listar (${errMsg(err)}).`);
+        if (!res.headersSent) sendJson(res, 500, { error: 'não foi possível listar as sessões' });
+      });
+    return;
+  }
+
+  const account = decode(terminalMatch![1]);
+  const sessionId = decode(terminalMatch![2]);
+  if (account === undefined || sessionId === undefined) return sendJson(res, 400, { error: 'endereço inválido' });
+  const found = history.resolve(account, sessionId);
+  if ('error' in found) return sendJson(res, found.status, { error: found.error });
+  terminals.attachSession(req, res, `session:${account}:${sessionId}`, found.path);
+}

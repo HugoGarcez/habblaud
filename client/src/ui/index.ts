@@ -15,6 +15,7 @@ import { h } from './dom';
 import { Drawer } from './drawer';
 import { FeedPanel } from './feed';
 import { HelpDialog } from './help';
+import { HistoryPopover } from './history';
 import { HoverTip } from './hovertip';
 import { hasRunningShells } from './model';
 import { Notifier } from './notify';
@@ -133,6 +134,9 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
   topbar = new TopBar(ctx);
   sidebar = new Sidebar(ctx);
   const terminal = new TerminalPanel(ctx);
+  // Histórico de sessões (terminal somente leitura): botão no grupo dos painéis da barra superior.
+  const history = new HistoryPopover(ctx, terminal);
+  topbar.panelGroup.prepend(history.button);
   drawer = new Drawer(ctx, terminal);
   const feed = new FeedPanel(ctx);
   const toasts = new Toasts(ctx);
@@ -146,7 +150,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
   const scrim = h('div', { class: 'ui-scrim', attrs: { 'aria-hidden': 'true' }, on: { click: () => ctx.togglePanel('sidebar', false) } });
 
   root.classList.add('ui-root');
-  root.append(topbar.el, sidebar.el, scrim, feed.el, drawer.el, terminal.el, toasts.el, banner.el, update.el, empty.el, tip.el, settings.el, help.el, live, splash.el);
+  root.append(topbar.el, sidebar.el, scrim, feed.el, drawer.el, terminal.el, toasts.el, banner.el, update.el, empty.el, tip.el, settings.el, history.el, help.el, live, splash.el);
   area = new FreeArea(world, { root, topbar: topbar.el, sidebar: sidebar.el, drawer: drawer.el, feed: feed.el }, () => ({
     sidebar: panels.sidebar,
     feed: panels.feed,
@@ -154,7 +158,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
     narrow: ctx.isNarrow(),
   }));
 
-  const components: UiComponent[] = [topbar, sidebar, drawer, terminal, feed, toasts, settings, empty, banner, tip, notifier, splash];
+  const components: UiComponent[] = [topbar, sidebar, drawer, terminal, history, feed, toasts, settings, empty, banner, tip, notifier, splash];
 
   // ---------------------------------------------------------------- renderização agrupada por quadro
   let rafId = 0;
@@ -233,10 +237,10 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
   function onKey(e: KeyboardEvent): void {
     if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === 'Escape') {
-      if (help.isOpen || settings.isOpen) return; // diálogo/popover tratam o próprio Esc
-      // O terminal flutua sobre tudo: fecha primeiro (a gaveta continua aberta).
+      if (help.isOpen || settings.isOpen || history.isOpen) return; // diálogo/popover tratam o próprio Esc
+      // O terminal flutua sobre tudo: fecha primeiro (a busca dele, depois ele; a gaveta continua aberta).
       if (terminal.isOpen) {
-        terminal.close();
+        terminal.escape();
         e.preventDefault();
       } else if (ctx.isNarrow() && panels.sidebar) {
         ctx.togglePanel('sidebar', false);

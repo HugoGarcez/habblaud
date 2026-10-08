@@ -4809,3 +4809,422 @@ button.ui-term__think:hover,
     padding: 6px 10px 10px;
   }
 }
+
+/* ---------------------------------------------------------------- terminal v2: busca, filtro, copiar e histórico */
+
+/* Barra de ferramentas sob o cabeçalho: filtro à esquerda, busca (quando aberta) à direita. */
+.ui-term__tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  flex: none;
+  min-height: 38px;
+  padding: 5px 10px 5px 12px;
+  border-bottom: 1px solid var(--ui-line);
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.ui-term__filter {
+  grid-auto-columns: auto;
+  flex: none;
+}
+
+.ui-term__filter .ui-seg__opt {
+  height: 22px;
+  padding: 0 10px;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.ui-term__find .ui-px-icon {
+  width: 13px;
+  height: 13px;
+}
+
+.ui-term__search {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 240px;
+  max-width: 380px;
+  min-width: 0;
+  height: 28px;
+  margin-left: auto;
+  padding: 0 2px 0 9px;
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--ui-line-strong);
+  color: var(--ui-faint);
+  animation: ui-term-search-in 0.16s var(--ease);
+}
+
+.ui-term__search[hidden] {
+  display: none;
+}
+
+.ui-term__search:focus-within {
+  border-color: rgba(124, 200, 255, 0.55);
+  color: var(--ui-accent);
+}
+
+.ui-term__search.is-miss {
+  border-color: rgba(255, 107, 107, 0.55);
+}
+
+@keyframes ui-term-search-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+.ui-term__search-icon {
+  display: grid;
+  flex: none;
+}
+
+.ui-term__search-icon .ui-px-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.ui-term__search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  margin: 0 2px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  font: 12.5px/1 var(--font-ui);
+  color: var(--ui-text);
+}
+
+.ui-root .ui-term__search-input:focus-visible {
+  outline: none;
+}
+
+.ui-term__search-input::placeholder {
+  color: var(--ui-faint);
+  opacity: 1;
+}
+
+.ui-term__count {
+  flex: none;
+  min-width: 3ch;
+  padding: 0 4px;
+  text-align: right;
+  font: 11.5px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-muted);
+}
+
+.ui-term__search.is-miss .ui-term__count {
+  color: #ff9b8f;
+}
+
+.ui-term__step.ui-icon-btn--sm {
+  width: 22px;
+  height: 22px;
+}
+
+.ui-term__step .ui-px-icon {
+  width: 11px;
+  height: 11px;
+}
+
+/* Resultados da busca: âmbar; o atual, laranja com contorno (o mesmo par do "precisa de você"). */
+.ui-term__hit {
+  border-radius: 2px;
+  background: rgba(255, 181, 71, 0.3);
+  box-shadow: 0 0 0 1px rgba(255, 181, 71, 0.18);
+  color: inherit;
+}
+
+.ui-term__hit.is-current {
+  background: #ffb547;
+  box-shadow: 0 0 0 2px rgba(255, 181, 71, 0.45);
+  color: #12151d;
+}
+
+/* Filtro: as linhas que não entram somem (a busca também não as conta). */
+.ui-term__row.is-filtered {
+  display: none;
+}
+
+/* Corte no meio de uma linha comprida (o resto fica no DOM, escondido, para a busca). */
+.ui-term__dots {
+  color: var(--term-dim);
+}
+
+/* Copiar: botão discreto no canto da entrada, que aparece no hover ou no foco e confirma com "Copiado". */
+.ui-term__row,
+.ui-term__call,
+.ui-term__result {
+  position: relative;
+}
+
+.ui-term__copy {
+  position: absolute;
+  z-index: 1;
+  top: -1px;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: rgba(16, 19, 27, 0.94);
+  border: 1px solid var(--ui-line-strong);
+  font: 500 11px/1 var(--font-ui);
+  color: var(--ui-muted);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.12s,
+    color 0.12s,
+    border-color 0.12s;
+}
+
+.ui-term__row--user > .ui-term__copy {
+  top: 3px;
+  right: 4px;
+}
+
+.ui-term__row--user:hover > .ui-term__copy,
+.ui-term__row--assistant:hover > .ui-term__copy,
+.ui-term__call:hover > .ui-term__copy,
+.ui-term__result:hover > .ui-term__copy,
+.ui-term__copy:focus-visible,
+.ui-term__copy.is-done,
+.ui-term__copy.is-fail {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.ui-term__copy:hover {
+  color: var(--ui-text);
+  border-color: rgba(160, 176, 210, 0.4);
+}
+
+.ui-term__copy-icon {
+  display: grid;
+}
+
+.ui-term__copy-icon .ui-px-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.ui-term__copy-done {
+  display: none;
+}
+
+.ui-term__copy.is-done,
+.ui-root .ui-term__copy.is-done {
+  border-color: rgba(79, 209, 139, 0.55);
+  color: var(--st-working);
+}
+
+.ui-term__copy.is-fail {
+  border-color: rgba(255, 107, 107, 0.55);
+  color: #ff9b8f;
+}
+
+.ui-term__copy.is-done .ui-term__copy-done,
+.ui-term__copy.is-fail .ui-term__copy-done {
+  display: inline;
+}
+
+/* Telas de toque (sem hover): o botão fica sempre à vista, mais apagado. */
+@media (hover: none) {
+  .ui-term__copy {
+    opacity: 0.7;
+    pointer-events: auto;
+  }
+}
+
+/* Sessão do histórico: chip da conta antes do título e o rótulo "histórico" em âmbar. */
+.ui-term__who .ui-acc-chip {
+  margin-right: -1px;
+}
+
+.ui-term.is-session .ui-term__kind {
+  color: #ffcf8a;
+}
+
+.ui-term.is-session .ui-term__name {
+  font-weight: 600;
+}
+
+/* Botão "Histórico" da barra superior (desligado sem acesso local, com a dica do porquê). */
+.ui-hist-btn.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ui-hist-btn.is-disabled:hover {
+  background: none;
+  color: var(--ui-muted);
+}
+
+/* Popover do histórico: cabeçalho e busca fixos, a lista rola por dentro. */
+.ui-hist {
+  display: flex;
+  flex-direction: column;
+  width: 400px;
+  max-height: min(640px, calc(100vh - var(--top-h) - 24px));
+  overflow: hidden;
+  padding-bottom: 0;
+}
+
+.ui-hist__hint {
+  padding: 0 16px 8px;
+  font-size: 11.5px;
+  color: var(--ui-muted);
+}
+
+.ui-hist__search {
+  flex: none;
+  margin: 0 12px 6px;
+}
+
+.ui-hist__state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 16px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--ui-faint);
+}
+
+.ui-hist__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 6px 6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(160, 176, 210, 0.25) transparent;
+}
+
+.ui-hist__day-label {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  padding: 8px 10px 4px;
+  background: var(--ui-bg-solid);
+  /* Fonte do sistema: a data tem dígitos (na Pixelify o "5" parece "S"). */
+  font: 600 11.5px/1.2 var(--font-ui);
+  letter-spacing: 0.02em;
+  color: var(--ui-muted);
+}
+
+.ui-hist__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 7px;
+  transition: background-color 0.12s;
+}
+
+.ui-hist__item .ui-acc-chip {
+  margin-top: 1px;
+}
+
+.ui-hist__item:hover,
+.ui-hist__item:focus-visible {
+  background: var(--ui-bg-hover);
+}
+
+.ui-hist__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ui-hist__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--ui-text);
+}
+
+.ui-hist__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--ui-muted);
+}
+
+.ui-hist__project {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-hist__time {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-faint);
+}
+
+.ui-hist__time::before {
+  content: '·';
+  margin-right: 6px;
+  color: var(--ui-faint);
+}
+
+.ui-hist__live {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  font-weight: 600;
+  color: var(--st-working);
+}
+
+.ui-hist__live::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: var(--st-working);
+}
+
+.ui-hist__foot {
+  flex: none;
+  padding: 6px 16px 8px;
+  border-top: 1px solid var(--ui-line);
+  font-size: 11.5px;
+  color: var(--ui-faint);
+}
+
+@media (max-width: 600px) {
+  .ui-term__tools {
+    padding: 5px 8px;
+  }
+
+  .ui-term__search {
+    flex-basis: 100%;
+    max-width: none;
+    margin-left: 0;
+  }
+
+  .ui-hist {
+    width: auto;
+  }
+}

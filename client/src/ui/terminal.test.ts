@@ -8,7 +8,12 @@ import {
   parseAppend,
   parseInit,
   previewText,
+  sessionEndedText,
+  sessionKey,
+  sessionProjectName,
+  sessionTerminalUrl,
   showToolInput,
+  splitPreview,
   splitToolTitle,
   TerminalLog,
   terminalFooter,
@@ -159,6 +164,17 @@ describe('previewText', () => {
     expect(p.hiddenLines).toBe(0);
   });
 
+  it('splitPreview: a prévia é um prefixo do texto (o resto fica no DOM, escondido, para a busca)', () => {
+    const lines = Array.from({ length: 20 }, (_, i) => `linha ${i + 1}`).join('\n');
+    const p = splitPreview(lines, 6);
+    expect(p.text.slice(0, p.headEnd)).toBe(previewText(lines, 6).head);
+    expect(p.text.slice(p.headEnd).startsWith('\nlinha 7')).toBe(true);
+    expect(p.ellipsis).toBe(false);
+    const long = splitPreview(`${'x'.repeat(98)}   ${'y'.repeat(50)}`, 6, 100);
+    expect(long).toMatchObject({ headEnd: 98, ellipsis: true, collapsed: true, hiddenLines: 0 });
+    expect(splitPreview('curto', 6)).toMatchObject({ headEnd: 5, collapsed: false });
+  });
+
   it('rótulo do botão', () => {
     expect(moreLabel(1)).toBe('… +1 linha');
     expect(moreLabel(14)).toBe('… +14 linhas');
@@ -223,6 +239,24 @@ describe('utilitários', () => {
   it('terminalUrl codifica o id', () => {
     expect(terminalUrl('.claude:123')).toBe('/api/agents/.claude%3A123/terminal');
     expect(terminalUrl('s/1:a b')).toBe('/api/agents/s%2F1%3Aa%20b/terminal');
+  });
+
+  it('sessões do histórico: URL do stream, chave e nome do projeto', () => {
+    const sid = '00000000-0000-4000-8000-000000000001';
+    expect(sessionTerminalUrl('.claude-conta2', sid)).toBe(`/api/sessions/.claude-conta2/${sid}/terminal`);
+    expect(sessionTerminalUrl('a/b', 'x y')).toBe('/api/sessions/a%2Fb/x%20y/terminal');
+    expect(sessionKey('.claude', sid)).toBe(`session:.claude:${sid}`);
+    expect(sessionProjectName({ project: '/Users/ana/projetos/loja/', projectDir: '-x' })).toBe('loja');
+    expect(sessionProjectName({ project: 'C:\\proj\\api', projectDir: '-x' })).toBe('api');
+    expect(sessionProjectName({ projectDir: '-Users-ana-projetos-site' })).toBe('-Users-ana-projetos-site');
+  });
+
+  it('rodapé da sessão encerrada: hoje, ontem ou a data', () => {
+    const now = new Date(2026, 9, 8, 15, 0, 0).getTime();
+    expect(sessionEndedText(new Date(2026, 9, 8, 14, 30).getTime(), now)).toBe('Sessão encerrada às 14:30');
+    expect(sessionEndedText(new Date(2026, 9, 7, 23, 5).getTime(), now)).toBe('Sessão encerrada ontem às 23:05');
+    expect(sessionEndedText(new Date(2026, 9, 3, 9, 0).getTime(), now)).toMatch(/^Sessão encerrada em 03 de out\.? às 09:00$/);
+    expect(sessionEndedText(NaN, now)).toBe('Sessão encerrada');
   });
 
   it('entryTimeTitle: horário hoje, data em outro dia, vazio sem horário', () => {

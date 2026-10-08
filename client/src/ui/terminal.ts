@@ -1,15 +1,33 @@
 // Terminal somente leitura: janela flutuante sobre o escritório com a conversa de uma sessão (prompts, respostas,
 // ferramentas e resultados) no formato em que o Claude Code a mostra, ao vivo pelo stream SSE
 // GET /api/agents/:id/terminal (`init` substitui tudo; `append` acrescenta). Nada volta ao agente.
+// Também mostra as sessões do histórico (ui/history.ts), pelo mesmo protocolo em
+// GET /api/sessions/:conta/:sessionId/terminal: o cabeçalho traz projeto, título e data, e o rodapé, "Sessão encerrada às …".
+// Busca (Ctrl/⌘+F ou a lupa), filtro e o botão de copiar de cada entrada vêm de ui/termtools.ts.
 // O modelo (deduplicação, junção ferramenta -> resultado, limite de entradas, prévias recolhidas e rodapé) é puro e
 // testado em ui/terminal.test.ts; a montagem usa só textContent (o markdown das respostas vem de ui/markdown.ts).
-import type { AgentInfo, TerminalEntry, TerminalInit } from '../../../shared/types';
+import type { AgentInfo, RecentSession, TerminalEntry, TerminalInit } from '../../../shared/types';
 import type { UiComponent, UiContext } from './context';
-import { h, iconButton, prefersReducedMotion, setAttr, setHidden, setText, setTitle, setVariant } from './dom';
+import { copyText, h, iconButton, prefersReducedMotion, setAttr, setHidden, setText, setTitle, setVariant } from './dom';
 import { calendarDayDiff, formatClock, formatDateTime, formatDuration, formatElapsed, relativeTime } from './format';
 import { ICONS } from './icons';
 import { renderMarkdown } from './markdown';
 import { roleLabel, shellWaitIn } from './model';
+import {
+  clearHits,
+  copyTextOf,
+  finalAnswerKeys,
+  foldQuery,
+  globalIndex,
+  highlightHits,
+  itemVisible,
+  refAt,
+  searchCounter,
+  stepMatch,
+  TERMINAL_FILTERS,
+  type TerminalFilter,
+} from './termtools';
+import { createAccountChip, updateAccountChip } from './widgets';
 
 /** Máximo de itens no DOM: os mais antigos saem primeiro. */
 export const TERMINAL_DOM_LIMIT = 1500;
@@ -22,7 +40,13 @@ export const PROMPT_PREVIEW_LINES = 24;
 
 export const TERMINAL_UNAVAILABLE_HINT = 'O terminal só fica disponível quando o CodeTown roda com acesso local (bind 127.0.0.1)';
 const OPEN_ERROR = 'Não foi possível abrir o terminal. O recurso só funciona no acesso local, com o agente ainda aberto.';
+const SESSION_OPEN_ERROR = 'Não foi possível abrir a sessão. O histórico só funciona no acesso local, com o transcript ainda no disco.';
 const INPUT_PLACEHOLDER = 'Somente leitura — responda no terminal do Claude Code';
+/** Espera depois da última tecla antes de buscar (a busca percorre toda a conversa na tela). */
+const SEARCH_DEBOUNCE_MS = 120;
+/** "Copiado" fica à mostra por este tempo. */
+const COPIED_MS = 1_500;
+const dayFmt = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short' });
 
 /** Distância do fim (px) que ainda conta como "no fim" para seguir as mensagens novas. */
 const STICK_PX = 32;
@@ -66,6 +90,33 @@ export function terminalUrl(agentId: string): string {
   return `/api/agents/${encodeURIComponent(agentId)}/terminal`;
 }
 
+/** Stream da conversa de uma sessão do histórico (mesmo protocolo do terminal do agente). */
+export function sessionTerminalUrl(account: string, sessionId: string): string {
+  return `/api/sessions/${encodeURIComponent(account)}/${encodeURIComponent(sessionId)}/terminal`;
+}
+
+/** Chave de uma sessão do histórico aberta no painel (nunca coincide com o id de um agente). */
+export function sessionKey(account: string, sessionId: string): string {
+  return `session:${account}:${sessionId}`;
+}
+
+/** Nome curto do projeto de uma sessão: a última pasta do cwd (ou o nome codificado da pasta em projects/). */
+export function sessionProjectName(s: Pick<RecentSession, 'project' | 'projectDir'>): string {
+  const path = s.project?.replace(/[\\/]+$/, '');
+  if (path) return path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1) || path;
+  return s.projectDir;
+}
+
+/** Rodapé de uma sessão encerrada: "Sessão encerrada às 14:30" (hoje), "… ontem às 14:30" ou "… em 06 de out. às 14:30". */
+export function sessionEndedText(at: number, now: number): string {
+  if (!Number.isFinite(at) || at <= 0) return 'Sessão encerrada';
+  const clock = formatClock(at, false);
+  const diff = calendarDayDiff(at, now);
+  if (diff === 0) return `Sessão encerrada às ${clock}`;
+  if (diff === -1) return `Sessão encerrada ontem às ${clock}`;
+  return `Sessão encerrada em ${dayFmt.format(at)} às ${clock}`;
+}
+
 /**
  * A conversa em memória: deduplica por id, junta cada resultado à sua ferramenta pelo `toolUseId` e limita o total
  * de itens (os mais antigos saem). Não conhece o DOM: devolve o que mudou para a tela aplicar.
@@ -78,6 +129,15 @@ export class TerminalLog {
 
   get size(): number {
     return this.items.size;
+  }
+
+  /** Itens na ordem da tela (do mais antigo para o mais recente). */
+  values(): IterableIterator<TerminalItem> {
+    return this.items.values();
+  }
+
+  get(key: string): TerminalItem | undefined {
+    return this.items.get(key);
   }
 
   reset(): void {
@@ -191,22 +251,42 @@ export interface TextPreview {
   total: number;
 }
 
+/** Onde cortar a prévia: o texto recolhido é `text.slice(0, headEnd)` (mais "…" quando `ellipsis`). */
+export interface PreviewSplit {
+  text: string;
+  headEnd: number;
+  /** O corte foi no meio de uma linha comprida (e não numa quebra de linha). */
+  ellipsis: boolean;
+  collapsed: boolean;
+  hiddenLines: number;
+  total: number;
+}
+
 /**
  * Prévia recolhida de um texto longo: as primeiras `maxLines` linhas (e no máximo `maxChars` caracteres).
  * Só recolhe se sobrarem ao menos 3 linhas (esconder 1 ou 2 linhas atrás de um clique não compensa).
  */
-export function previewText(raw: string, maxLines: number, maxChars = maxLines * 200): TextPreview {
+export function splitPreview(raw: string, maxLines: number, maxChars = maxLines * 200): PreviewSplit {
   const text = raw.replace(/\s+$/, '');
   const lines = text === '' ? [] : text.split('\n');
   const total = lines.length;
-  if (total <= maxLines + 2 && text.length <= maxChars) return { text, head: text, collapsed: false, hiddenLines: 0, total };
+  if (total <= maxLines + 2 && text.length <= maxChars) return { text, headEnd: text.length, ellipsis: false, collapsed: false, hiddenLines: 0, total };
   let shown = Math.min(total, maxLines);
-  let head = lines.slice(0, shown).join('\n');
-  if (head.length > maxChars) {
-    head = `${head.slice(0, maxChars).replace(/\s+$/, '')}…`;
-    shown = head.split('\n').length;
+  let headEnd = lines.slice(0, shown).join('\n').length;
+  let ellipsis = false;
+  if (headEnd > maxChars) {
+    headEnd = text.slice(0, maxChars).replace(/\s+$/, '').length;
+    ellipsis = true;
+    shown = text.slice(0, headEnd).split('\n').length;
   }
-  return { text, head, collapsed: true, hiddenLines: Math.max(0, total - shown), total };
+  return { text, headEnd, ellipsis, collapsed: true, hiddenLines: Math.max(0, total - shown), total };
+}
+
+/** A mesma prévia como texto (o que aparece recolhido em `head`). */
+export function previewText(raw: string, maxLines: number, maxChars = maxLines * 200): TextPreview {
+  const p = splitPreview(raw, maxLines, maxChars);
+  const head = p.collapsed ? `${p.text.slice(0, p.headEnd)}${p.ellipsis ? '…' : ''}` : p.text;
+  return { text: p.text, head, collapsed: p.collapsed, hiddenLines: p.hiddenLines, total: p.total };
 }
 
 /** Rótulo do botão que expande: "… +12 linhas" (ou "… mostrar tudo" quando o corte foi numa linha comprida). */
@@ -280,6 +360,9 @@ export function terminalFooter(agent: AgentInfo | undefined, agents: readonly Ag
 
 type Fill = (target: HTMLElement, text: string) => void;
 
+/** Cria o botão de copiar de uma entrada (`what` = "prompt", "resposta", "comando", "resultado"...). */
+type Copier = (text: string, what: string) => HTMLElement;
+
 const fillPlain: Fill = (target, text) => {
   target.textContent = text;
 };
@@ -291,24 +374,58 @@ const fillDiff: Fill = (target, text) => {
   target.append(frag);
 };
 
-/** Bloco de texto que recolhe quando é longo, com "… +N linhas" para expandir (e "recolher" depois). */
+/** Blocos que a busca abre ao chegar num resultado escondido neles (prévias recolhidas, raciocínio, detalhes). */
+const expandables = new WeakMap<Element, () => void>();
+
+/** Abre os blocos recolhidos que escondem `el` dentro de `stop` (ex.: um resultado da busca no "… +N linhas"). */
+function revealWithin(el: Element, stop: Element): void {
+  let hidden = false;
+  for (let n: Element | null = el; n && n !== stop; n = n.parentElement) {
+    if ((n as HTMLElement).hidden) hidden = true;
+    const open = expandables.get(n);
+    // Só abre quem esconde o trecho (um resultado já visível na prévia não expande o bloco).
+    if (open && hidden) {
+      open();
+      hidden = false;
+    }
+  }
+}
+
+/**
+ * Bloco de texto que recolhe quando é longo, com "… +N linhas" para expandir (e "recolher" depois). O texto inteiro
+ * fica no DOM (o resto escondido), para a busca achar e destacar o que está recolhido.
+ */
 function collapsible(raw: string, maxLines: number, cls: string, fill: Fill = fillPlain): HTMLElement {
-  const p = previewText(raw, maxLines);
+  const p = splitPreview(raw, maxLines);
   const body = h('div', { class: 'ui-term__pre' });
-  fill(body, p.head);
   const box = h('div', { class: cls }, body);
-  if (!p.collapsed) return box;
+  if (!p.collapsed) {
+    fill(body, p.text);
+    return box;
+  }
+  // Diff: uma linha por elemento (blocos); o resto começa na linha seguinte.
+  const block = fill === fillDiff;
+  const head = h(block ? 'div' : 'span', {});
+  fill(head, p.text.slice(0, p.headEnd));
+  const rest = h(block ? 'div' : 'span', { hidden: true });
+  fill(rest, block ? p.text.slice(p.headEnd).replace(/^\n/, '') : p.text.slice(p.headEnd));
+  const dots = p.ellipsis ? h('span', { class: 'ui-term__dots', text: '…', attrs: { 'aria-hidden': 'true' } }) : null;
+  body.append(head, ...(dots ? [dots] : []), rest);
   let open = false;
-  const more = h('button', { class: 'ui-term__more', type: 'button', text: moreLabel(p.hiddenLines), attrs: { 'aria-expanded': 'false' } });
-  more.addEventListener('click', () => {
-    open = !open;
-    body.replaceChildren();
-    fill(body, open ? p.text : p.head);
+  const more = h('button', { class: 'ui-term__more', type: 'button', attrs: { 'aria-expanded': 'false' } });
+  const set = (v: boolean) => {
+    open = v;
+    rest.hidden = !open;
+    if (dots) dots.hidden = open;
     setText(more, open ? 'recolher' : moreLabel(p.hiddenLines));
     setAttr(more, 'aria-expanded', String(open));
     setTitle(more, open ? 'Recolher' : `Mostrar tudo (${p.total} ${p.total === 1 ? 'linha' : 'linhas'})`);
+  };
+  set(false);
+  more.addEventListener('click', () => set(!open));
+  expandables.set(box, () => {
+    if (!open) set(true);
   });
-  setTitle(more, `Mostrar tudo (${p.total} ${p.total === 1 ? 'linha' : 'linhas'})`);
   box.append(more);
   return box;
 }
@@ -317,12 +434,16 @@ function collapsible(raw: string, maxLines: number, cls: string, fill: Fill = fi
 function expander(label: string, cls: string, detail: string, detailCls: string): HTMLElement {
   const body = h('div', { class: detailCls, text: detail, hidden: true });
   const btn = h('button', { class: cls, type: 'button', text: label, attrs: { 'aria-expanded': 'false' } });
-  btn.addEventListener('click', () => {
-    const open = body.hidden;
+  let open = false;
+  const set = (v: boolean) => {
+    open = v;
     body.hidden = !open;
     setAttr(btn, 'aria-expanded', String(open));
-  });
-  return h('div', { class: 'ui-term__exp' }, btn, body);
+  };
+  btn.addEventListener('click', () => set(!open));
+  const wrap = h('div', { class: 'ui-term__exp' }, btn, body);
+  expandables.set(wrap, () => set(true));
+  return wrap;
 }
 
 function mark(text: string, extra = ''): HTMLElement {
@@ -333,14 +454,15 @@ function row(kind: string, at: number, now: number, ...children: (Node | null)[]
   return h('div', { class: `ui-term__row ui-term__row--${kind}`, title: entryTimeTitle(at, now) }, ...children);
 }
 
-/** "  ⎿  resultado" (primeiras linhas, "… +N linhas" e o aviso de corte). */
-function resultBlock(r: ResultEntry): HTMLElement {
+/** "  ⎿  resultado" (primeiras linhas, "… +N linhas", o aviso de corte e o botão de copiar). */
+function resultBlock(r: ResultEntry, copy: Copier): HTMLElement {
   const out = h('div', { class: 'ui-term__out' });
   const text = r.text.replace(/\s+$/, '');
   if (text) out.append(collapsible(text, RESULT_PREVIEW_LINES, 'ui-term__res-text'));
-  else out.append(h('span', { class: 'ui-term__empty', text: r.error ? '(erro sem mensagem)' : '(sem saída)' }));
-  if (r.truncated) out.append(h('span', { class: 'ui-term__cut', text: '(resultado cortado)' }));
+  else out.append(h('span', { class: 'ui-term__empty', text: r.error ? '(erro sem mensagem)' : '(sem saída)', attrs: { 'data-chrome': '' } }));
+  if (r.truncated) out.append(h('span', { class: 'ui-term__cut', text: '(resultado cortado)', attrs: { 'data-chrome': '' } }));
   const el = h('div', { class: `ui-term__result${r.error ? ' is-error' : ''}` }, h('span', { class: 'ui-term__elbow', text: '⎿', attrs: { 'aria-hidden': 'true' } }), out);
+  if (text) el.append(copy(copyTextOf(r), 'resultado'));
   return el;
 }
 
@@ -362,34 +484,43 @@ interface ToolRefs {
   slot: HTMLElement;
 }
 
-function toolRow(t: ToolEntry, now: number): ToolRefs {
+function toolRow(t: ToolEntry, now: number, copy: Copier): ToolRefs {
   const { name, args } = splitToolTitle(t.title);
   const title = h('div', { class: 'ui-term__title' }, h('strong', { text: name }), args ? document.createTextNode(args) : null);
+  const input = toolInput(t);
+  // Título + argumentos com o próprio botão de copiar (o comando; sem argumentos, o título).
+  const what = t.inputKind === 'command' || t.tool === 'Bash' ? 'comando' : input ? 'entrada da ferramenta' : 'ferramenta';
+  const call = h('div', { class: 'ui-term__call' }, title, input, copy(copyTextOf(t), what));
   const slot = h('div', { class: 'ui-term__slot' });
-  const el = row('tool', t.at, now, mark(DOT, 'ui-term__dot'), h('div', { class: 'ui-term__col' }, title, toolInput(t), slot));
+  const el = row('tool', t.at, now, mark(DOT, 'ui-term__dot'), h('div', { class: 'ui-term__col' }, call, slot));
   el.classList.add('is-pending');
   return { row: el, slot };
 }
 
-function attachResult(refs: ToolRefs, r: ResultEntry): void {
+function attachResult(refs: ToolRefs, r: ResultEntry, copy: Copier): void {
   refs.row.classList.remove('is-pending');
   refs.row.classList.toggle('is-error', !!r.error);
   refs.row.classList.toggle('is-ok', !r.error);
-  refs.slot.replaceChildren(resultBlock(r));
+  refs.slot.replaceChildren(resultBlock(r, copy));
 }
 
-function entryRow(e: PlainEntry, now: number): HTMLElement {
+function entryRow(e: PlainEntry, now: number, copy: Copier): HTMLElement {
   switch (e.kind) {
-    case 'user':
-      return row('user', e.at, now, mark('>'), h('div', { class: 'ui-term__col' }, collapsible(e.text, PROMPT_PREVIEW_LINES, 'ui-term__user-text')));
+    case 'user': {
+      const el = row('user', e.at, now, mark('>'), h('div', { class: 'ui-term__col' }, collapsible(e.text, PROMPT_PREVIEW_LINES, 'ui-term__user-text')));
+      el.append(copy(copyTextOf(e), 'prompt'));
+      return el;
+    }
     case 'assistant': {
       const body = h('div', { class: 'ui-term__col ui-md' });
       body.append(renderMarkdown(e.text));
-      return row('assistant', e.at, now, mark(DOT, 'ui-term__dot'), body);
+      const el = row('assistant', e.at, now, mark(DOT, 'ui-term__dot'), body);
+      el.append(copy(copyTextOf(e), 'resposta'));
+      return el;
     }
     case 'thinking': {
       const text = e.text?.trim();
-      const content = text ? expander('Pensando…', 'ui-term__think', text, 'ui-term__think-text') : h('span', { class: 'ui-term__think', text: 'Pensando…' });
+      const content = text ? expander('Pensando…', 'ui-term__think', text, 'ui-term__think-text') : h('span', { class: 'ui-term__think', text: 'Pensando…', attrs: { 'data-chrome': '' } });
       return row('thinking', e.at, now, mark('✻'), h('div', { class: 'ui-term__col' }, content));
     }
     case 'system': {
@@ -405,20 +536,32 @@ function entryRow(e: PlainEntry, now: number): HTMLElement {
 
 // ---------------------------------------------------------------- janela
 
-/** O que o resto da interface (gaveta, atalhos) usa do terminal. */
+/** O que o resto da interface (gaveta, atalhos, histórico) usa do terminal. */
 export interface TerminalControl {
-  /** Agente com o terminal aberto (null = fechado). */
+  /** Agente com o terminal aberto (null = fechado ou mostrando uma sessão do histórico). */
   readonly agentId: string | null;
   open(agentId: string, opener?: HTMLElement | null): void;
+  /** Abre uma sessão do histórico: a conversa do transcript ou, se ela ainda estiver aberta, o terminal ao vivo do agente. */
+  openSession(session: RecentSession, opener?: HTMLElement | null): void;
   close(): void;
   toggle(agentId: string, opener?: HTMLElement | null): void;
 }
 
 type ConnState = 'connecting' | 'open' | 'reconnecting' | 'failed';
 
+/** Resultado atual da busca: o `index`-ésimo destaque da linha `key`. */
+interface SearchRef {
+  key: string;
+  index: number;
+}
+
+const NO_FINALS: ReadonlySet<string> = new Set();
+
 export class TerminalPanel implements UiComponent, TerminalControl {
   readonly el: HTMLElement;
   private id: string | null = null;
+  /** Sessão do histórico aberta no painel (null = terminal de um agente). */
+  private session: RecentSession | null = null;
   private last: AgentInfo | null = null;
   private source: EventSource | null = null;
   private opener: HTMLElement | null = null;
@@ -435,12 +578,35 @@ export class TerminalPanel implements UiComponent, TerminalControl {
   private unread = 0;
   private spinTimer: ReturnType<typeof setInterval> | null = null;
   private spinFrame = 0;
+  /** Horário da entrada mais recente (o rodapé de uma sessão retomada acompanha). */
+  private lastEntryAt = 0;
 
+  private filter: TerminalFilter = 'all';
+  private filterBtns: HTMLButtonElement[] = [];
+  /** Linhas que aparecem com o filtro atual. */
+  private visibleRows = 0;
+
+  private searchOpen = false;
+  /** Termo da busca já dobrado (minúsculas, sem acentos); '' = sem busca. */
+  private folded = '';
+  /** Destaques de cada linha (inclusive as escondidas pelo filtro, que não entram na contagem). */
+  private hits = new Map<string, HTMLElement[]>();
+  private current: SearchRef | null = null;
+  private currentEl: HTMLElement | null = null;
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private kindEl: HTMLElement;
+  private accEl: HTMLElement;
   private nameEl: HTMLElement;
   private roleEl: HTMLElement;
   private roomEl: HTMLElement;
   private reconnEl: HTMLElement;
+  private findBtn: HTMLButtonElement;
   private alertEl: HTMLElement;
+  private alertText: HTMLElement;
+  private searchBox: HTMLElement;
+  private searchInput: HTMLInputElement;
+  private countEl: HTMLElement;
   private scroll: HTMLElement;
   private list: HTMLElement;
   private note: HTMLElement;
@@ -452,12 +618,19 @@ export class TerminalPanel implements UiComponent, TerminalControl {
   private statusTime: HTMLElement;
 
   constructor(private ctx: UiContext) {
+    const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
+    const findKey = mac ? '⌘F' : 'Ctrl+F';
     const icon = h('span', { class: 'ui-term__icon', attrs: { 'aria-hidden': 'true' } });
     icon.innerHTML = ICONS.terminal;
+    this.kindEl = h('span', { class: 'ui-term__kind', text: 'terminal' });
+    this.accEl = createAccountChip('sm');
+    this.accEl.hidden = true;
     this.nameEl = h('strong', { class: 'ui-term__name' });
     this.roleEl = h('span', { class: 'ui-role' });
     this.roomEl = h('span', { class: 'ui-term__room' });
     this.reconnEl = h('span', { class: 'ui-term__reconn', text: 'reconectando…', hidden: true, role: 'status' });
+    this.findBtn = iconButton(ICONS.search, `Buscar na conversa (${findKey})`, () => this.toggleSearch(), 'ui-icon-btn--sm ui-term__find');
+    setAttr(this.findBtn, 'aria-expanded', 'false');
     const lock = h('span', { class: 'ui-term__ro-icon', attrs: { 'aria-hidden': 'true' } });
     lock.innerHTML = ICONS.lock;
     const ro = h('span', { class: 'ui-term__ro', title: 'Só para ler: para responder, use o terminal do Claude Code' }, lock, h('span', { text: 'somente leitura' }));
@@ -466,15 +639,57 @@ export class TerminalPanel implements UiComponent, TerminalControl {
       'div',
       { class: 'ui-term__bar' },
       icon,
-      h('span', { class: 'ui-term__kind', text: 'terminal' }),
-      h('div', { class: 'ui-term__who' }, this.nameEl, this.roleEl, this.roomEl),
+      this.kindEl,
+      h('div', { class: 'ui-term__who' }, this.accEl, this.nameEl, this.roleEl, this.roomEl),
       this.reconnEl,
+      this.findBtn,
       ro,
       close,
     );
 
+    // Barra de ferramentas: filtro (segmentado) e a busca, que aparece com Ctrl/⌘+F ou a lupa.
+    const filters = h('div', { class: 'ui-seg ui-term__filter', role: 'radiogroup', attrs: { 'aria-label': 'Filtrar a conversa' } });
+    for (const [value, text, hint] of TERMINAL_FILTERS) {
+      const b = h('button', { class: 'ui-seg__opt', type: 'button', role: 'radio', text, title: hint, attrs: { 'aria-checked': 'false' } });
+      b.addEventListener('click', () => this.setFilter(value));
+      b.addEventListener('keydown', (e) => this.filterKey(e, value));
+      this.filterBtns.push(b);
+      filters.append(b);
+    }
+    const searchIcon = h('span', { class: 'ui-term__search-icon', attrs: { 'aria-hidden': 'true' } });
+    searchIcon.innerHTML = ICONS.search;
+    this.searchInput = h('input', {
+      class: 'ui-term__search-input',
+      type: 'text',
+      attrs: { placeholder: 'Buscar na conversa', 'aria-label': 'Buscar na conversa', autocomplete: 'off', spellcheck: 'false', enterkeyhint: 'search' },
+    });
+    this.searchInput.addEventListener('input', () => this.scheduleSearch());
+    this.searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        this.go(e.shiftKey ? -1 : 1);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.closeSearch(true);
+      }
+    });
+    this.countEl = h('span', { class: 'ui-term__count', attrs: { 'aria-live': 'polite' } });
+    this.searchBox = h(
+      'div',
+      { class: 'ui-term__search', role: 'search', hidden: true },
+      searchIcon,
+      this.searchInput,
+      this.countEl,
+      iconButton(ICONS.chevronUp, 'Resultado anterior (Shift+Enter)', () => this.go(-1), 'ui-icon-btn--sm ui-term__step'),
+      iconButton(ICONS.chevronDown, 'Próximo resultado (Enter)', () => this.go(1), 'ui-icon-btn--sm ui-term__step'),
+      iconButton(ICONS.close, 'Fechar a busca (Esc)', () => this.closeSearch(true), 'ui-icon-btn--sm ui-term__step'),
+    );
+    const tools = h('div', { class: 'ui-term__tools' }, filters, this.searchBox);
+
     const retry = h('button', { class: 'ui-btn ui-btn--sm', type: 'button', text: 'Tentar de novo', on: { click: () => this.connect() } });
-    this.alertEl = h('div', { class: 'ui-term__alert', role: 'alert', hidden: true }, h('span', { class: 'ui-term__alert-text', text: OPEN_ERROR }), retry);
+    this.alertText = h('span', { class: 'ui-term__alert-text', text: OPEN_ERROR });
+    this.alertEl = h('div', { class: 'ui-term__alert', role: 'alert', hidden: true }, this.alertText, retry);
     this.note = h('p', { class: 'ui-term__note', text: 'Conversa anterior não carregada', hidden: true });
     this.list = h('div', { class: 'ui-term__list' });
     this.placeholder = h('p', { class: 'ui-term__placeholder' });
@@ -492,21 +707,18 @@ export class TerminalPanel implements UiComponent, TerminalControl {
       'section',
       { class: 'ui-term', role: 'dialog', hidden: true, tabIndex: -1, attrs: { 'aria-label': 'Terminal somente leitura' } },
       bar,
+      tools,
       h('div', { class: 'ui-term__body' }, this.alertEl, this.scroll, this.newBtn),
       h('div', { class: 'ui-term__foot' }, this.status, h('label', { class: 'ui-term__prompt' }, h('span', { class: 'ui-term__caret', text: '>', attrs: { 'aria-hidden': 'true' } }), input)),
     );
-    this.el.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape' || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
-      e.preventDefault();
-      e.stopPropagation();
-      this.close();
-    });
+    this.el.addEventListener('keydown', (e) => this.onKey(e));
+    this.renderFilter();
     // Janela redimensionada: quem está no fim continua vendo o fim.
     if (typeof ResizeObserver === 'function') new ResizeObserver(() => this.follow && this.scrollToEnd()).observe(this.scroll);
   }
 
   get agentId(): string | null {
-    return this.id;
+    return this.session ? null : this.id;
   }
 
   get isOpen(): boolean {
@@ -514,33 +726,23 @@ export class TerminalPanel implements UiComponent, TerminalControl {
   }
 
   open(agentId: string, opener: HTMLElement | null = activeElement()): void {
-    if (opener && !this.el.contains(opener)) this.opener = opener;
-    if (this.id === agentId) {
-      this.focusLog();
-      return;
-    }
-    // Um terminal por vez: abrir o de outro agente substitui o atual.
-    this.disconnect();
-    this.clear();
-    this.id = agentId;
-    this.last = this.ctx.agent(agentId) ?? null;
-    this.loaded = false;
-    this.truncated = false;
-    this.follow = true;
-    this.unread = 0;
-    this.el.hidden = false;
-    this.connect();
-    this.render();
-    this.focusLog();
-    this.ctx.invalidate();
+    this.start(agentId, null, opener);
+  }
+
+  openSession(session: RecentSession, opener: HTMLElement | null = activeElement()): void {
+    // Ainda aberta e no escritório: o terminal ao vivo do agente (com status no rodapé).
+    if (session.open && session.agentId && this.ctx.agent(session.agentId)) return this.open(session.agentId, opener);
+    this.start(sessionKey(session.account, session.sessionId), session, opener);
   }
 
   close(): void {
     if (this.id === null) return;
     this.disconnect();
     this.stopSpinner();
+    this.closeSearch(false);
     const hadFocus = this.el.contains(document.activeElement) || document.activeElement === document.body;
     this.id = null;
+    this.session = null;
     this.last = null;
     this.el.hidden = true;
     this.clear();
@@ -551,17 +753,61 @@ export class TerminalPanel implements UiComponent, TerminalControl {
   }
 
   toggle(agentId: string, opener: HTMLElement | null = activeElement()): void {
-    if (this.id === agentId) this.close();
+    if (this.agentId === agentId) this.close();
     else this.open(agentId, opener);
+  }
+
+  /** Esc: o primeiro fecha a busca; o seguinte, o terminal. Devolve false se não havia nada aberto. */
+  escape(): boolean {
+    if (this.id === null) return false;
+    if (this.searchOpen) this.closeSearch(this.el.contains(document.activeElement));
+    else this.close();
+    return true;
   }
 
   render(): void {
     if (this.id === null) return;
-    const live = this.ctx.agent(this.id);
+    if (this.session) this.renderSessionHead(this.session);
+    else this.renderAgentHead();
+    this.renderFooter();
+    this.renderState();
+  }
+
+  /** Abre o painel numa conversa nova (agente ou sessão do histórico); a mesma conversa só recebe o foco. */
+  private start(id: string, session: RecentSession | null, opener: HTMLElement | null): void {
+    if (opener && !this.el.contains(opener)) this.opener = opener;
+    if (this.id === id) {
+      this.focusLog();
+      return;
+    }
+    // Um terminal por vez: abrir outro substitui o atual (a busca e o filtro continuam valendo).
+    this.disconnect();
+    this.clear();
+    this.id = id;
+    this.session = session;
+    this.last = session ? null : (this.ctx.agent(id) ?? null);
+    this.loaded = false;
+    this.truncated = false;
+    this.follow = true;
+    this.unread = 0;
+    this.lastEntryAt = 0;
+    this.el.hidden = false;
+    this.el.classList.toggle('is-session', !!session);
+    this.connect();
+    this.render();
+    this.focusLog();
+    this.ctx.invalidate();
+  }
+
+  private renderAgentHead(): void {
+    const live = this.ctx.agent(this.id!);
     if (live) this.last = live;
     const a = this.last;
     const name = a?.name ?? 'Agente';
+    setText(this.kindEl, 'terminal');
+    setHidden(this.accEl, true);
     setText(this.nameEl, name);
+    setTitle(this.nameEl, '');
     setText(this.roleEl, a ? roleLabel(a) : '');
     setHidden(this.roleEl, !a);
     if (a) setVariant(this.roleEl, 'ui-role--', a.kind);
@@ -571,8 +817,44 @@ export class TerminalPanel implements UiComponent, TerminalControl {
     setHidden(this.roomEl, !room);
     setAttr(this.el, 'aria-label', `Terminal somente leitura de ${name}`);
     this.el.classList.toggle('is-gone', !live);
-    this.renderFooter();
-    this.renderState();
+  }
+
+  /** Sessão do histórico: conta, título, projeto e a data de início. */
+  private renderSessionHead(s: RecentSession): void {
+    const title = s.title?.trim() || 'Sessão sem título';
+    setText(this.kindEl, 'histórico');
+    updateAccountChip(this.accEl, this.ctx.account(s.account), s.account);
+    setHidden(this.accEl, false);
+    setText(this.nameEl, title);
+    setTitle(this.nameEl, title);
+    setHidden(this.roleEl, true);
+    setText(this.roomEl, `${sessionProjectName(s)} · ${formatDateTime(s.firstAt ?? s.lastAt)}`);
+    setTitle(this.roomEl, s.project ?? s.projectDir);
+    setHidden(this.roomEl, false);
+    setAttr(this.el, 'aria-label', `Terminal somente leitura da sessão ${title}`);
+    this.el.classList.remove('is-gone');
+  }
+
+  private onKey(e: KeyboardEvent): void {
+    if (e.defaultPrevented) return;
+    const mod = (e.ctrlKey || e.metaKey) && !e.altKey;
+    const key = e.key.toLowerCase();
+    // Ctrl/⌘+F com o terminal em foco busca na conversa (fora dele, continua sendo a busca do navegador).
+    if (mod && !e.shiftKey && key === 'f') {
+      e.preventDefault();
+      e.stopPropagation();
+      this.openSearch();
+      return;
+    }
+    if (mod && key === 'g' && this.searchOpen) {
+      e.preventDefault();
+      this.go(e.shiftKey ? -1 : 1);
+      return;
+    }
+    if (e.key !== 'Escape' || e.ctrlKey || e.metaKey || e.altKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    this.escape();
   }
 
   // ---------------------------------------------------------------- stream
@@ -584,7 +866,7 @@ export class TerminalPanel implements UiComponent, TerminalControl {
     this.conn = 'connecting';
     let es: EventSource;
     try {
-      es = new EventSource(terminalUrl(id));
+      es = new EventSource(this.session ? sessionTerminalUrl(this.session.account, this.session.sessionId) : terminalUrl(id));
     } catch {
       this.conn = 'failed';
       this.renderState();
@@ -635,6 +917,8 @@ export class TerminalPanel implements UiComponent, TerminalControl {
     this.truncated = data.truncated;
     this.unread = 0;
     this.ingest(data.entries, true);
+    // A conversa foi remontada: a busca refaz os destaques (mantendo o resultado atual, se ele ainda existir).
+    if (this.folded) this.runSearch(false);
     const target = anchor ? this.rows.get(anchor.key) : undefined;
     if (anchor && target) this.scroll.scrollTop = target.offsetTop - anchor.offset;
     else {
@@ -646,6 +930,7 @@ export class TerminalPanel implements UiComponent, TerminalControl {
 
   /** Aplica um lote: cria as linhas novas num fragmento, junta resultados e descarta as linhas mais antigas. */
   private ingest(entries: readonly TerminalEntry[], initial: boolean): void {
+    for (const e of entries) if (e.at > this.lastEntryAt) this.lastEntryAt = e.at;
     const batch = this.log.push(entries);
     const evicted = this.log.trim(TERMINAL_DOM_LIMIT);
     if (evicted.length) {
@@ -654,13 +939,18 @@ export class TerminalPanel implements UiComponent, TerminalControl {
         this.rows.get(key)?.remove();
         this.rows.delete(key);
         this.tools.delete(key);
+        this.hits.delete(key);
+        if (this.current?.key === key) this.current = null;
       }
       // Lendo lá em cima: compensa a altura que saiu do topo para o texto não pular.
       if (!this.follow) this.scroll.scrollTop -= before - this.scroll.scrollHeight;
     }
+    const touched: string[] = [];
     for (const { toolKey: key, result } of batch.attached) {
       const refs = this.tools.get(key);
-      if (refs) attachResult(refs, result);
+      if (!refs) continue;
+      attachResult(refs, result, this.copier);
+      touched.push(key);
     }
     const gone = new Set(evicted);
     const now = this.ctx.now();
@@ -672,9 +962,13 @@ export class TerminalPanel implements UiComponent, TerminalControl {
       el.dataset.key = item.key;
       this.rows.set(item.key, el);
       frag.append(el);
+      touched.push(item.key);
       added++;
     }
     this.list.append(frag);
+    this.applyFilter();
+    // A busca continua valendo: destaca o que chegou (sem mudar o resultado atual).
+    if (!initial && this.folded) this.refreshHits(touched);
     if (!initial) {
       if (this.follow) this.scrollToEnd();
       else this.unread += added + batch.attached.length;
@@ -683,15 +977,15 @@ export class TerminalPanel implements UiComponent, TerminalControl {
   }
 
   private buildRow(item: TerminalItem, now: number): HTMLElement {
-    if (item.type === 'entry') return entryRow(item.entry, now);
+    if (item.type === 'entry') return entryRow(item.entry, now, this.copier);
     if (item.type === 'orphan') {
-      const el = row('orphan', item.result.at, now, mark(''), h('div', { class: 'ui-term__col' }, resultBlock(item.result)));
+      const el = row('orphan', item.result.at, now, mark(''), h('div', { class: 'ui-term__col' }, resultBlock(item.result, this.copier)));
       if (!el.title) el.title = 'Resultado de uma ferramenta anterior';
       return el;
     }
-    const refs = toolRow(item.tool, now);
+    const refs = toolRow(item.tool, now, this.copier);
     this.tools.set(item.key, refs);
-    if (item.result) attachResult(refs, item.result);
+    if (item.result) attachResult(refs, item.result, this.copier);
     return refs.row;
   }
 
@@ -699,7 +993,247 @@ export class TerminalPanel implements UiComponent, TerminalControl {
     this.log.reset();
     this.rows.clear();
     this.tools.clear();
+    this.hits.clear();
+    this.current = null;
+    this.currentEl = null;
+    this.visibleRows = 0;
     this.list.replaceChildren();
+  }
+
+  // ---------------------------------------------------------------- copiar
+
+  /** Botão discreto (aparece no hover ou no foco) que copia o texto de uma entrada e confirma com "Copiado". */
+  private copier: Copier = (text, what) => {
+    const label = `Copiar ${what}`;
+    const icon = h('span', { class: 'ui-term__copy-icon', attrs: { 'aria-hidden': 'true' } });
+    icon.innerHTML = ICONS.copy;
+    const done = h('span', { class: 'ui-term__copy-done', text: 'Copiado' });
+    const btn = h('button', { class: 'ui-term__copy', type: 'button', title: label, attrs: { 'aria-label': label } }, icon, done);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const ok = await copyText(text);
+      btn.classList.toggle('is-done', ok);
+      btn.classList.toggle('is-fail', !ok);
+      icon.innerHTML = ok ? ICONS.check : ICONS.copy;
+      setText(done, ok ? 'Copiado' : 'Não foi possível copiar');
+      setTitle(btn, ok ? 'Copiado' : 'Não foi possível copiar');
+      this.ctx.announce(ok ? 'Copiado.' : 'Não foi possível copiar.');
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        btn.classList.remove('is-done', 'is-fail');
+        icon.innerHTML = ICONS.copy;
+        setText(done, 'Copiado');
+        setTitle(btn, label);
+      }, COPIED_MS);
+    });
+    return btn;
+  };
+
+  // ---------------------------------------------------------------- filtro
+
+  private setFilter(f: TerminalFilter): void {
+    if (f === this.filter) return;
+    this.filter = f;
+    this.renderFilter();
+    this.applyFilter();
+    // O resultado atual pode ter sumido com o filtro.
+    if (this.folded) {
+      this.markCurrent(false);
+      this.renderSearch();
+    }
+    if (this.follow) this.scrollToEnd();
+    this.renderState();
+  }
+
+  /** Setas entre as opções do filtro (padrão de radiogroup). */
+  private filterKey(e: KeyboardEvent, value: TerminalFilter): void {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    e.preventDefault();
+    e.stopPropagation();
+    const i = TERMINAL_FILTERS.findIndex(([v]) => v === value);
+    const n = TERMINAL_FILTERS.length;
+    const next = (i + (e.key === 'ArrowRight' ? 1 : n - 1)) % n;
+    this.setFilter(TERMINAL_FILTERS[next][0]);
+    this.filterBtns[next].focus();
+  }
+
+  private renderFilter(): void {
+    TERMINAL_FILTERS.forEach(([value], i) => {
+      const on = value === this.filter;
+      setAttr(this.filterBtns[i], 'aria-checked', String(on));
+      this.filterBtns[i].tabIndex = on ? 0 : -1;
+    });
+  }
+
+  /** Mostra ou esconde cada linha conforme o filtro ("Só prompts" depende do que vem depois de cada resposta). */
+  private applyFilter(): void {
+    const finals = this.filter === 'prompts' ? finalAnswerKeys(this.log.values()) : NO_FINALS;
+    let visible = 0;
+    for (const item of this.log.values()) {
+      const el = this.rows.get(item.key);
+      if (!el) continue;
+      const show = itemVisible(item, this.filter, finals);
+      el.classList.toggle('is-filtered', !show);
+      if (show) visible++;
+    }
+    this.visibleRows = visible;
+  }
+
+  // ---------------------------------------------------------------- busca
+
+  private toggleSearch(): void {
+    if (this.searchOpen) this.closeSearch(true);
+    else this.openSearch();
+  }
+
+  private openSearch(): void {
+    if (this.id === null) return;
+    const wasOpen = this.searchOpen;
+    this.searchOpen = true;
+    setHidden(this.searchBox, false);
+    setAttr(this.findBtn, 'aria-expanded', 'true');
+    this.findBtn.classList.add('is-on');
+    this.searchInput.focus();
+    this.searchInput.select();
+    // Reaberta com o termo anterior: destaca de novo.
+    if (!wasOpen && this.searchInput.value.trim()) this.runSearch(true);
+    else this.renderSearch();
+  }
+
+  private closeSearch(focusLog: boolean): void {
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    this.searchTimer = null;
+    if (!this.searchOpen) return;
+    this.searchOpen = false;
+    setHidden(this.searchBox, true);
+    setAttr(this.findBtn, 'aria-expanded', 'false');
+    this.findBtn.classList.remove('is-on');
+    this.runSearch(false);
+    if (focusLog) this.focusLog();
+  }
+
+  private scheduleSearch(): void {
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    this.searchTimer = setTimeout(() => this.runSearch(true), SEARCH_DEBOUNCE_MS);
+  }
+
+  /** Busca pendente (o usuário apertou Enter logo depois de digitar): roda agora. */
+  private flushSearch(): void {
+    if (!this.searchTimer) return;
+    clearTimeout(this.searchTimer);
+    this.runSearch(true);
+  }
+
+  /**
+   * Refaz todos os destaques. `reset` = termo novo: o resultado atual passa a ser o primeiro a partir do que está
+   * na tela; senão, mantém o atual (se ele ainda existir).
+   */
+  private runSearch(reset: boolean): void {
+    this.searchTimer = null;
+    const folded = this.searchOpen ? foldQuery(this.searchInput.value) : '';
+    for (const spans of this.hits.values()) clearHits(spans);
+    this.hits.clear();
+    this.currentEl = null;
+    const prev = this.current;
+    this.current = null;
+    this.folded = folded;
+    if (folded) {
+      for (const [key, el] of this.rows) {
+        const spans = highlightHits(el, folded);
+        if (spans.length) this.hits.set(key, spans);
+      }
+      this.current = reset ? this.firstHitInView() : prev;
+      this.markCurrent(reset);
+    }
+    this.renderSearch();
+  }
+
+  /** Destaques de linhas novas ou alteradas (resultado que chegou), sem mexer no resultado atual. */
+  private refreshHits(keys: readonly string[]): void {
+    for (const key of keys) {
+      const old = this.hits.get(key);
+      if (old) clearHits(old);
+      this.hits.delete(key);
+      const el = this.rows.get(key);
+      const spans = el ? highlightHits(el, this.folded) : [];
+      if (spans.length) this.hits.set(key, spans);
+    }
+    this.markCurrent(false);
+    this.renderSearch();
+  }
+
+  /** [linha, nº de destaques] das linhas visíveis, na ordem da tela. */
+  private visibleCounts(): [string, number][] {
+    const out: [string, number][] = [];
+    for (const [key, el] of this.rows) {
+      const spans = this.hits.get(key);
+      if (spans && !el.classList.contains('is-filtered')) out.push([key, spans.length]);
+    }
+    return out;
+  }
+
+  /** O primeiro resultado visível a partir do topo da tela (ou o primeiro de todos, se não houver nenhum abaixo). */
+  private firstHitInView(): SearchRef | null {
+    const top = this.scroll.getBoundingClientRect().top;
+    let first: SearchRef | null = null;
+    for (const [key] of this.visibleCounts()) {
+      first ??= { key, index: 0 };
+      if (this.rows.get(key)!.getBoundingClientRect().bottom < top) continue;
+      const i = this.hits.get(key)!.findIndex((s) => s.getBoundingClientRect().bottom >= top);
+      if (i >= 0) return { key, index: i };
+    }
+    return first;
+  }
+
+  /** Próximo (1) ou anterior (-1) resultado: abre os blocos recolhidos que o escondem e rola até ele. */
+  private go(dir: 1 | -1): void {
+    if (!this.searchOpen) return this.openSearch();
+    this.flushSearch();
+    const counts = this.visibleCounts();
+    const total = counts.reduce((n, [, c]) => n + c, 0);
+    if (!total) return;
+    this.current = refAt(counts, stepMatch(globalIndex(counts, this.current), total, dir));
+    this.markCurrent(true);
+    this.renderSearch(counts);
+  }
+
+  /** Marca o resultado atual (some se a linha saiu ou foi escondida pelo filtro); com `scroll`, leva até ele. */
+  private markCurrent(scroll: boolean): void {
+    this.currentEl?.classList.remove('is-current');
+    this.currentEl = null;
+    const ref = this.current;
+    if (!ref) return;
+    const el = this.rows.get(ref.key);
+    const spans = this.hits.get(ref.key);
+    if (!el || !spans?.length || el.classList.contains('is-filtered')) {
+      this.current = null;
+      return;
+    }
+    const index = Math.min(ref.index, spans.length - 1);
+    const span = spans[index];
+    this.current = { key: ref.key, index };
+    revealWithin(span, el);
+    span.classList.add('is-current');
+    this.currentEl = span;
+    if (scroll) this.scrollToHit(span);
+  }
+
+  private scrollToHit(span: HTMLElement): void {
+    const r = span.getBoundingClientRect();
+    const c = this.scroll.getBoundingClientRect();
+    if (r.top < c.top + 8 || r.bottom > c.bottom - 8) this.scroll.scrollTop += r.top - c.top - (c.height - r.height) / 2;
+    // Saiu do fim para ler o resultado: as mensagens novas não puxam a tela de volta.
+    this.follow = this.distanceToEnd() <= STICK_PX;
+    this.renderNewButton();
+  }
+
+  private renderSearch(counts = this.visibleCounts()): void {
+    const total = counts.reduce((n, [, c]) => n + c, 0);
+    const active = this.searchOpen && !!this.folded;
+    setText(this.countEl, active ? searchCounter(globalIndex(counts, this.current), total) : '');
+    setTitle(this.countEl, active ? (total ? `${total} ${total === 1 ? 'resultado' : 'resultados'}` : 'Nenhum resultado') : '');
+    this.searchBox.classList.toggle('is-miss', active && total === 0);
   }
 
   // ---------------------------------------------------------------- rolagem
@@ -730,7 +1264,10 @@ export class TerminalPanel implements UiComponent, TerminalControl {
 
   private captureAnchor(): { key: string; offset: number } | null {
     const top = this.scroll.scrollTop;
-    for (const [key, el] of this.rows) if (el.offsetTop + el.offsetHeight > top) return { key, offset: el.offsetTop - top };
+    for (const [key, el] of this.rows) {
+      if (el.classList.contains('is-filtered')) continue;
+      if (el.offsetTop + el.offsetHeight > top) return { key, offset: el.offsetTop - top };
+    }
     return null;
   }
 
@@ -743,21 +1280,37 @@ export class TerminalPanel implements UiComponent, TerminalControl {
   private renderState(): void {
     setHidden(this.reconnEl, this.conn !== 'reconnecting');
     setHidden(this.alertEl, this.conn !== 'failed');
+    setText(this.alertText, this.session ? SESSION_OPEN_ERROR : OPEN_ERROR);
     setHidden(this.note, !(this.loaded && this.truncated));
     const empty = this.rows.size === 0;
-    setHidden(this.placeholder, !empty || this.conn === 'failed');
-    if (empty) setText(this.placeholder, this.loaded ? 'Nenhuma mensagem nesta sessão ainda.' : 'Abrindo o terminal…');
+    const filteredOut = !empty && this.visibleRows === 0;
+    setHidden(this.placeholder, !(empty || filteredOut) || this.conn === 'failed');
+    if (filteredOut) setText(this.placeholder, 'Nada para mostrar com este filtro.');
+    else if (empty) setText(this.placeholder, !this.loaded ? 'Abrindo o terminal…' : this.session ? 'Nenhuma mensagem nesta sessão.' : 'Nenhuma mensagem nesta sessão ainda.');
     this.renderNewButton();
   }
 
   private renderNewButton(): void {
-    setHidden(this.newBtn, this.follow || this.rows.size === 0);
+    setHidden(this.newBtn, this.follow || this.visibleRows === 0);
     setText(this.newBtn, this.unread > 0 ? '↓ Novas mensagens' : '↓ Ir para o fim');
   }
 
   private renderFooter(): void {
     if (this.id === null) return;
     const now = this.ctx.now();
+    if (this.session) {
+      // Sessão do histórico: horário da última atividade (o transcript pode ter crescido desde a listagem).
+      const at = Math.max(this.session.lastAt, this.lastEntryAt);
+      const text = sessionEndedText(at, now);
+      this.stopSpinner();
+      setVariant(this.status, 'is-', 'ended');
+      setText(this.statusText, text);
+      setTitle(this.status, `${text} (${formatDateTime(at)})`);
+      setText(this.statusTime, '');
+      setHidden(this.statusTime, true);
+      setText(this.glyph, '■');
+      return;
+    }
     const f = terminalFooter(this.ctx.agent(this.id), this.ctx.store.snapshot?.agents ?? [], now);
     setVariant(this.status, 'is-', f.kind);
     setText(this.statusText, f.text);

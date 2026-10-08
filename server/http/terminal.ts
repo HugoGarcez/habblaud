@@ -7,6 +7,8 @@
 // últimas 500 entradas) e manda `init`; depois, polling de ~400 ms manda `append` com o que for novo.
 // Transcript truncado/substituído (ou trocado por /clear no mesmo processo) = parser novo e `init` de
 // novo. Agentes do demo não têm transcript: a conversa fictícia sai de demoTerminalEntries a cada ~500 ms.
+// Sessões do histórico (GET /api/sessions/:conta/:sessionId/terminal, http/sessions.ts) usam o mesmo
+// leitor sobre o transcript já validado pela rota, com polling mais espaçado (~2 s).
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { demoTerminalEntries } from '../../shared/demo/terminal';
 import type { Activity, AgentInfo, TerminalEntry, TerminalInit } from '../../shared/types';
@@ -25,6 +27,8 @@ export const INIT_TAIL_BYTES = 4 * 1024 * 1024;
 export const INIT_ENTRIES = 500;
 export const POLL_MS = 400;
 export const DEMO_POLL_MS = 500;
+/** Sessão do histórico: quase sempre encerrada (o polling só pega uma retomada com /resume). */
+export const SESSION_POLL_MS = 2_000;
 const PING_MS = 15_000;
 /** Cliente lento demais (buffer acumulado acima disto) é desconectado; o EventSource reconecta. */
 const MAX_BUFFERED = 8 * 1024 * 1024;
@@ -47,6 +51,7 @@ export interface TerminalOptions {
   initEntries?: number;
   pollMs?: number;
   demoPollMs?: number;
+  sessionPollMs?: number;
   pingMs?: number;
 }
 
@@ -79,7 +84,10 @@ function parseInto(parser: TerminalParser, lines: readonly string[], out: Termin
   }
 }
 
-/** Agente real: lê o transcript JSONL com um FileTail próprio. */
+/**
+ * Agente real (ou sessão do histórico): lê o transcript JSONL com um FileTail próprio. `transcriptPathOf`
+ * informa a troca de transcript do principal (/clear); numa sessão do histórico ele nunca muda.
+ */
 class TranscriptSource implements ConversationSource {
   private tail: FileTail;
   /** Criado em load(), que sempre roda antes do primeiro poll(). */
@@ -183,6 +191,7 @@ export class TerminalStreams {
   private readonly initEntries: number;
   private readonly pollMs: number;
   private readonly demoPollMs: number;
+  private readonly sessionPollMs: number;
   private readonly pingMs: number;
 
   constructor(private readonly opts: TerminalOptions) {
@@ -193,6 +202,7 @@ export class TerminalStreams {
     this.initEntries = opts.initEntries ?? INIT_ENTRIES;
     this.pollMs = opts.pollMs ?? POLL_MS;
     this.demoPollMs = opts.demoPollMs ?? DEMO_POLL_MS;
+    this.sessionPollMs = opts.sessionPollMs ?? SESSION_POLL_MS;
     this.pingMs = opts.pingMs ?? PING_MS;
   }
 
@@ -215,6 +225,20 @@ export class TerminalStreams {
   attach(req: IncomingMessage, res: ServerResponse, agentId: string): void {
     const source = this.sourceFor(agentId);
     if (typeof source === 'string') return sendJson(res, 404, { error: source });
+    this.serve(req, res, agentId, source);
+  }
+
+  /**
+   * Abre a conversa de uma sessão do histórico pelo transcript `path` (a rota já validou conta, id e caminho).
+   * `streamId` vai no `init` (ex.: "session:<conta>:<sessionId>"). Mesmos erros de attach (429/500).
+   */
+  attachSession(req: IncomingMessage, res: ServerResponse, streamId: string, path: string): void {
+    const o = { transcriptPathOf: () => undefined, createParser: this.createParser, initTailBytes: this.initTailBytes, initEntries: this.initEntries };
+    this.serve(req, res, streamId, new TranscriptSource(streamId, path, o, this.sessionPollMs));
+  }
+
+  /** Limite de terminais, `init` e o stream SSE de uma fonte já escolhida. */
+  private serve(req: IncomingMessage, res: ServerResponse, id: string, source: ConversationSource): void {
     if (this.streams.size >= this.maxStreams) {
       return sendJson(res, 429, { error: `terminais abertos demais (máximo de ${this.maxStreams}); feche algum e tente de novo` });
     }
@@ -222,7 +246,7 @@ export class TerminalStreams {
     try {
       init = source.load();
     } catch (err) {
-      log.warnOnce(`terminal-load:${agentId}:${errMsg(err)}`, `Terminal de ${agentId}: não foi possível ler o transcript (${errMsg(err)}).`);
+      log.warnOnce(`terminal-load:${id}:${errMsg(err)}`, `Terminal de ${id}: não foi possível ler o transcript (${errMsg(err)}).`);
       return sendJson(res, 500, { error: 'não foi possível ler o transcript' });
     }
     req.socket.setTimeout(0);
@@ -237,7 +261,7 @@ export class TerminalStreams {
     const s: Stream = { res, timer: null };
     this.streams.add(s);
     this.write(s, frame('init', init));
-    s.timer = setInterval(() => this.pump(s, source, agentId), source.intervalMs);
+    s.timer = setInterval(() => this.pump(s, source, id), source.intervalMs);
     s.timer.unref?.();
     const drop = () => this.drop(s);
     req.on('close', drop);

@@ -36,6 +36,8 @@ export class TopBar implements UiComponent {
   private sidebarBtn: HTMLButtonElement;
   private feedBtn: HTMLButtonElement;
   readonly settingsBtn: HTMLButtonElement;
+  /** Grupo dos botões de painéis (feed, configurações, ajuda); o histórico entra aqui (ui/index.ts). */
+  readonly panelGroup: HTMLElement;
 
   constructor(private ctx: UiContext) {
     // Marca: usa o logo do projeto se existir; senão, o prédio em pixels.
@@ -103,6 +105,7 @@ export class TopBar implements UiComponent {
       this.settingsBtn,
       iconButton(ICONS.help, 'Ajuda (?)', () => ctx.openHelp()),
     );
+    this.panelGroup = panelGroup;
 
     this.el = h(
       'header',

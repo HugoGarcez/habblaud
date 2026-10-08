@@ -3,7 +3,9 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { SourceInfo } from '../../shared/types';
 import type { AccountsService } from '../accounts/service';
 import type { Office } from '../model/office';
+import type { SessionHistory } from '../sources/history';
 import { isJsonContentType, isLoopbackHost } from './guard';
+import { handleSessionsRoute } from './sessions';
 import type { Hub } from './sse';
 import type { TerminalStreams } from './terminal';
 
@@ -18,6 +20,8 @@ export interface ApiDeps {
   terminal?: boolean;
   /** Streams do terminal; sem eles o recurso fica desligado mesmo com `terminal`. */
   terminals?: TerminalStreams;
+  /** Histórico de sessões do terminal (GET /api/sessions/*, http/sessions.ts); mesma trava do terminal. */
+  sessions?: SessionHistory;
 }
 
 /** GET /api/agents/:id/terminal (ids nunca contêm '/'). */
@@ -147,6 +151,10 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
         }
         terminals.attach(req, res, id);
       }
+      return true;
+    }
+    if (path.startsWith('/api/sessions/')) {
+      handleSessionsRoute(req, res, path, { history: deps.terminal ? deps.sessions : undefined, terminals });
       return true;
     }
     if (path.startsWith('/api/agents/')) {

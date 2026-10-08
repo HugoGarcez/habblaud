@@ -248,8 +248,19 @@ respostas, cada ferramenta chamada (com o comando ou o diff) e o resultado, atua
 dá para digitar nem interferir no agente. Vale para agentes principais e subagentes; no modo demonstração, a conversa
 é fictícia.
 
-Como o terminal mostra a conversa inteira, ele só existe quando o CodeTown está acessível **apenas pelo próprio
-computador** (o padrão) e só abre por `http://localhost` ou `http://127.0.0.1`. Com a porta liberada para a rede
+- **Busca:** com o terminal em foco, `Ctrl+F` (`⌘F` no Mac) ou a lupa do cabeçalho abre a busca na conversa, sem
+  diferenciar maiúsculas nem acentos. O contador mostra a posição ("3/17"); `Enter` e `Shift+Enter` vão para o próximo
+  e o anterior, abrindo os blocos recolhidos ("… +N linhas") onde o termo estiver. A busca continua valendo enquanto
+  chegam mensagens novas. `Esc` fecha a busca; o seguinte fecha o terminal.
+- **Filtro:** **Tudo**, **Só prompts** (os seus prompts e as respostas finais do agente, sem os passos intermediários)
+  ou **Sem ferramentas**.
+- **Copiar:** passe o mouse (ou o foco) sobre um prompt, uma resposta, um comando ou um resultado para copiá-lo.
+- **Histórico:** o relógio da barra superior lista as sessões dos últimos 7 dias de todas as contas (até 150), agrupadas
+  por dia, com busca por título, projeto ou conta. Uma sessão encerrada abre no terminal com projeto, título e data no
+  cabeçalho e "Sessão encerrada às …" no rodapé; uma sessão ainda aberta abre o terminal ao vivo do agente.
+
+Como o terminal (e o histórico) mostra a conversa inteira, ele só existe quando o CodeTown está acessível **apenas pelo
+próprio computador** (o padrão) e só abre por `http://localhost` ou `http://127.0.0.1`. Com a porta liberada para a rede
 (`CODETOWN_BIND=0.0.0.0` ou `CODETOWN_HOST=0.0.0.0`), ele fica desligado. Detalhes em
 [Privacidade e segurança](#privacidade-e-segurança).
 
@@ -369,6 +380,8 @@ scripts/  build do servidor, docker-up, tap de statusline (+ instalador) e scree
 | `GET /api/snapshot` | Estado atual do escritório. |
 | `GET /api/agents/:id` | Detalhes de um agente, com até 200 atividades. |
 | `GET /api/agents/:id/terminal` | SSE do terminal somente leitura (eventos `init` e `append`); só com acesso local. |
+| `GET /api/sessions/recent` | Histórico: sessões dos últimos 7 dias de todas as contas (até 150); só com acesso local. |
+| `GET /api/sessions/:conta/:sessionId/terminal` | SSE da conversa de uma sessão do histórico (mesmo protocolo do terminal); só com acesso local. |
 | `GET /api/health` | Saúde: versão, demonstração, Docker, terminal, fontes e status de uso de cada conta. |
 | `POST /api/demo` | `{"enabled": true \| false}` liga ou desliga os agentes simulados. |
 
@@ -404,8 +417,9 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
   `sk-…`, `ghp_…`, `AKIA…`, JWTs, senhas em URLs) viram `***` antes de chegar ao navegador.
 - **Protegido contra sites maliciosos:** o servidor recusa endereços que não sejam `localhost`/IP (DNS rebinding) e
   `POST` vindos de outras origens (CSRF), e não deixa a página ser embutida em outros sites.
-- **Terminal somente leitura só local:** a conversa completa das sessões só sai do servidor com o CodeTown acessível
-  apenas pelo próprio computador (`CODETOWN_HOST` local no Node; `CODETOWN_BIND` local no Docker) — não há como
+- **Terminal somente leitura só local:** a conversa completa das sessões (e o histórico das sessões encerradas, com os
+  títulos) só sai do servidor com o CodeTown acessível apenas pelo próprio computador (`CODETOWN_HOST` local no Node;
+  `CODETOWN_BIND` local no Docker) — não há como
   ligá-lo com a porta exposta — e cada pedido precisa vir por `localhost`/`127.0.0.1`: IPs da rede e nomes de
   `CODETOWN_ALLOWED_HOSTS` (proxies, túneis) são recusados. Segredos são mascarados e textos longos truncados antes
   de chegar ao navegador; no modo demonstração, a conversa é fictícia. `CODETOWN_TERMINAL=0` desliga de vez.

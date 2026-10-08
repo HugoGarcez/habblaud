@@ -14,6 +14,7 @@ import { TerminalStreams } from './http/terminal';
 import { errMsg, log } from './log';
 import { NameStore } from './model/names';
 import { Office } from './model/office';
+import { openMainAgent, SessionHistory } from './sources/history';
 import { ClaudeWatcher } from './sources/watcher';
 import { createBuildReader } from './build';
 
@@ -49,6 +50,10 @@ late.watcher = watcher;
 const hub = new Hub(office);
 // Terminal somente leitura: só existe com bind local (ver terminalOffReason em config.ts).
 const terminals = config.terminal ? new TerminalStreams({ office, transcriptPathOf: (id) => watcher.transcriptPathOf(id) }) : undefined;
+// Histórico do terminal (sessões recentes, abertas ou encerradas): mesma trava.
+const history = config.terminal
+  ? new SessionHistory({ accounts: () => accounts.entries(), openAgentOf: (acc, sid) => openMainAgent(office.list(), acc, sid) })
+  : undefined;
 
 if (config.demo) office.setDemo(true);
 watcher.start();
@@ -71,6 +76,7 @@ const api = createApiHandler({
   inDocker: config.inDocker,
   terminal: config.terminal,
   terminals,
+  sessions: history,
 });
 
 const server = http.createServer();
