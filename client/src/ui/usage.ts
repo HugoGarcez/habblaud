@@ -15,6 +15,7 @@ export const SOURCE_LABEL: Record<NonNullable<AccountInfo['usage']>['source'], s
   cache: 'cache do /usage do Claude Code',
   statusline: 'ao vivo (statusline do Claude Code)',
   codex: 'sessões do Codex (atualiza a cada resposta)',
+  antigravity: 'agy /usage do Antigravity (a cada 5 min)',
 };
 
 /** Origem para mostrar: o arquivo ao vivo pode ter sido gravado pelo mod do Habblaud ou pelo tap. */
@@ -288,7 +289,7 @@ export class UsageCards {
     setText(r.tipNote, note);
     setHidden(r.tipNote, !note);
     // O passo a passo aparece sempre que os números não são ao vivo.
-    const live = (u?.source === 'statusline' || u?.source === 'codex') && state === 'ok';
+    const live = (u?.source === 'statusline' || u?.source === 'codex' || u?.source === 'antigravity') && state === 'ok';
     setHidden(r.tipSetup, live);
   }
 }

@@ -12,11 +12,23 @@ import { existsSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { describeCommand, describePrompt, describeTool, SPECIAL, truncate, type ActivityDescription } from '../../shared/activity';
 import { hash32 } from '../../shared/hash';
-import type { AccountInfo, AgentStatus, SourceInfo } from '../../shared/types';
+import type { AccountInfo, AccountUsage, AgentStatus, SourceInfo } from '../../shared/types';
 import { rollover, STALE_AFTER_MS } from '../accounts/usage';
 import { errMsg, log } from '../log';
 import type { Office } from '../model/office';
-import type { CodexUsageEntry } from './codex-usage';
+
+/** Uso de 5 h/semanal de uma conta (ou grupo de modelos) de outro agente: Codex, Antigravity… */
+export interface ExternalUsage {
+  /** Tipo de agente do Orca dono da conta ('codex', 'antigravity'…). */
+  agentType: string;
+  /** Rótulo da conta/grupo ("~/.codex", "Gemini"…), único dentro do tipo. */
+  label: string;
+  /** O rótulo vai no nome do cartão também no principal (ex.: "Antigravity · Gemini"). */
+  labelInName?: boolean;
+  /** Onde os números foram lidos (vai na dica do cartão). */
+  configDir: string;
+  usage: AccountUsage;
+}
 
 export interface OrcaAgent {
   paneKey: string;
@@ -190,8 +202,11 @@ export interface OrcaWatcherOptions {
   idleMaxMs?: number;
   /** Tipos de agente ignorados (padrão: claude, que vem dos transcripts). */
   skipTypes?: string[];
-  /** Uso de 5 h/semanal de cada conta do Codex (ver codex-usage.ts), da leitura mais recente para a mais antiga. */
-  codexUsage?: () => CodexUsageEntry[];
+  /**
+   * Uso de 5 h/semanal das contas de outros agentes (codex-usage.ts, antigravity-usage.ts). Por tipo, a primeira
+   * entrada vai no cartão dos agentes ("orca:<tipo>"); as outras ganham cartão próprio.
+   */
+  usage?: () => ExternalUsage[];
 }
 
 interface Tracked {
@@ -202,10 +217,10 @@ interface Tracked {
   lastMessage?: string;
 }
 
-function withUsage(acc: AccountInfo, e: CodexUsageEntry, now: number): AccountInfo {
+function withUsage(acc: AccountInfo, e: ExternalUsage, now: number): AccountInfo {
   acc.usage = rollover(e.usage, now);
   acc.usageStatus = now - e.usage.fetchedAt > STALE_AFTER_MS ? 'stale' : 'ok';
-  if (acc.configDir === 'Orca') acc.configDir = e.home.dir;
+  acc.configDir = e.configDir;
   return acc;
 }
 
@@ -256,26 +271,26 @@ export class OrcaWatcher {
   }
 
   /**
-   * Contas "virtuais", uma por tipo de agente visto (Codex, OpenCode…), com o nº de sessões abertas.
-   * O Codex leva o uso de 5 h/semanal: a conta usada por último fica em "orca:codex" (a dos agentes); as outras
-   * contas do Codex com números ganham um cartão próprio ("Codex · Orca 2").
+   * Contas "virtuais", uma por tipo de agente visto (Codex, OpenCode…), com o nº de sessões abertas, e o uso de
+   * 5 h/semanal de quem tem (ver OrcaWatcherOptions.usage).
    */
   accounts(sessions: ReadonlyMap<string, number>): AccountInfo[] {
     const now = this.now();
-    const codex = this.opts.codexUsage?.() ?? [];
-    const types = new Set(this.types);
-    if (codex.length) types.add('codex');
-    const out: AccountInfo[] = [...types].sort().map((t) => {
+    const byType = new Map<string, ExternalUsage[]>();
+    for (const e of this.opts.usage?.() ?? []) byType.set(e.agentType, [...(byType.get(e.agentType) ?? []), e]);
+    const types = new Set([...this.types, ...byType.keys()]);
+    const out: AccountInfo[] = [];
+    for (const t of [...types].sort()) {
       const k = agentKind(t);
       const id = orcaAccountId(t);
-      const acc: AccountInfo = { id, short: k.short, name: k.name, color: k.color, configDir: 'Orca', sessions: sessions.get(id) ?? 0, usageStatus: 'disabled' };
-      if (t === 'codex' && codex[0]) withUsage(acc, codex[0], now);
-      return acc;
-    });
-    for (const e of codex.slice(1)) {
-      const k = agentKind('codex');
-      const acc: AccountInfo = { id: `${orcaAccountId('codex')}~${e.home.label}`, short: k.short, name: `${k.name} · ${e.home.label}`, color: k.color, configDir: e.home.dir, sessions: 0, usageStatus: 'disabled' };
-      out.push(withUsage(acc, e, now));
+      const [first, ...rest] = byType.get(t) ?? [];
+      const name = first?.labelInName ? `${k.name} · ${first.label}` : k.name;
+      const acc: AccountInfo = { id, short: k.short, name, color: k.color, configDir: 'Orca', sessions: sessions.get(id) ?? 0, usageStatus: 'disabled' };
+      out.push(first ? withUsage(acc, first, now) : acc);
+      for (const e of rest) {
+        const extra: AccountInfo = { id: `${id}~${e.label}`, short: k.short, name: `${k.name} · ${e.label}`, color: k.color, configDir: e.configDir, sessions: 0, usageStatus: 'disabled' };
+        out.push(withUsage(extra, e, now));
+      }
     }
     return out;
   }

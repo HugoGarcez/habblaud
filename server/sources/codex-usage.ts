@@ -7,6 +7,7 @@ import { closeSync, existsSync, openSync, readdirSync, readSync, statSync } from
 import { join, resolve } from 'node:path';
 import type { AccountUsage, UsageWindow } from '../../shared/types';
 import { toEpochMs } from '../accounts/usage';
+import type { ExternalUsage } from './orca';
 
 /** Quanto do fim do rollout mais recente é lido (os eventos token_count aparecem a cada resposta). */
 const TAIL_BYTES = 512 * 1024;
@@ -159,6 +160,11 @@ export class CodexUsageReader {
 export interface CodexUsageEntry {
   home: CodexHome;
   usage: AccountUsage;
+}
+
+/** Entradas do Codex no formato das contas virtuais do Orca. */
+export function codexExternalUsage(entries: CodexUsageEntry[]): ExternalUsage[] {
+  return entries.map((e) => ({ agentType: 'codex', label: e.home.label, configDir: e.home.dir, usage: e.usage }));
 }
 
 /** Relê o uso de cada conta do Codex a cada ~15 s e avisa quando muda. */

@@ -23,7 +23,8 @@ import { createPermissionRoutes } from './permissions/http';
 import { PermissionRegistry } from './permissions/registry';
 import { ClaudeWatcher } from './sources/watcher';
 import { findOrcaBin, OrcaWatcher } from './sources/orca';
-import { CodexUsageService } from './sources/codex-usage';
+import { codexExternalUsage, CodexUsageService } from './sources/codex-usage';
+import { AntigravityUsageService, findAgyBin } from './sources/antigravity-usage';
 import { createBuildReader } from './build';
 import { UpdateChecker } from './updates/checker';
 
@@ -78,9 +79,14 @@ const watcher = new ClaudeWatcher({ accounts, office, inDocker: config.inDocker 
 // Agentes do Orca (Codex, OpenCode, Antigravity…): lidos pela CLI do Orca, fora do Docker. HABBLAUD_ORCA=0 desliga.
 // Uso de 5 h/semanal das contas do Codex (rollouts em ~/.codex e nas contas do Orca); fora do Docker.
 const codexUsage = new CodexUsageService({ home: config.home, onChange: () => office.markDirty() });
+// Cotas do Antigravity: `agy -p /usage` a cada 5 min (0 tokens); fora do Docker. HABBLAUD_ANTIGRAVITY=0 desliga.
+const agyUsage = new AntigravityUsageService({
+  bin: config.inDocker || process.env.HABBLAUD_ANTIGRAVITY === '0' ? undefined : findAgyBin(),
+  onChange: () => office.markDirty(),
+});
 const orca = new OrcaWatcher({
   office,
-  codexUsage: () => (config.inDocker ? [] : codexUsage.entries()),
+  usage: () => (config.inDocker ? [] : [...codexExternalUsage(codexUsage.entries()), ...agyUsage.entries()]),
   bin: config.inDocker || process.env.HABBLAUD_ORCA === '0' ? undefined : findOrcaBin(),
   idleMaxMs: Number(process.env.HABBLAUD_ORCA_IDLE_MIN) > 0 ? Number(process.env.HABBLAUD_ORCA_IDLE_MIN) * 60_000 : undefined,
 });
@@ -117,6 +123,7 @@ if (config.demo) office.setDemo(true);
 watcher.start();
 orca.start();
 if (!config.inDocker) codexUsage.start();
+agyUsage.start();
 accounts.start();
 hub.start();
 if (timeline) {
@@ -232,6 +239,7 @@ function shutdown(signal: string): void {
   watcher.stop();
   orca.stop();
   codexUsage.stop();
+  agyUsage.stop();
   accounts.stop();
   hub.stop();
   terminals?.stop();

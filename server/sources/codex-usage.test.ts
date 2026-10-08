@@ -5,7 +5,7 @@ import { setQuiet } from '../log';
 import { NameStore } from '../model/names';
 import { Office } from '../model/office';
 import { tempDir } from '../test/fixtures';
-import { CodexUsageService, discoverCodexHomes, lastRateLimits, usageFromRateLimits } from './codex-usage';
+import { codexExternalUsage, CodexUsageService, discoverCodexHomes, lastRateLimits, usageFromRateLimits } from './codex-usage';
 import { OrcaWatcher } from './orca';
 
 setQuiet(true);
@@ -63,7 +63,7 @@ describe('uso do Codex', () => {
       ]);
 
       const office = new Office({ names: new NameStore(null), version: 't', startedAt: 0, accounts: () => [], sources: () => [], accountName: () => undefined });
-      const w = new OrcaWatcher({ office, run: async () => '{}', now: () => now, codexUsage: () => svc.entries() });
+      const w = new OrcaWatcher({ office, run: async () => '{}', now: () => now, usage: () => codexExternalUsage(svc.entries()) });
       const accs = w.accounts(new Map());
       expect(accs.map((a) => [a.id, a.name, a.usageStatus, a.usage?.fiveHour?.utilization])).toEqual([
         ['orca:codex', 'Codex', 'ok', 66],
