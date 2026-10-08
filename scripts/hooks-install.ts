@@ -5,14 +5,20 @@
 //   npm run hooks:status      # mostra, por conta, se está instalado, e se o CodeTown está respondendo pedidos
 //   (opções: --dry-run, --node <caminho>, --port <n>, --timeout <s>)
 //
-// O hook (scripts/permission-hook.mjs) deixa aprovar ou recusar pelo escritório os pedidos de permissão
-// ("Do you want to…"): o Claude Code continua mostrando o diálogo no terminal e vale o que você responder
-// primeiro. Sem o CodeTown no ar ou sem nenhuma página aberta, o hook sai na hora e nada muda.
+// No Claude Code 2.1.287+ o mesmo hook vem pronto no plugin `codetown-permissoes` do marketplace do
+// repositório (mod/codetown-permissoes, que roda o MESMO script); este instalador fica para as versões
+// anteriores e para tirar instalações antigas.
+//
+// O hook (mod/codetown-permissoes/hooks/permission-hook.mjs) deixa aprovar ou recusar pelo escritório os
+// pedidos de permissão ("Do you want to…"): o Claude Code continua mostrando o diálogo no terminal e vale o
+// que você responder primeiro. Sem o CodeTown no ar ou sem nenhuma página aberta, o hook sai na hora e nada muda.
 //
 // Em <conta>/settings.json só a lista hooks.PermissionRequest muda: entra um grupo {matcher: "*", hooks:
-// [{type: "command", command: 'node "<CodeTown>/scripts/permission-hook.mjs"', timeout, statusMessage}]}
-// (os demais hooks e chaves ficam como estão). Antes de gravar, uma cópia vai para
-// settings.json.codetown-backup-<data>. Rodar de novo atualiza o caminho/opções sem duplicar.
+// [{type: "command", command: 'node "<CodeTown>/mod/codetown-permissoes/hooks/permission-hook.mjs"', timeout,
+// statusMessage}]} (os demais hooks e chaves ficam como estão). Antes de gravar, uma cópia vai para
+// settings.json.codetown-backup-<data>. Rodar de novo atualiza o caminho/opções sem duplicar (e troca o
+// caminho antigo, scripts/permission-hook.mjs, de antes da 0.3).
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -20,7 +26,13 @@ import { discoverClaudeDirs } from '../server/accounts/detect';
 import { detectNodeCommand, quotePath, readSettings, tildify, writeSettings, type Settings } from './statusline-install';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-export const HOOK_SCRIPT = join(ROOT, 'scripts', 'permission-hook.mjs');
+export const HOOK_SCRIPT = join(ROOT, 'mod', 'codetown-permissoes', 'hooks', 'permission-hook.mjs');
+/** Onde o script ficava até a 0.2 (instalações antigas apontam para cá; o status avisa e manda reinstalar). */
+export const LEGACY_HOOK_SCRIPT = join(ROOT, 'scripts', 'permission-hook.mjs');
+/**
+ * O hook é reconhecido pelo NOME do arquivo, em qualquer pasta: assim o caminho antigo (scripts/) e o novo
+ * (mod/codetown-permissoes/hooks/) contam como "nosso", e install/uninstall trocam ou tiram os dois.
+ */
 const HOOK_NAME = 'permission-hook.mjs';
 const EVENT = 'PermissionRequest';
 export const DEFAULT_PORT = 4747;
@@ -254,7 +266,10 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
         continue;
       }
       const path = typeof h.command === 'string' ? scriptPathOf(h.command) : undefined;
-      if (path && resolve(path) !== resolve(ctx.hookPath)) out(`! ${label}: o hook aponta para ${path}; rode npm run hooks:install para atualizar`);
+      if (path && resolve(path) !== resolve(ctx.hookPath)) {
+        const gone = !existsSync(path) ? ' (esse arquivo não existe mais: o hook falha e vale só o terminal)' : '';
+        out(`! ${label}: o hook aponta para ${path}${gone}; rode npm run hooks:install para atualizar`);
+      }
       out(`• ${label}: instalado (${String(h.command)}; tempo limite ${String(h.timeout ?? '?')} s)`);
       continue;
     }

@@ -1,4 +1,4 @@
-// Hook PermissionRequest (scripts/permission-hook.mjs) rodado como processo de verdade contra o servidor
+// Hook PermissionRequest (mod/codetown-permissoes/hooks/permission-hook.mjs) rodado como processo de verdade contra o servidor
 // de teste: stdin JSON → saída esperada (aprovar, recusar, "sempre permitir", terminal), saída rápida e
 // sem decisão quando o CodeTown está fora do ar, desligado ou sem páginas abertas, e o tempo limite.
 // Os processos são assíncronos (spawn): o servidor roda neste mesmo processo.
@@ -12,7 +12,7 @@ import { hookJson, MAIN, servePermissions, type PermissionServer } from './permi
 
 setQuiet(true);
 
-const HOOK = resolve(__dirname, '../../scripts/permission-hook.mjs');
+const HOOK = resolve(__dirname, '../../mod/codetown-permissoes/hooks/permission-hook.mjs');
 
 /** Funções exportadas pelo hook (JavaScript puro, sem tipos). */
 interface HookModule {

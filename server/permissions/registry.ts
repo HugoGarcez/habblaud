@@ -1,7 +1,7 @@
 // Responder pelo escritório: registro dos pedidos de permissão pendentes.
 //
-// O hook PermissionRequest do Claude Code (scripts/permission-hook.mjs) manda cada pedido para
-// POST /api/permissions e fica esperando a decisão em GET /api/permissions/:id/wait (long-poll).
+// O hook PermissionRequest do Claude Code (mod/codetown-permissoes/hooks/permission-hook.mjs, pelo plugin
+// codetown-permissoes ou pelo npm run hooks:install) manda cada pedido para POST /api/permissions e fica esperando a decisão em GET /api/permissions/:id/wait (long-poll).
 // A página responde em POST /api/permissions/:id/decision. O registro:
 // - só aceita o pedido se alguma página local estiver aberta e a sessão for conhecida (senão o hook sai
 //   na hora e o terminal segue normal);

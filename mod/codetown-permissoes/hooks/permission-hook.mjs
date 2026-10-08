@@ -1,8 +1,15 @@
 #!/usr/bin/env node
 // Hook PermissionRequest do CodeTown: deixa aprovar ou recusar pelo escritório os pedidos de permissão
-// do Claude Code ("Do you want to…"). Instalado em cada conta por `npm run hooks:install`:
+// do Claude Code ("Do you want to…"). Chega à sessão de um destes jeitos (este arquivo é a fonte única
+// dos dois):
 //
-//   node /caminho/do/codetown/scripts/permission-hook.mjs [--port 4747] [--timeout 300]
+// - plugin `codetown-permissoes` do marketplace do repositório (Claude Code 2.1.287+): o hooks.json ao
+//   lado roda `node "${CLAUDE_PLUGIN_ROOT}/hooks/permission-hook.mjs"`, com a porta vinda de CODETOWN_PORT.
+//   O Claude Code copia SÓ a pasta do plugin para o cache de plugins: por isso nada de imports fora de
+//   `node:*` aqui;
+// - `npm run hooks:install` (versões anteriores), que grava em cada <conta>/settings.json:
+//
+//   node /caminho/do/codetown/mod/codetown-permissoes/hooks/permission-hook.mjs [--port 4747] [--timeout 300]
 //
 // O Claude Code mostra o diálogo no terminal e roda este hook AO MESMO TEMPO (vale o que responder
 // primeiro); em subagentes em segundo plano o diálogo só aparece depois que o hook termina. O hook:

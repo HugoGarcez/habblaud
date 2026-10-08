@@ -493,7 +493,8 @@ no host); as demais ficam fixas dentro do container. Opções: `npm run docker:u
 shared/   protocolo (types.ts), atividades em PT-BR, nomes, simulador de demonstração
 server/   servidor HTTP + SSE: contas e uso, leitura das sessões e transcripts, modelo do escritório
 client/   Vite: src/art (pixel art procedural), src/world (o escritório no canvas), src/ui (interface)
-scripts/  build do servidor, docker-up, tap de statusline e hook de permissão (+ instaladores) e screenshots
+scripts/  build do servidor, docker-up, tap de statusline, instaladores (tap e hook de permissão) e screenshots
+mod/      plugins do Claude Code (marketplace em .claude-plugin/): o mod codetown e o hook de permissão
 ```
 
 | Rota | Descrição |
@@ -510,6 +511,7 @@ scripts/  build do servidor, docker-up, tap de statusline e hook de permissão (
 | `GET /api/timeline/:dia` | Linha do tempo de um dia (`AAAA-MM-DD`), em JSONL (com gzip). |
 | `GET /api/health` | Saúde: versão, demonstração, Docker, terminal, responder pelo escritório, fontes e status de uso de cada conta. |
 | `POST /api/demo` | `{"enabled": true \| false}` liga ou desliga os agentes simulados. |
+| `GET /api/mod/summary` | Para o mod do Claude Code: versão, quantos agentes, quantos trabalham e quem precisa de você (sem o demo e, com `?account=&session=`, sem a própria sessão). |
 | `/api/permissions…` | Responder pelo escritório: o hook registra o pedido e espera; a página busca o detalhe e decide. Só com acesso local. |
 
 Mais detalhes do servidor em [`server/README.md`](server/README.md).
