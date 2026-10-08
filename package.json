@@ -12,6 +12,7 @@
     "dev": "tsx watch --clear-screen=false --exclude './client/**' server/index.ts --dev",
     "dev:client": "vite --config vite.config.ts",
     "demo": "CODETOWN_DEMO=1 npm run dev",
+    "demo:timeline": "tsx scripts/demo-timeline.ts",
     "build": "npm run build:client && npm run build:server",
     "build:client": "vite build --config vite.config.ts",
     "build:server": "node scripts/build-server.mjs",
@@ -23,7 +24,10 @@
     "docker:logs": "docker compose logs -f codetown",
     "usage:install": "tsx scripts/statusline-install.ts install",
     "usage:uninstall": "tsx scripts/statusline-install.ts uninstall",
-    "usage:status": "tsx scripts/statusline-install.ts status"
+    "usage:status": "tsx scripts/statusline-install.ts status",
+    "hooks:install": "tsx scripts/hooks-install.ts install",
+    "hooks:uninstall": "tsx scripts/hooks-install.ts uninstall",
+    "hooks:status": "tsx scripts/hooks-install.ts status"
   },
   "devDependencies": {
     "@fontsource/pixelify-sans": "^5.3.0",

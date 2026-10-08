@@ -589,6 +589,10 @@ export class ClaudeWatcher {
         if (tool) this.finishTool(t, tool);
         return;
       }
+      case 'github':
+        // Só o que chega ao vivo anima a sala; a carga inicial (boot, sessão retomada) vai para o histórico.
+        this.opts.office.githubEvent(owner, sig.event, { key: sig.toolUseId, at, live });
+        return;
       default:
         return;
     }

@@ -1,6 +1,7 @@
 // Preferências da interface, persistidas em localStorage ('codetown:prefs').
 // Puro: o armazenamento é injetado (testável em node).
-import type { WorldOptions } from '../world/api';
+import { DEFAULT_SOUND_SETTINGS, sanitizeSoundSettings, type SoundSettings } from '../audio/scheduler';
+import type { DaylightMode, WorldOptions } from '../world/api';
 import { DEFAULT_WORLD_OPTIONS } from '../world/api';
 
 export const PREFS_KEY = 'codetown:prefs';
@@ -9,9 +10,12 @@ export interface UiPrefs {
   showNames: boolean;
   bubbles: WorldOptions['bubbles'];
   liveliness: WorldOptions['liveliness'];
-  dayNight: boolean;
-  /** Sons sintetizados (ding para alerta, pop para conclusão). */
+  /** Ciclo dia/noite: automático (hora local), sempre dia ou sempre noite. */
+  daylight: DaylightMode;
+  /** Sons sintetizados (interruptor geral; desligado por padrão). */
   sound: boolean;
+  /** Volume mestre e categorias dos sons. */
+  sounds: SoundSettings;
   /** Notification do navegador para alertas com a aba oculta. */
   browserNotifications: boolean;
   sidebarOpen: boolean;
@@ -24,8 +28,9 @@ export const DEFAULT_PREFS: UiPrefs = {
   showNames: DEFAULT_WORLD_OPTIONS.showNames,
   bubbles: DEFAULT_WORLD_OPTIONS.bubbles,
   liveliness: DEFAULT_WORLD_OPTIONS.liveliness,
-  dayNight: DEFAULT_WORLD_OPTIONS.dayNight,
+  daylight: 'auto',
   sound: false,
+  sounds: DEFAULT_SOUND_SETTINGS,
   browserNotifications: false,
   sidebarOpen: true,
   feedOpen: true,
@@ -46,8 +51,10 @@ export function sanitizePrefs(raw: unknown): UiPrefs {
     showNames: bool(o.showNames, d.showNames),
     bubbles: oneOf(o.bubbles, ['all', 'important', 'none'] as const, d.bubbles),
     liveliness: oneOf(o.liveliness, ['calm', 'normal', 'lively'] as const, d.liveliness),
-    dayNight: bool(o.dayNight, d.dayNight),
+    // preferências antigas: o interruptor "dia e noite" desligado vira "sempre dia"
+    daylight: oneOf(o.daylight, ['auto', 'day', 'night'] as const, o.dayNight === false ? 'day' : d.daylight),
     sound: bool(o.sound, d.sound),
+    sounds: sanitizeSoundSettings(o.sounds),
     browserNotifications: bool(o.browserNotifications, d.browserNotifications),
     sidebarOpen: bool(o.sidebarOpen, d.sidebarOpen),
     feedOpen: bool(o.feedOpen, d.feedOpen),
@@ -76,7 +83,7 @@ export function savePrefs(storage: StorageLike | null, prefs: UiPrefs): void {
 
 /** Parte das preferências que o mundo (canvas) consome. */
 export function worldOptionsFrom(p: UiPrefs): Partial<WorldOptions> {
-  return { showNames: p.showNames, bubbles: p.bubbles, liveliness: p.liveliness, dayNight: p.dayNight };
+  return { showNames: p.showNames, bubbles: p.bubbles, liveliness: p.liveliness, dayNight: p.daylight !== 'day', daylight: p.daylight };
 }
 
 /** localStorage com proteção contra navegadores que lançam exceção ao acessá-lo. */

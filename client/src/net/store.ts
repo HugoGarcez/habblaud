@@ -1,8 +1,10 @@
 // Estado do escritório no navegador: recebe snapshots/feed/avisos do servidor via SSE
 // (ou do simulador local quando a URL tem ?mock=1) e notifica os assinantes.
+// Fonte alternativa (o timelapse, ui/timelapse.ts): pushReplay() publica snapshots reconstruídos e o
+// SSE segue conectado por baixo, com os snapshots ao vivo guardados até o stopReplay().
 // Também cuida da reconexão: quando o navegador desiste do stream (EventSource fechado após erro HTTP,
 // ex.: servidor reiniciando atrás de um proxy), tenta de novo com espera crescente.
-import type { Activity, AgentDetail, AgentInfo, FeedItem, Notice, OfficeSnapshot, RoomInfo } from '../../../shared/types';
+import type { Activity, AgentDetail, AgentInfo, FeedItem, Notice, OfficeSnapshot, PermissionDecision, PermissionRequestInfo, RoomInfo } from '../../../shared/types';
 import { DemoSimulator } from '../../../shared/demo/simulator';
 
 export type ConnectionState = 'connecting' | 'open' | 'closed' | 'mock';
@@ -94,6 +96,9 @@ export class OfficeStore {
   private retryAt: number | null = null;
   /** Desligado de propósito (disconnect()): não reconecta sozinho. */
   private stopped = true;
+  /** Timelapse ligado: `snapshot` é o reconstruído; o último ao vivo fica em `live` (com a hora em que chegou). */
+  private replay = false;
+  private live: { snap: OfficeSnapshot; at: number } | null = null;
 
   constructor(opts: StoreOptions = {}) {
     this.mock = !!opts.mock;
@@ -154,9 +159,9 @@ export class OfficeStore {
     return (this.snapshot?.agents ?? []).filter((a) => a.roomId === roomId);
   }
 
-  /** Histórico longo de um agente (servidor). No modo mock devolve o `recent`. */
+  /** Histórico longo de um agente (servidor). No modo mock e no timelapse devolve o `recent`. */
   async agentHistory(id: string): Promise<Activity[]> {
-    if (this.mock) return this.agent(id)?.recent ?? [];
+    if (this.mock || this.replay) return this.agent(id)?.recent ?? [];
     const res = await fetch(`/api/agents/${encodeURIComponent(id)}`);
     if (!res.ok) return this.agent(id)?.recent ?? [];
     const detail = (await res.json()) as AgentDetail;
@@ -172,6 +177,82 @@ export class OfficeStore {
       body: JSON.stringify({ enabled }),
     });
     return res.ok;
+  }
+
+  // ---------------------------------------------------------------- timelapse
+
+  /** Snapshots vêm de uma fonte alternativa (o timelapse), não do SSE. */
+  get replaying(): boolean {
+    return this.replay;
+  }
+
+  /** Último snapshot ao vivo (durante o timelapse, `snapshot` é o reconstruído). */
+  get liveSnapshot(): OfficeSnapshot | null {
+    return this.replay ? (this.live?.snap ?? null) : this.snapshot;
+  }
+
+  /** Publica um snapshot da fonte alternativa; o primeiro liga o modo replay (o ao vivo fica guardado). */
+  pushReplay(snap: OfficeSnapshot): void {
+    if (!this.replay) {
+      this.replay = true;
+      this.live = this.snapshot ? { snap: this.snapshot, at: Date.now() } : null;
+    }
+    this.setSnapshot(snap);
+  }
+
+  /** Desliga a fonte alternativa e volta ao último snapshot ao vivo. */
+  stopReplay(): void {
+    if (!this.replay) return;
+    this.replay = false;
+    const live = this.live;
+    this.live = null;
+    if (live) {
+      // `serverTime` avançado pelo tempo guardado: a UI acerta o relógio pelo snapshot que acabou de chegar.
+      this.setSnapshot({ ...live.snap, serverTime: live.snap.serverTime + (Date.now() - live.at) });
+    } else {
+      this.snapshot = null;
+      this.agentIndex = new Map();
+      this.roomIndex = new Map();
+    }
+  }
+
+  /**
+   * Detalhe de um pedido de permissão (com os argumentos: comando, diff...). Os pedidos do demo já vêm
+   * completos no snapshot; os reais vêm de GET /api/permissions/:id (só com acesso local).
+   */
+  async permissionDetail(agentId: string, id: string): Promise<PermissionRequestInfo | undefined> {
+    const inline = this.agent(agentId)?.permission;
+    if (inline?.id === id && inline.input !== undefined) return inline;
+    if (this.mock) return inline?.id === id ? inline : undefined;
+    const res = await fetch(`/api/permissions/${encodeURIComponent(id)}`);
+    if (!res.ok) return undefined;
+    return (await res.json()) as PermissionRequestInfo;
+  }
+
+  /**
+   * Responde um pedido de permissão pelo escritório. Devolve undefined se deu certo, ou a mensagem de erro
+   * do servidor (pedido já respondido, acesso que não é local...).
+   */
+  async decidePermission(id: string, d: PermissionDecision): Promise<string | undefined> {
+    if (this.mock) {
+      const sim = this.mockSim;
+      if (!sim?.decidePermission(id, d)) return 'Este pedido já foi respondido.';
+      this.applySnapshot(sim.snapshot());
+      return undefined;
+    }
+    const res = await fetch(`/api/permissions/${encodeURIComponent(id)}/decision`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(d),
+    });
+    if (res.ok) return undefined;
+    try {
+      const body = (await res.json()) as { error?: unknown };
+      if (typeof body.error === 'string') return body.error;
+    } catch {
+      // Resposta sem JSON (ex.: guard): usa a mensagem padrão.
+    }
+    return `Não foi possível responder (erro ${res.status}).`;
   }
 
   // ---------------------------------------------------------------- internos
@@ -193,12 +274,18 @@ export class OfficeStore {
   }
 
   private applySnapshot(snap: OfficeSnapshot): void {
-    if (this.snapshot && snap.rev < this.snapshot.rev && snap.meta.startedAt === this.snapshot.meta.startedAt) return;
+    const cur = this.replay ? this.live?.snap : this.snapshot;
+    if (cur && snap.rev < cur.rev && snap.meta.startedAt === cur.meta.startedAt) return;
+    if (this.replay) this.live = { snap, at: Date.now() };
+    else this.setSnapshot(snap);
+    this.checkBuild(snap.meta.build);
+  }
+
+  private setSnapshot(snap: OfficeSnapshot): void {
     this.snapshot = snap;
     this.agentIndex = new Map(snap.agents.map((a) => [a.id, a]));
     this.roomIndex = new Map(snap.rooms.map((r) => [r.id, r]));
     this.emit('snapshot', snap);
-    this.checkBuild(snap.meta.build);
   }
 
   private updateAnnounced = false;
@@ -306,10 +393,14 @@ export class OfficeStore {
     this.retryAt = null;
   }
 
+  /** Simulador do modo ?mock=1 (também responde os pedidos de permissão fictícios). */
+  private mockSim: DemoSimulator | null = null;
+
   private startMock(): void {
     if (this.mockTimer) return;
     this.setConnection('mock');
     const sim = new DemoSimulator(mockOptionsFrom(this.search));
+    this.mockSim = sim;
     this.applySnapshot(sim.snapshot());
     this.mockTimer = setInterval(() => {
       const now = Date.now();

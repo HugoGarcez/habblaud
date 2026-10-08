@@ -4809,3 +4809,1913 @@ button.ui-term__think:hover,
     padding: 6px 10px 10px;
   }
 }
+
+/* ---------------------------------------------------------------- terminal v2: busca, filtro, copiar e histórico */
+
+/* Barra de ferramentas sob o cabeçalho: filtro à esquerda, busca (quando aberta) à direita. */
+.ui-term__tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  flex: none;
+  min-height: 38px;
+  padding: 5px 10px 5px 12px;
+  border-bottom: 1px solid var(--ui-line);
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.ui-term__filter {
+  grid-auto-columns: auto;
+  flex: none;
+}
+
+.ui-term__filter .ui-seg__opt {
+  height: 22px;
+  padding: 0 10px;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.ui-term__find .ui-px-icon {
+  width: 13px;
+  height: 13px;
+}
+
+.ui-term__search {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 240px;
+  max-width: 380px;
+  min-width: 0;
+  height: 28px;
+  margin-left: auto;
+  padding: 0 2px 0 9px;
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--ui-line-strong);
+  color: var(--ui-faint);
+  animation: ui-term-search-in 0.16s var(--ease);
+}
+
+.ui-term__search[hidden] {
+  display: none;
+}
+
+.ui-term__search:focus-within {
+  border-color: rgba(124, 200, 255, 0.55);
+  color: var(--ui-accent);
+}
+
+.ui-term__search.is-miss {
+  border-color: rgba(255, 107, 107, 0.55);
+}
+
+@keyframes ui-term-search-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+.ui-term__search-icon {
+  display: grid;
+  flex: none;
+}
+
+.ui-term__search-icon .ui-px-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.ui-term__search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  margin: 0 2px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  font: 12.5px/1 var(--font-ui);
+  color: var(--ui-text);
+}
+
+.ui-root .ui-term__search-input:focus-visible {
+  outline: none;
+}
+
+.ui-term__search-input::placeholder {
+  color: var(--ui-faint);
+  opacity: 1;
+}
+
+.ui-term__count {
+  flex: none;
+  min-width: 3ch;
+  padding: 0 4px;
+  text-align: right;
+  font: 11.5px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-muted);
+}
+
+.ui-term__search.is-miss .ui-term__count {
+  color: #ff9b8f;
+}
+
+.ui-term__step.ui-icon-btn--sm {
+  width: 22px;
+  height: 22px;
+}
+
+.ui-term__step .ui-px-icon {
+  width: 11px;
+  height: 11px;
+}
+
+/* Resultados da busca: âmbar; o atual, laranja com contorno (o mesmo par do "precisa de você"). */
+.ui-term__hit {
+  border-radius: 2px;
+  background: rgba(255, 181, 71, 0.3);
+  box-shadow: 0 0 0 1px rgba(255, 181, 71, 0.18);
+  color: inherit;
+}
+
+.ui-term__hit.is-current {
+  background: #ffb547;
+  box-shadow: 0 0 0 2px rgba(255, 181, 71, 0.45);
+  color: #12151d;
+}
+
+/* Filtro: as linhas que não entram somem (a busca também não as conta). */
+.ui-term__row.is-filtered {
+  display: none;
+}
+
+/* Corte no meio de uma linha comprida (o resto fica no DOM, escondido, para a busca). */
+.ui-term__dots {
+  color: var(--term-dim);
+}
+
+/* Copiar: botão discreto no canto da entrada, que aparece no hover ou no foco e confirma com "Copiado". */
+.ui-term__row,
+.ui-term__call,
+.ui-term__result {
+  position: relative;
+}
+
+.ui-term__copy {
+  position: absolute;
+  z-index: 1;
+  top: -1px;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: rgba(16, 19, 27, 0.94);
+  border: 1px solid var(--ui-line-strong);
+  font: 500 11px/1 var(--font-ui);
+  color: var(--ui-muted);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.12s,
+    color 0.12s,
+    border-color 0.12s;
+}
+
+.ui-term__row--user > .ui-term__copy {
+  top: 3px;
+  right: 4px;
+}
+
+.ui-term__row--user:hover > .ui-term__copy,
+.ui-term__row--assistant:hover > .ui-term__copy,
+.ui-term__call:hover > .ui-term__copy,
+.ui-term__result:hover > .ui-term__copy,
+.ui-term__copy:focus-visible,
+.ui-term__copy.is-done,
+.ui-term__copy.is-fail {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.ui-term__copy:hover {
+  color: var(--ui-text);
+  border-color: rgba(160, 176, 210, 0.4);
+}
+
+.ui-term__copy-icon {
+  display: grid;
+}
+
+.ui-term__copy-icon .ui-px-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.ui-term__copy-done {
+  display: none;
+}
+
+.ui-term__copy.is-done,
+.ui-root .ui-term__copy.is-done {
+  border-color: rgba(79, 209, 139, 0.55);
+  color: var(--st-working);
+}
+
+.ui-term__copy.is-fail {
+  border-color: rgba(255, 107, 107, 0.55);
+  color: #ff9b8f;
+}
+
+.ui-term__copy.is-done .ui-term__copy-done,
+.ui-term__copy.is-fail .ui-term__copy-done {
+  display: inline;
+}
+
+/* Telas de toque (sem hover): o botão fica sempre à vista, mais apagado. */
+@media (hover: none) {
+  .ui-term__copy {
+    opacity: 0.7;
+    pointer-events: auto;
+  }
+}
+
+/* Sessão do histórico: chip da conta antes do título e o rótulo "histórico" em âmbar. */
+.ui-term__who .ui-acc-chip {
+  margin-right: -1px;
+}
+
+.ui-term.is-session .ui-term__kind {
+  color: #ffcf8a;
+}
+
+.ui-term.is-session .ui-term__name {
+  font-weight: 600;
+}
+
+/* Botão "Histórico" da barra superior (desligado sem acesso local, com a dica do porquê). */
+.ui-hist-btn.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ui-hist-btn.is-disabled:hover {
+  background: none;
+  color: var(--ui-muted);
+}
+
+/* Popover do histórico: cabeçalho e busca fixos, a lista rola por dentro. */
+.ui-hist {
+  display: flex;
+  flex-direction: column;
+  width: 400px;
+  max-height: min(640px, calc(100vh - var(--top-h) - 24px));
+  overflow: hidden;
+  padding-bottom: 0;
+}
+
+.ui-hist__hint {
+  padding: 0 16px 8px;
+  font-size: 11.5px;
+  color: var(--ui-muted);
+}
+
+.ui-hist__search {
+  flex: none;
+  margin: 0 12px 6px;
+}
+
+.ui-hist__state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 16px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--ui-faint);
+}
+
+.ui-hist__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 6px 6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(160, 176, 210, 0.25) transparent;
+}
+
+.ui-hist__day-label {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  padding: 8px 10px 4px;
+  background: var(--ui-bg-solid);
+  /* Fonte do sistema: a data tem dígitos (na Pixelify o "5" parece "S"). */
+  font: 600 11.5px/1.2 var(--font-ui);
+  letter-spacing: 0.02em;
+  color: var(--ui-muted);
+}
+
+.ui-hist__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 7px;
+  transition: background-color 0.12s;
+}
+
+.ui-hist__item .ui-acc-chip {
+  margin-top: 1px;
+}
+
+.ui-hist__item:hover,
+.ui-hist__item:focus-visible {
+  background: var(--ui-bg-hover);
+}
+
+.ui-hist__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ui-hist__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--ui-text);
+}
+
+.ui-hist__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--ui-muted);
+}
+
+.ui-hist__project {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-hist__time {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-faint);
+}
+
+.ui-hist__time::before {
+  content: '·';
+  margin-right: 6px;
+  color: var(--ui-faint);
+}
+
+.ui-hist__live {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  font-weight: 600;
+  color: var(--st-working);
+}
+
+.ui-hist__live::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: var(--st-working);
+}
+
+.ui-hist__foot {
+  flex: none;
+  padding: 6px 16px 8px;
+  border-top: 1px solid var(--ui-line);
+  font-size: 11.5px;
+  color: var(--ui-faint);
+}
+
+@media (max-width: 600px) {
+  .ui-term__tools {
+    padding: 5px 8px;
+  }
+
+  .ui-term__search {
+    flex-basis: 100%;
+    max-width: none;
+    margin-left: 0;
+  }
+
+  .ui-hist {
+    width: auto;
+  }
+}
+
+/* ------------------------------------------------------------------ timelapse (ui/timelapse.ts) */
+
+/* Escritório reproduzido: leve tom sépia e vinheta, para não confundir com o ao vivo (o selo diz a hora). */
+html.is-replay #world {
+  filter: sepia(0.3) saturate(0.9) contrast(1.03);
+}
+
+.ui-lapse-vignette {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  background: radial-gradient(ellipse at center, transparent 58%, rgba(44, 26, 8, 0.36) 100%);
+}
+
+#ui > .ui-lapse-vignette,
+#ui > .ui-lapse-badge {
+  pointer-events: none;
+}
+
+/* Selo "REPLAY 14:32": no alto da área livre, sempre visível. */
+.ui-lapse-badge {
+  position: fixed;
+  z-index: 14;
+  top: calc(var(--free-top) + 6px);
+  left: calc((var(--free-left) + 100vw - var(--free-right)) / 2);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 10px;
+  border-radius: 8px;
+  background: rgba(46, 27, 10, 0.88);
+  border: 1px solid rgba(255, 196, 120, 0.45);
+  color: #ffe2b8;
+  white-space: nowrap;
+  box-shadow:
+    0 10px 28px rgba(5, 7, 12, 0.4),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.25);
+}
+
+.ui-lapse-badge__rec {
+  width: 9px;
+  height: 9px;
+  background: #ff5d5d;
+  box-shadow: 0 0 0 2px rgba(255, 93, 93, 0.25);
+  animation: ui-blink 1.4s steps(1) infinite;
+}
+
+.ui-lapse-badge__label {
+  font: 700 15px/1 var(--font-px);
+  letter-spacing: 0.14em;
+}
+
+.ui-lapse-badge__time {
+  font: 700 18px/1 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  color: #fff3df;
+}
+
+.ui-lapse-badge__day,
+.ui-lapse-badge__note {
+  font-size: 12px;
+  color: rgba(255, 226, 184, 0.75);
+}
+
+.ui-lapse-badge__note {
+  color: var(--st-waiting);
+}
+
+.ui-lapse-badge__day:empty,
+.ui-lapse-badge__note:empty {
+  display: none;
+}
+
+/* Barra de reprodução: embaixo, centralizada na área livre, logo acima do feed. */
+.ui-lapse {
+  position: fixed;
+  z-index: 16;
+  left: calc((var(--free-left) + 100vw - var(--free-right)) / 2);
+  bottom: calc(var(--free-bottom) + 2px);
+  transform: translateX(-50%);
+  width: min(780px, calc(100vw - var(--free-left) - var(--free-right) - 16px), calc(100vw - 16px));
+  padding: 8px 10px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition:
+    left 0.32s var(--ease),
+    bottom 0.3s var(--ease),
+    width 0.32s var(--ease);
+}
+
+.ui-lapse__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ui-lapse__play {
+  width: 36px;
+  height: 36px;
+  color: var(--ui-accent);
+  background: var(--ui-accent-soft);
+  box-shadow: inset 0 0 0 1px rgba(124, 200, 255, 0.35);
+}
+
+.ui-lapse__play:disabled {
+  opacity: 0.45;
+}
+
+.ui-lapse__clock {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 66px;
+}
+
+.ui-lapse__time {
+  font: 700 19px/1 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-lapse__span {
+  font-size: 11px;
+  line-height: 1;
+  color: var(--ui-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-lapse__day {
+  height: 28px;
+  max-width: 230px;
+  min-width: 0;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--ui-line-strong);
+  background: var(--ui-bg-soft);
+  color: var(--ui-text);
+  font: 500 12px var(--font-ui);
+}
+
+.ui-lapse__day option {
+  background: #161a23;
+  color: var(--ui-text);
+}
+
+.ui-lapse__grow {
+  flex: 1;
+}
+
+.ui-lapse__speed {
+  flex: none;
+  width: 156px;
+}
+
+.ui-lapse__speed .ui-seg__opt {
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-lapse__live-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--st-working);
+  box-shadow: 0 0 0 2px rgba(79, 209, 139, 0.22);
+}
+
+.ui-lapse__msg {
+  padding: 2px 4px 4px;
+  font-size: 12px;
+  color: var(--ui-muted);
+}
+
+.ui-lapse__timeline {
+  position: relative;
+  padding: 10px 0 15px;
+}
+
+.ui-lapse__track {
+  --p: 0%;
+  position: relative;
+  height: 38px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--ui-line);
+}
+
+.ui-lapse.is-loading .ui-lapse__track {
+  opacity: 0.5;
+}
+
+.ui-lapse__track:has(.ui-lapse__range:focus-visible) {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+}
+
+.ui-lapse__chart {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 6px;
+}
+
+/* Trecho já reproduzido e a agulha (com o "botão" quadrado em cima). */
+.ui-lapse__track::before {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--p);
+  background: rgba(124, 200, 255, 0.1);
+  border-right: 2px solid var(--ui-accent);
+  border-radius: 6px 0 0 6px;
+  pointer-events: none;
+}
+
+.ui-lapse__track::after {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  top: -6px;
+  left: calc(var(--p) - 4px);
+  width: 8px;
+  height: 8px;
+  background: var(--ui-accent);
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}
+
+.ui-lapse__range {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+.ui-lapse__range:focus-visible {
+  outline: none;
+}
+
+.ui-lapse__range::-webkit-slider-runnable-track {
+  height: 100%;
+  background: transparent;
+}
+
+.ui-lapse__range::-moz-range-track {
+  height: 100%;
+  background: transparent;
+}
+
+.ui-lapse__range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 4px;
+  height: 38px;
+  background: transparent;
+  border: 0;
+}
+
+.ui-lapse__range::-moz-range-thumb {
+  width: 4px;
+  height: 38px;
+  background: transparent;
+  border: 0;
+}
+
+.ui-lapse__peaks {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Marca de pico: bandeirinha âmbar acima do gráfico (clique pula para lá). */
+.ui-lapse__peak {
+  position: absolute;
+  top: -11px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 10px;
+  transform: translateX(-50%);
+  color: #ffd36b;
+  pointer-events: auto;
+}
+
+.ui-lapse__peak:hover {
+  color: #fff0b8;
+}
+
+.ui-lapse__ticks {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 12px;
+}
+
+.ui-lapse__tick {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 10px;
+  line-height: 12px;
+  color: var(--ui-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* O feed segue ao vivo durante o replay: deixa isso claro no título. */
+.ui-root.is-replay .ui-feed__title h2::after {
+  content: ' · ao vivo';
+  font: 600 11px var(--font-ui);
+  color: var(--st-working);
+}
+
+@media (max-width: 600px) {
+  .ui-lapse {
+    width: calc(100vw - 16px);
+    padding: 6px 8px 2px;
+  }
+
+  .ui-lapse__row {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .ui-lapse__grow {
+    display: none;
+  }
+
+  /* Segunda linha: "Voltar ao vivo" e o dia, com a largura que sobrar. */
+  .ui-lapse__demo,
+  .ui-lapse__live {
+    order: 1;
+  }
+
+  .ui-lapse__day {
+    order: 2;
+    flex: 1 1 140px;
+    max-width: none;
+  }
+
+  .ui-lapse__speed {
+    width: 132px;
+  }
+
+  .ui-lapse__speed .ui-seg__opt {
+    font-size: 11.5px;
+  }
+
+  .ui-lapse-badge {
+    padding: 5px 10px 5px 8px;
+  }
+}
+/* ------------------------------------------------------------------------------------------------
+   Responder pelo escritório: cartão "Pede permissão" na gaveta do agente (ui/permission.ts), o atalho
+   "Responder" nos avisos e o destaque do contador "precisam de você". A prévia (comando/diff) reaproveita
+   as classes do terminal somente leitura (ui-term__in, ui-term__dl...).
+   ------------------------------------------------------------------------------------------------ */
+
+.ui-perm {
+  --term-dim: #8a93a8;
+  margin-top: 14px;
+  padding: 11px 12px 12px;
+  border-radius: 9px;
+  background: rgba(255, 181, 71, 0.1);
+  border: 1px solid rgba(255, 181, 71, 0.5);
+  box-shadow: inset 3px 0 0 var(--st-waiting);
+  color: #ffe8c4;
+  animation: ui-alert-in 0.4s var(--ease);
+  scroll-margin: 12px;
+}
+
+.ui-perm:focus-visible {
+  outline: 2px solid var(--st-waiting);
+  outline-offset: 2px;
+}
+
+.ui-perm__head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+}
+
+.ui-perm__icon {
+  color: var(--st-waiting);
+  padding-top: 1px;
+}
+
+.ui-perm__title {
+  display: block;
+  font: 600 14px/1.2 var(--font-px);
+  color: var(--st-waiting);
+  margin-bottom: 2px;
+}
+
+.ui-perm__what {
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.ui-perm__timer {
+  font-size: 11px;
+  color: rgba(255, 226, 181, 0.72);
+  text-align: right;
+  white-space: nowrap;
+  padding-top: 2px;
+}
+
+.ui-perm__tool {
+  margin-top: 9px;
+  font: 12px/1.45 var(--font-mono);
+  color: #c9d1e2;
+  overflow-wrap: anywhere;
+}
+
+.ui-perm__tool strong {
+  color: #f3f6fc;
+  font-weight: 700;
+}
+
+.ui-perm__preview {
+  font: 12px/1.5 var(--font-mono);
+  max-height: 280px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.ui-perm__preview .ui-term__in {
+  background: rgba(0, 0, 0, 0.38);
+}
+
+.ui-perm__note,
+.ui-perm__queue {
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: rgba(255, 226, 181, 0.82);
+}
+
+.ui-perm__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.ui-perm__btn {
+  height: 30px;
+}
+
+.ui-perm__btn:disabled,
+.ui-perm__rule:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ui-perm__btn--allow {
+  background: rgba(79, 209, 139, 0.18);
+  border-color: rgba(79, 209, 139, 0.6);
+  color: #b9f2d2;
+  font-weight: 600;
+}
+
+.ui-perm__btn--allow:hover:not(:disabled) {
+  background: rgba(79, 209, 139, 0.28);
+  border-color: rgba(79, 209, 139, 0.8);
+}
+
+.ui-perm__btn--deny {
+  border-color: rgba(255, 107, 107, 0.55);
+  color: #ffc4bd;
+}
+
+.ui-perm__btn--deny:hover:not(:disabled),
+.ui-perm__btn--deny.is-on {
+  background: rgba(255, 107, 107, 0.16);
+  border-color: rgba(255, 107, 107, 0.8);
+}
+
+.ui-perm__always {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px dashed rgba(255, 181, 71, 0.3);
+}
+
+.ui-perm__always-label {
+  display: block;
+  font-size: 11.5px;
+  color: rgba(255, 226, 181, 0.82);
+  margin-bottom: 5px;
+}
+
+.ui-perm__rules {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.ui-perm__rule {
+  max-width: 100%;
+  height: auto;
+  min-height: 26px;
+  padding: 4px 9px;
+  font: 11.5px/1.35 var(--font-mono);
+  white-space: normal;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.ui-perm__deny {
+  margin-top: 10px;
+}
+
+.ui-perm__reason {
+  display: block;
+  width: 100%;
+  resize: vertical;
+  min-height: 52px;
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--ui-line-strong);
+  background: rgba(0, 0, 0, 0.32);
+  color: var(--ui-text);
+  font: 12.5px/1.4 var(--font-ui);
+}
+
+.ui-perm__reason:focus {
+  outline: none;
+  border-color: rgba(255, 181, 71, 0.7);
+}
+
+.ui-perm__check-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 7px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ui-perm__check {
+  accent-color: var(--st-waiting);
+}
+
+.ui-perm__status:not(:empty) {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #b9f2d2;
+}
+
+.ui-perm__status.is-error {
+  color: #ffb3aa;
+}
+
+/* "Responder" no aviso de quem tem pedido para responder pelo escritório. */
+.ui-toast__answer {
+  flex: none;
+  margin: 0 2px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 181, 71, 0.6);
+  background: rgba(255, 181, 71, 0.16);
+  color: #ffe2b5;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ui-toast__answer:hover {
+  background: rgba(255, 181, 71, 0.28);
+}
+
+/* Contador "precisam de você" com pedido para responder por aqui: um cadeado discreto. */
+.ui-counter--waiting.has-answer .ui-counter__label::after {
+  content: ' · 🔐';
+}
+/* ------------------------------------------------------------------ ambiente: sons nas configurações */
+
+.ui-snd__details {
+  transition: opacity 0.2s;
+}
+
+.ui-snd__details.is-off {
+  opacity: 0.45;
+}
+
+.ui-snd__vol {
+  gap: 10px;
+}
+
+.ui-snd__vol .ui-set__label {
+  flex: none;
+}
+
+.ui-snd__range {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  margin: 0;
+  background: transparent;
+  accent-color: #2f7fd1;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.ui-snd__range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--ui-line-strong);
+}
+
+.ui-snd__range::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--ui-line-strong);
+}
+
+.ui-snd__range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 3px;
+  background: #fff;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.2);
+}
+
+.ui-snd__range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 3px;
+  background: #fff;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.2);
+}
+
+.ui-snd__range:disabled {
+  cursor: default;
+}
+
+.ui-snd__value {
+  flex: none;
+  width: 34px;
+  text-align: right;
+  font: 500 12px/1 var(--font-mono);
+  color: var(--ui-muted);
+}
+
+.ui-snd__chips {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+.ui-snd__chip {
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--ui-line);
+  background: rgba(0, 0, 0, 0.2);
+  font-size: 12px;
+  color: var(--ui-muted);
+  transition:
+    background-color 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.ui-snd__chip:hover:not(:disabled) {
+  color: var(--ui-text);
+}
+
+.ui-snd__chip[aria-pressed='true'] {
+  background: var(--ui-accent-soft);
+  border-color: rgba(124, 200, 255, 0.35);
+  color: var(--ui-accent);
+  font-weight: 600;
+}
+
+.ui-snd__chip:disabled {
+  cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-snd__details,
+  .ui-snd__chip {
+    transition: none;
+  }
+}
+
+
+/* ---------------------------------------------------------------- meu dia (painel de métricas) */
+
+/* Cores dos status nos gráficos: os mesmos tons do escritório, escurecidos para áreas grandes de barra (OKLCH L entre
+   0,48 e 0,67 sobre o painel #141821, contraste de 3:1 ou mais). A ordem de empilhamento foi validada para daltonismo
+   (vizinhos distinguíveis): esperando você | trabalhando | ocioso (cinza de contexto) | esperando o shell. */
+.ui-dialog.ui-day {
+  --day-waiting: #c98300;
+  --day-working: #1bad69;
+  --day-idle: #5e6a83;
+  --day-shell: #00aaa5;
+  width: min(1060px, calc(100vw - 32px));
+  max-height: min(92vh, 980px);
+}
+
+.ui-day :is(.ui-day__seg, .ui-day__swatch, .ui-day__tip-key).is-waiting {
+  --sw: var(--day-waiting);
+}
+
+.ui-day :is(.ui-day__seg, .ui-day__swatch, .ui-day__tip-key).is-working {
+  --sw: var(--day-working);
+}
+
+.ui-day :is(.ui-day__seg, .ui-day__swatch, .ui-day__tip-key).is-idle {
+  --sw: var(--day-idle);
+}
+
+.ui-day :is(.ui-day__seg, .ui-day__swatch, .ui-day__tip-key).is-shell {
+  --sw: var(--day-shell);
+}
+
+.ui-day__head {
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+
+.ui-day__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ui-day__badge {
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #d3c2ff;
+  background: rgba(170, 140, 255, 0.16);
+}
+
+.ui-day__controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.ui-day__select {
+  height: 30px;
+  min-width: 132px;
+  padding: 0 30px 0 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--ui-line-strong);
+  background: rgba(0, 0, 0, 0.25)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5' shape-rendering='crispEdges'%3E%3Cpath fill='%239aa4b8' d='M0 0h2v1H0zM6 0h2v1H6zM1 1h2v1H1zM5 1h2v1H5zM2 2h4v1H2zM3 3h2v1H3z'/%3E%3C/svg%3E")
+    no-repeat right 10px center / 8px 5px;
+  color: var(--ui-text);
+  font: 500 12.5px/1 var(--font-ui);
+  appearance: none;
+  cursor: pointer;
+}
+
+.ui-day__select:hover {
+  border-color: rgba(160, 176, 210, 0.36);
+}
+
+.ui-day__select:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.ui-day__select option {
+  background: #141821;
+  color: var(--ui-text);
+}
+
+.ui-day__source {
+  min-width: 230px;
+}
+
+.ui-day__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 22px 22px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.ui-day__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: 11.5px;
+  color: var(--ui-faint);
+}
+
+.ui-day__content {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 14px;
+  transition: opacity 0.2s;
+}
+
+/* Recarregando: o gráfico anterior fica, mais apagado (sem esqueleto nem salto de layout). */
+.ui-day.is-loading .ui-day__content {
+  opacity: 0.6;
+}
+
+.ui-day__muted {
+  color: var(--ui-muted);
+}
+
+.ui-day__swatch {
+  display: inline-block;
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--sw);
+}
+
+/* Destaques */
+.ui-day__kpis {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ui-day__hero,
+.ui-day__kpi {
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--ui-line);
+  background: var(--ui-bg-soft);
+}
+
+.ui-day__hero {
+  border-color: color-mix(in srgb, var(--day-waiting) 40%, transparent);
+  background: color-mix(in srgb, var(--day-waiting) 7%, transparent);
+  box-shadow: inset 3px 0 0 var(--day-waiting);
+}
+
+.ui-day__kpi-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ui-muted);
+}
+
+.ui-day__hero-value {
+  margin: 6px 0 4px;
+  font: 700 48px/1.02 var(--font-ui);
+  letter-spacing: -0.01em;
+}
+
+.ui-day__kpi-value {
+  margin: 6px 0 3px;
+  font: 700 20px/1.15 var(--font-ui);
+}
+
+.ui-day__kpi-sub {
+  font-size: 11.5px;
+  color: var(--ui-muted);
+}
+
+.ui-day__hero .ui-day__kpi-sub + .ui-day__kpi-sub {
+  margin-top: 2px;
+}
+
+.ui-day__hero .ui-day__kpi-sub strong {
+  color: var(--ui-text);
+  font-weight: 600;
+}
+
+/* Legenda (liga e desliga cada status nos gráficos) */
+.ui-day__legend {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ui-day__key {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--ui-line);
+  background: var(--ui-bg-soft);
+  font-size: 12px;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+
+.ui-day__key:hover {
+  background: var(--ui-bg-hover);
+}
+
+.ui-day__key.is-off {
+  color: var(--ui-faint);
+}
+
+.ui-day__key.is-off .ui-day__swatch {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--sw);
+}
+
+/* Cartões */
+.ui-day__card {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: 14px 16px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--ui-line);
+  background: var(--ui-bg-soft);
+}
+
+.ui-day__card--rooms {
+  grid-column: span 7;
+}
+
+.ui-day__card--waits {
+  grid-column: span 5;
+}
+
+.ui-day__card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.ui-day__card h3 {
+  font: 700 14px/1.2 var(--font-ui);
+}
+
+.ui-day__card-sub {
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: var(--ui-muted);
+}
+
+.ui-day__table-btn {
+  flex: none;
+  font-size: 11.5px;
+}
+
+.ui-day__seg {
+  display: block;
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: 0;
+  background: var(--sw);
+}
+
+/* Por projeto: barras horizontais finas, empilhadas a partir de uma base comum (2 px de folga entre pedaços). */
+.ui-day__bars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ui-day__bar {
+  display: grid;
+  gap: 5px;
+  margin: 0 -6px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.ui-day__bar:hover,
+.ui-day__bar:focus-visible {
+  background: var(--ui-bg-hover);
+}
+
+.ui-day__bar-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  font-size: 12.5px;
+}
+
+.ui-day__bar-name {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-day__bar-value {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-day__bar-value strong {
+  font-weight: 600;
+}
+
+.ui-day__track {
+  display: flex;
+  gap: 2px;
+  height: 12px;
+}
+
+.ui-day__track .ui-day__seg:last-child {
+  border-radius: 0 4px 4px 0;
+}
+
+/* Por hora: colunas empilhadas (base embaixo), eixo com marcas redondas e linhas de grade discretas. */
+.ui-day__plot {
+  position: relative;
+  height: 170px;
+  margin-left: 46px;
+}
+
+.ui-day__grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ui-day__gridline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--ui-line);
+}
+
+.ui-day__tick {
+  position: absolute;
+  right: calc(100% + 8px);
+  top: 0;
+  transform: translateY(-50%);
+  font-size: 10.5px;
+  color: var(--ui-faint);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-day__cols {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  border-bottom: 1px solid var(--ui-line-strong);
+}
+
+.ui-day__col {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-width: 0;
+  height: 100%;
+  padding: 0 1px;
+  border-radius: 4px 4px 0 0;
+}
+
+.ui-day__col:hover,
+.ui-day__col:focus-visible {
+  background: var(--ui-bg-hover);
+}
+
+.ui-day__col:focus-visible {
+  outline-offset: -2px;
+}
+
+.ui-day__col.is-now {
+  background: var(--ui-accent-soft);
+}
+
+.ui-day__stack {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 2px;
+  width: min(100%, 22px);
+  height: 100%;
+}
+
+.ui-day__stack .ui-day__seg {
+  width: 100%;
+}
+
+.ui-day__stack .ui-day__seg:last-child {
+  border-radius: 4px 4px 0 0;
+}
+
+.ui-day__xaxis {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  margin: 6px 0 0 46px;
+  font-size: 10.5px;
+  color: var(--ui-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-day__xlabel {
+  overflow: visible;
+  white-space: nowrap;
+}
+
+.ui-day__xlabel.is-now {
+  color: var(--ui-accent);
+  font-weight: 700;
+}
+
+/* Maiores esperas */
+.ui-day__waits {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ui-day__wait {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+}
+
+.ui-day__rank {
+  font: 700 12px/1.6 var(--font-ui);
+  color: var(--ui-faint);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-day__wait-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ui-day__wait-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ui-day__wait-dur {
+  flex: none;
+  min-width: 70px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-day__wait-bar {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  height: 8px;
+}
+
+.ui-day__wait-bar .ui-day__seg {
+  border-radius: 0 4px 4px 0;
+}
+
+.ui-day__now {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 5px;
+  border: 1px solid color-mix(in srgb, var(--day-waiting) 70%, transparent);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 16px;
+}
+
+.ui-day__wait-who {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.ui-day__wait-name {
+  flex: none;
+  font-weight: 600;
+}
+
+.ui-day__wait-who .ui-day__muted {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Por conta: cada conta na própria cor (chip, fio no topo e a fatia do trabalho do dia). */
+.ui-day__accounts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 10px;
+}
+
+.ui-day__account {
+  --acc: #8b98b3;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 9px;
+  border: 1px solid var(--ui-line);
+  background: rgba(0, 0, 0, 0.14);
+  box-shadow: inset 0 3px 0 var(--acc);
+}
+
+.ui-day__account-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ui-day__account-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-day__account-head .ui-day__muted {
+  margin-left: auto;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.ui-day__meter {
+  display: block;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--acc) 22%, transparent);
+}
+
+.ui-day__meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--acc);
+}
+
+.ui-day__account-stats {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 3px 12px;
+  font-size: 12px;
+}
+
+.ui-day__account-stats dt {
+  color: var(--ui-muted);
+}
+
+.ui-day__account-stats dd {
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tabelas (o equivalente acessível de cada gráfico) */
+.ui-day__table-wrap {
+  overflow-x: auto;
+}
+
+.ui-day__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.ui-day__table :is(th, td) {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--ui-line);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.ui-day__table thead th {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ui-muted);
+}
+
+.ui-day__table tbody th {
+  max-width: 240px;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.ui-day__table .is-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Dica: o valor primeiro, o status depois, com um traço da cor do status. */
+.ui-day__tip {
+  position: absolute;
+  z-index: 5;
+  min-width: 170px;
+  max-width: 260px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--ui-line-strong);
+  background: #0e1118;
+  box-shadow: 0 10px 28px rgba(5, 7, 12, 0.55);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.ui-day__tip-title {
+  margin-bottom: 4px;
+  font-weight: 700;
+}
+
+.ui-day__tip-row {
+  display: grid;
+  grid-template-columns: 12px auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  margin: 0 -3px;
+  padding: 1px 3px;
+  border-radius: 4px;
+  color: var(--ui-muted);
+}
+
+.ui-day__tip-row strong {
+  color: var(--ui-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-day__tip-row.is-hl {
+  background: var(--ui-bg-hover);
+  color: var(--ui-text);
+}
+
+.ui-day__tip-row.is-total {
+  margin-top: 3px;
+  padding-top: 4px;
+  border-top: 1px solid var(--ui-line);
+  border-radius: 0;
+}
+
+.ui-day__tip-key {
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--sw, transparent);
+}
+
+.ui-day__empty {
+  grid-column: 1 / -1;
+  padding: 28px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--ui-line);
+  background: var(--ui-bg-soft);
+  color: var(--ui-muted);
+  text-align: center;
+}
+
+.ui-day__note {
+  max-width: 96ch;
+  font-size: 11.5px;
+  color: var(--ui-faint);
+}
+
+@media (max-width: 1000px) {
+  .ui-day__kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ui-day__hero,
+  .ui-day__card--rooms,
+  .ui-day__card--waits {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Celular: tela cheia, controles numa linha própria, gráficos mais baixos (sem rolagem horizontal). */
+@media (max-width: 600px) {
+  .ui-dialog.ui-day {
+    width: 100vw;
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .ui-day__head {
+    padding: 12px 10px 10px 14px;
+  }
+
+  .ui-day__title {
+    flex: 1;
+  }
+
+  .ui-day__head > .ui-icon-btn {
+    order: 2;
+  }
+
+  .ui-day__controls {
+    order: 3;
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .ui-day__select {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .ui-day__source {
+    flex: 1.5 1 0;
+    min-width: 0;
+  }
+
+  .ui-day__source .ui-seg__opt {
+    padding: 0 6px;
+    white-space: nowrap;
+  }
+
+  .ui-day__body {
+    padding: 12px 12px 18px;
+  }
+
+  .ui-day__kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ui-day__hero-value {
+    font-size: 40px;
+  }
+
+  .ui-day__card {
+    padding: 12px;
+  }
+
+  /* O total do projeto continua na dica e na tabela; o nome ganha espaço. */
+  .ui-day__bar-value .ui-day__muted {
+    display: none;
+  }
+
+  .ui-day__plot {
+    height: 140px;
+    margin-left: 38px;
+  }
+
+  .ui-day__xaxis {
+    margin-left: 38px;
+  }
+}
+
+/* Entre o celular e o tablet a barra superior fica apertada com o botão "Meu dia": a visão geral segue no atalho O. */
+@media (min-width: 601px) and (max-width: 760px) {
+  .ui-topbar__right .ui-btn-group:first-child {
+    display: none;
+  }
+}

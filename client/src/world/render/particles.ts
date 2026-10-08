@@ -87,6 +87,11 @@ export class Particles {
     }
   }
 
+  /** Um confete caindo do alto (festa da sala): balança no ar e some depois de cair ~`fall` px. */
+  confettiFall(x: number, y: number, fall: number): void {
+    this.spawn(PK.Confetti, x, y, Math.random() * 24 - 12, 8 + Math.random() * 16, Math.max(0.3, fall / 34) * (0.85 + Math.random() * 0.3), Math.floor(Math.random() * CONFETTI_COLORS.length));
+  }
+
   /** Um pingo de chuva caindo `fall` px a partir de (x, y). */
   rain(x: number, y: number, fall: number): void {
     const v = 32;

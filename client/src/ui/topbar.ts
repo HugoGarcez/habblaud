@@ -4,6 +4,8 @@ import { h, iconButton, setAttr, setHidden, setText, setTitle, setVariant } from
 import { formatDuration, formatInt } from './format';
 import { FALLBACK_MARK, ICONS } from './icons';
 import { computeCounters, shellLine, shellWaitIn, shellWaitingAgents, waitingAgents, type Counters } from './model';
+import { TIMELAPSE_ICONS } from './timelapse';
+import { focusPermission, nextPermissionAgent, permissionAgents } from './permission';
 import { UsageCards } from './usage';
 import { wordmark } from './widgets';
 
@@ -21,6 +23,7 @@ const COUNTERS: { key: Exclude<keyof Counters, 'shells'>; singular: string; plur
   { key: 'subagents', singular: 'subagente', plural: 'subagentes', hint: 'Subagentes em atividade' },
   { key: 'waiting', singular: 'precisa de você', plural: 'precisam de você', hint: 'Agentes esperando sua resposta no terminal' },
 ];
+const WAITING_HINT = COUNTERS.find((c) => c.key === 'waiting')!.hint;
 
 export class TopBar implements UiComponent {
   readonly el: HTMLElement;
@@ -35,7 +38,10 @@ export class TopBar implements UiComponent {
   private hadOpen = false;
   private sidebarBtn: HTMLButtonElement;
   private feedBtn: HTMLButtonElement;
+  private timelapseBtn: HTMLButtonElement;
   readonly settingsBtn: HTMLButtonElement;
+  /** Grupo dos botões de painéis (feed, configurações, ajuda); o histórico entra aqui (ui/index.ts). */
+  readonly panelGroup: HTMLElement;
 
   constructor(private ctx: UiContext) {
     // Marca: usa o logo do projeto se existir; senão, o prédio em pixels.
@@ -87,6 +93,7 @@ export class TopBar implements UiComponent {
 
     this.sidebarBtn = iconButton(ICONS.sidebar, 'Painel lateral ( [ )', () => ctx.togglePanel('sidebar'), 'ui-btn-sidebar');
     this.feedBtn = iconButton(ICONS.feed, 'Feed de atividade ( ] )', () => ctx.togglePanel('feed'));
+    this.timelapseBtn = iconButton(TIMELAPSE_ICONS.timelapse, 'Timelapse: reproduzir o dia (L)', () => ctx.toggleTimelapse(), 'ui-btn-timelapse');
     this.settingsBtn = iconButton(ICONS.settings, 'Configurações', () => ctx.toggleSettings());
     this.settingsBtn.setAttribute('aria-haspopup', 'dialog');
     const viewGroup = h(
@@ -99,10 +106,12 @@ export class TopBar implements UiComponent {
     const panelGroup = h(
       'div',
       { class: 'ui-btn-group', role: 'group', attrs: { 'aria-label': 'Painéis' } },
+      this.timelapseBtn,
       this.feedBtn,
       this.settingsBtn,
       iconButton(ICONS.help, 'Ajuda (?)', () => ctx.openHelp()),
     );
+    this.panelGroup = panelGroup;
 
     this.el = h(
       'header',
@@ -122,6 +131,11 @@ export class TopBar implements UiComponent {
       this.usage.el,
       h('div', { class: 'ui-topbar__right' }, viewGroup, panelGroup),
     );
+  }
+
+  /** Acrescenta um botão de janela própria (ex.: Meu dia) ao começo do grupo de painéis. */
+  addPanelButton(btn: HTMLElement): void {
+    this.panelGroup.prepend(btn);
   }
 
   render(): void {
@@ -158,12 +172,23 @@ export class TopBar implements UiComponent {
     const waiting = this.counters.get('waiting')!.el as HTMLButtonElement;
     waiting.classList.toggle('is-active', c.waiting > 0);
     waiting.disabled = c.waiting === 0;
+    // Pedidos que dá para responder por aqui (hook de permissão): a dica diz quantos.
+    const answerable = permissionAgents(snap?.agents ?? []).length;
+    waiting.classList.toggle('has-answer', answerable > 0);
+    setTitle(
+      waiting,
+      answerable
+        ? `${WAITING_HINT}. ${answerable === 1 ? '1 pedido de permissão dá' : `${answerable} pedidos de permissão dão`} para responder por aqui: clique para ir até ${answerable === 1 ? 'ele' : 'cada um'} (P).`
+        : `${WAITING_HINT}. Clique para ir até o primeiro.`,
+    );
     this.renderShells(c.shells, now);
 
     this.usage.render();
 
     this.sidebarBtn.setAttribute('aria-pressed', String(this.ctx.isPanelOpen('sidebar')));
     this.feedBtn.setAttribute('aria-pressed', String(this.ctx.isPanelOpen('feed')));
+    this.timelapseBtn.setAttribute('aria-pressed', String(this.ctx.isTimelapseOpen()));
+    setHidden(this.timelapseBtn, store.mock);
   }
 
   private renderShells(n: number, now: number): void {
@@ -200,7 +225,12 @@ export class TopBar implements UiComponent {
   }
 
   private focusFirstWaiting(): void {
-    const first = waitingAgents(this.ctx.store.snapshot?.agents ?? [])[0];
+    // Quem tem pedido para responder pelo escritório vem antes (cliques seguidos passam por todos).
+    const agents = this.ctx.store.snapshot?.agents ?? [];
+    const sel = this.ctx.selection();
+    const next = nextPermissionAgent(agents, sel?.type === 'agent' ? sel.id : undefined);
+    if (next) return focusPermission(this.ctx, next.id);
+    const first = waitingAgents(agents)[0];
     if (first) this.ctx.select({ type: 'agent', id: first.id }, { focus: true });
   }
 }

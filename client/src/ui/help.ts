@@ -46,6 +46,13 @@ const SOCIAL_HELP: [string, string][] = [
   ['🪙', 'Carteira: entram com 🪙100 (subagentes 🪙30), ganham 🪙10 por tarefa concluída, 🪙5 por pedido atendido e 🪙15 por entrega de subagente.'],
 ];
 
+/** Eventos do GitHub vistos ao vivo nas sessões (gh, git push, MCP do GitHub). */
+const GITHUB_HELP: [string, string][] = [
+  ['🎉', 'Festa: PR aberto ou mergeado, release publicada (ou CI verde depois de um alarme). Confete cai na sala, todos comemoram e uma faixa diz o motivo (~12 s).'],
+  ['🚨', 'Alarme: o CI ficou vermelho. Giroflex nos cantos da sala, chão avermelhado e um balão “!” sobre quem viu a falha, até um CI verde na sala (ou 10 min).'],
+  ['🚀', 'Push: só o aviso e o feed, sem mexer na sala.'],
+];
+
 /** O fim da espera (o servidor marca com uma atividade ✅ ou ❌). */
 const SHELL_END_HELP: [string, string][] = [
   ['🎉', 'Terminou bem: levanta, comemora com confete e uma estrela.'],
@@ -61,8 +68,12 @@ const SHORTCUTS: [string[], string][] = [
   [['/'], 'Buscar agente, projeto ou conta'],
   [['F'], 'Seguir o agente selecionado'],
   [['T'], 'Abrir ou fechar o terminal do agente selecionado (somente leitura)'],
+  [['Ctrl+F'], 'Com o terminal em foco: buscar na conversa (⌘F no Mac); Enter e Shift+Enter navegam'],
+  [['L'], 'Abrir ou fechar o timelapse do dia'],
+  [['P'], 'Ir até o próximo pedido de permissão para responder pelo escritório'],
+  [['M'], 'Meu dia: para onde foi o tempo (trabalhando, esperando você...)'],
   [['O', '0'], 'Visão geral do prédio'],
-  [['Esc'], 'Fechar o terminal; depois, a gaveta e a seleção'],
+  [['Esc'], 'Fechar a busca do terminal, depois o terminal; depois, a gaveta e a seleção'],
   [['['], 'Mostrar ou ocultar o painel lateral'],
   [[']'], 'Mostrar ou ocultar o feed de atividade'],
   [['?'], 'Abrir esta ajuda'],
@@ -106,6 +117,7 @@ export class HelpDialog {
         h('section', {}, h('h3', { text: 'Atividades' }), iconList),
         this.shellSection(),
         this.socialSection(),
+        this.githubSection(),
         h(
           'section',
           {},
@@ -118,6 +130,12 @@ export class HelpDialog {
             h('li', { text: 'Passe o mouse sobre um personagem para ver o que ele está fazendo.' }),
             h('li', {
               text: 'Nos detalhes de um agente, “Abrir terminal” mostra a conversa da sessão como no Claude Code, ao vivo e só para leitura (precisa do acesso local, bind 127.0.0.1).',
+            }),
+            h('li', {
+              text: 'No terminal: busca (lupa ou Ctrl/⌘+F), filtro “Tudo / Só prompts / Sem ferramentas” e um botão de copiar em cada entrada. O relógio da barra superior abre o histórico das sessões dos últimos 7 dias, inclusive as já encerradas.',
+            }),
+            h('li', {
+              text: 'Com o hook de permissão instalado (npm run hooks:install), quem “pede permissão” mostra nos detalhes o comando ou a edição e os botões Aprovar, Recusar e Responder no terminal. O diálogo continua no terminal: vale o que você responder primeiro.',
             }),
           ),
           shortcuts,
@@ -180,6 +198,24 @@ export class HelpDialog {
           'Os detalhes do agente mostram a personalidade, a carteira e o extrato; as partidas e apostas aparecem no feed.',
       }),
       h('ul', { class: 'ui-shell-legend' }, ...SOCIAL_HELP.map(([e, t]) => item(e, t))),
+    );
+  }
+
+  /** Legenda do GitHub no escritório: festa e alarme nas salas. */
+  private githubSection(): HTMLElement {
+    const item = (emoji: string, text: string) =>
+      h('li', {}, h('span', { class: 'ui-icon-legend__icon', text: emoji, attrs: { 'aria-hidden': 'true' } }), h('span', { text }));
+    return h(
+      'section',
+      { class: 'ui-help__shell' },
+      h('h3', { text: 'GitHub no escritório' }),
+      h('p', {
+        class: 'ui-help__lead',
+        text:
+          'O que os agentes fazem no GitHub (gh pr create/merge, git push, gh run watch, gh pr checks, gh release create e o MCP do GitHub) vira aviso, ' +
+          'entra no feed e anima a sala do projeto. Só o que acontece ao vivo: o que já estava nos transcripts quando o CodeTown abriu fica só no histórico.',
+      }),
+      h('ul', { class: 'ui-shell-legend' }, ...GITHUB_HELP.map(([e, t]) => item(e, t))),
     );
   }
 

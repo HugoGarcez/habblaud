@@ -140,6 +140,11 @@ export interface AgentInfo {
   seed: number;
   /** Subagente rodando em segundo plano. */
   background?: boolean;
+  /**
+   * Pedido de permissão que dá para responder pelo CodeTown (hook PermissionRequest; o mais antigo, se
+   * houver vários). Enquanto existe, o agente aparece como 'waiting'. Ver PermissionRequestInfo.
+   */
+  permission?: PermissionRequestInfo;
 }
 
 export interface RoomInfo {
@@ -158,6 +163,25 @@ export interface RoomInfo {
   /** Semente para cores/decoração determinísticas. */
   seed: number;
   createdAt: number;
+  /** Efeito visual temporário na sala (eventos do GitHub detectados nos transcripts; ver shared/github.ts). */
+  effect?: RoomEffect;
+}
+
+/**
+ * Efeito temporário numa sala de projeto, disparado por um evento do GitHub visto ao vivo:
+ * - party: comemoração (PR aberto ou mergeado, release, CI verde depois de um alarme); dura ~12 s;
+ * - alarm: CI vermelho; dura até um CI verde naquela sala ou expira em ~10 min.
+ */
+export interface RoomEffect {
+  kind: 'party' | 'alarm';
+  /** Faixa curta em PT-BR. Ex.: "PR #12 mergeado!", "CI falhou (feat/x)". */
+  text: string;
+  /** Início (epoch ms, relógio do servidor): um efeito novo tem outro `at`. */
+  at: number;
+  /** Fim previsto (epoch ms, relógio do servidor). */
+  until: number;
+  /** Agente responsável: quem abriu/mergeou (festa) ou quem viu o CI falhar (alarme, balão "!"). */
+  agentId?: string;
 }
 
 export interface SourceInfo {
@@ -335,3 +359,90 @@ export interface TerminalInit {
  * 429 (terminais abertos demais).
  */
 export type TerminalMessage = { type: 'init'; data: TerminalInit } | { type: 'append'; data: TerminalEntry[] };
+
+/**
+ * Uma sessão recente (aberta ou já encerrada) no histórico do terminal somente leitura, em
+ * GET /api/sessions/recent. A conversa de uma sessão encerrada sai, com o mesmo protocolo do terminal
+ * do agente (TerminalMessage), de GET /api/sessions/:conta/:sessionId/terminal.
+ */
+export interface RecentSession {
+  /** = AccountInfo.id. */
+  account: string;
+  sessionId: string;
+  /** Caminho do projeto (o `cwd` das primeiras linhas do transcript); ausente se não deu para descobrir. */
+  project?: string;
+  /** Nome da pasta do projeto em `projects/` (o cwd codificado), para quando `project` falta. */
+  projectDir: string;
+  /** Título como o do agente: /rename > nome do agente > título automático > último prompt (ou o primeiro). */
+  title?: string;
+  /** Primeira e última atividade com horário (epoch ms); `lastAt` cai no mtime do arquivo sem horário no fim. */
+  firstAt?: number;
+  lastAt: number;
+  /** Tamanho do transcript em bytes. */
+  size: number;
+  /** A sessão ainda está aberta: `agentId` é o agente principal dela no escritório. */
+  open: boolean;
+  agentId?: string;
+}
+
+/** Resposta de GET /api/sessions/recent: da atividade mais recente para a mais antiga. */
+export interface RecentSessionsResponse {
+  sessions: RecentSession[];
+  /** Janela da listagem (dias) e máximo de sessões. */
+  days: number;
+  limit: number;
+}
+
+// ------------------------------------------------------------------ responder pelo escritório
+
+/** Regra "sempre permitir" sugerida pelo Claude Code para um pedido (permission_suggestions do hook). */
+export interface PermissionSuggestionInfo {
+  /** Posição na lista que o hook recebeu: é ela que volta na decisão (o hook aplica a sugestão original). */
+  index: number;
+  /** Regras no formato das permissões do Claude Code, ex.: "Bash(npm test:*)". */
+  rules: string[];
+  /** Onde a regra fica guardada: 'session', 'localSettings', 'projectSettings' ou 'userSettings'. */
+  destination: string;
+}
+
+/**
+ * Pedido de permissão pendente que dá para responder pelo CodeTown: o hook PermissionRequest do Claude Code
+ * (scripts/permission-hook.mjs) o registra e fica esperando a decisão. Só existe com bind local (a mesma
+ * trava do terminal somente leitura) e com alguma página do CodeTown aberta.
+ * No snapshot vai sem `input` (os argumentos completos só saem por GET /api/permissions/:id, com acesso
+ * local); os pedidos fictícios do demo já vêm com ele.
+ */
+export interface PermissionRequestInfo {
+  id: string;
+  /** Nome bruto da ferramenta (ex.: "Bash", "Edit", "mcp__github__create_issue"). */
+  tool: string;
+  /** Título no estilo do Claude Code: "Bash(npm test)", "Edit(src/app.ts)". Mascarado e cortado. */
+  title: string;
+  /** Resumo em PT-BR (ex.: "Rodando os testes") e o ícone da atividade. */
+  text: string;
+  icon: string;
+  /** Argumentos (comando, diff, JSON...), mascarados e truncados. */
+  input?: string;
+  inputKind?: TerminalInputKind;
+  /** Pedido de um subagente que o CodeTown ainda não mostra: o tipo dele (ex.: "Explore"). */
+  subagent?: string;
+  /** Regras "sempre permitir" que podem ser aplicadas junto com a aprovação. */
+  suggestions?: PermissionSuggestionInfo[];
+  /** Outros pedidos do mesmo agente esperando depois deste. */
+  queued?: number;
+  createdAt: number;
+  /** Quando o hook desiste de esperar e o pedido passa a valer só no terminal. */
+  expiresAt: number;
+}
+
+/** Corpo de POST /api/permissions/:id/decision (vindo da página). */
+export interface PermissionDecision {
+  /** allow = aprovar; deny = recusar; terminal = devolver o pedido ao terminal (o hook sai sem decidir). */
+  behavior: 'allow' | 'deny' | 'terminal';
+  /** Recusa: motivo repassado ao agente. */
+  message?: string;
+  /** Recusa: interrompe o agente (ele para e espera você). */
+  interrupt?: boolean;
+  /** Aprovação: aplica junto a sugestão desta posição (PermissionSuggestionInfo.index). */
+  suggestion?: number;
+}

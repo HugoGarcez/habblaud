@@ -1,7 +1,7 @@
 // Funções puras de scripts/docker-up.ts (importar o módulo não sobe nada).
 import { describe, expect, it } from 'vitest';
 import type { DetectedAccount } from '../accounts/detect';
-import { accountsPayload, parseArgs, planMounts, renderOverride, sanitizeCachedUsage, yamlString } from '../../scripts/docker-up';
+import { accountsPayload, hostTimeZone, parseArgs, planMounts, renderOverride, sanitizeCachedUsage, yamlString } from '../../scripts/docker-up';
 
 const acc = (id: string, extra: Partial<DetectedAccount> = {}): DetectedAccount => ({
   id,
@@ -59,5 +59,15 @@ describe('docker-up', () => {
     // Sem a pasta do statusline: nada de /usage.
     expect(renderOverride(mounts)).not.toContain('/usage');
     expect(yamlString('a"b$c')).toBe('"a\\"b$$c"');
+  });
+
+  it('fuso do host vai para o container como TZ', () => {
+    const mounts = planMounts(['/Users/fulano/.claude'], [acc('.claude')], (p) => p);
+    expect(renderOverride(mounts, new Date(0), undefined, 'America/Sao_Paulo')).toContain('TZ: "America/Sao_Paulo"');
+    expect(renderOverride(mounts)).not.toContain('TZ:');
+    expect(hostTimeZone({ TZ: 'America/Sao_Paulo' })).toBe('America/Sao_Paulo');
+    expect(hostTimeZone({ TZ: ':Europe/Lisbon' })).toBe('Europe/Lisbon');
+    expect(hostTimeZone({ TZ: 'x"; rm -rf' })).toBeUndefined();
+    expect(hostTimeZone({})).toMatch(/^[A-Za-z]/);
   });
 });

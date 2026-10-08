@@ -171,6 +171,16 @@ capturar o **uso de 5 horas e semanal** que o próprio Claude Code envia — sem
 > O tap aponta para a pasta onde você clonou o CodeTown. Se mover a pasta, rode `npm run usage:install` de novo
 > (até lá, o statusline das contas mostra erro).
 
+### 4. Responda pedidos de permissão pelo escritório (opcional)
+
+```bash
+npm run hooks:install
+```
+
+Instala em cada conta um hook do Claude Code que deixa **aprovar ou recusar pelo CodeTown** os pedidos de
+permissão ("Do you want to…"). Faz backup do `settings.json`; para desfazer: `npm run hooks:uninstall`. Veja
+[Responder pelo escritório](#responder-pelo-escritório).
+
 ### Abrir no celular (opcional)
 
 Por padrão o CodeTown só aceita conexões do próprio computador. Para abrir no celular (no mesmo Wi-Fi), com Docker:
@@ -199,14 +209,15 @@ npm run docker:up        # ou: npm run build && npm start
 
 ```bash
 npm run usage:uninstall                     # devolve o statusline original das contas
+npm run hooks:uninstall                     # tira o hook de permissão das contas
 npm run docker:down                         # para o container
-docker volume rm codetown_codetown-data     # apaga os dados do container (nomes dos personagens)
+docker volume rm codetown_codetown-data     # apaga os dados do container (nomes, linha do tempo e estatísticas)
 docker image rm codetown:local              # apaga a imagem
-rm -rf ~/.codetown                          # apaga os dados locais (uso capturado e nomes)
+rm -rf ~/.codetown                          # apaga os dados locais (uso capturado, nomes, linha do tempo e estatísticas)
 ```
 
-Depois é só apagar a pasta do projeto — rode o `usage:uninstall` **antes**, senão o statusline das contas passa a
-dar erro. O `usage:uninstall` deixa cópias `settings.json.codetown-backup-<data>` na pasta de cada conta
+Depois é só apagar a pasta do projeto — rode o `usage:uninstall` e o `hooks:uninstall` **antes**, senão o
+statusline das contas passa a dar erro (e o hook de permissão, a falhar em silêncio). O `usage:uninstall` deixa cópias `settings.json.codetown-backup-<data>` na pasta de cada conta
 (ex.: `~/.claude/`); apague-as se não precisar mais.
 
 ## Como usar
@@ -233,13 +244,30 @@ um **chip colorido com a letra da conta** (C, D…).
 - **Gaveta de detalhes:** clique num personagem (no prédio ou na lista) para ver atividade, tarefas, subagentes,
   linha do tempo e estatísticas (ferramentas, tokens, custo, linhas alteradas, modelo, branch).
 - **Feed:** as últimas atividades de todo o escritório.
-- **Configurações (⚙):** nomes, balões, quanto os ociosos passeiam, dia e noite, som, notificações do navegador e
-  modo demonstração. **Ajuda (?):** legenda completa e atalhos.
+- **Configurações (⚙):** nomes, balões, quanto os ociosos passeiam, ciclo dia/noite, sons, notificações do navegador
+  e modo demonstração. **Ajuda (?):** legenda completa e atalhos.
+- **Meu dia (📊):** para onde foi o tempo do dia (veja [Meu dia](#meu-dia)). **Timelapse** e **Histórico** (os relógios
+  da barra superior): veja [Timelapse do dia](#timelapse-do-dia) e [Terminal somente leitura](#terminal-somente-leitura).
 
 **Câmera:** arraste para mover, role para dar zoom, clique duplo num personagem para segui-lo.
 
-**Atalhos:** `/` busca · `F` seguir o selecionado · `O` ou `0` visão geral · `Esc` limpar seleção ·
-`[` painel lateral · `]` feed · setas/`WASD` mover · `+` `-` zoom · `?` ajuda.
+**Atalhos:** `/` busca · `F` seguir o selecionado · `T` terminal · `L` timelapse · `M` meu dia · `P` próximo pedido
+de permissão · `O` ou `0` visão geral · `Esc` limpar seleção · `[` painel lateral · `]` feed · setas/`WASD` mover ·
+`+` `-` zoom · `?` ajuda.
+
+### Dia, noite e sons
+
+O escritório acompanha a **hora local**: de madrugada e à noite o gramado e a rua ficam azulados e escuros, os postes,
+os abajures, as máquinas e os monitores ligados acendem halos de luz, as salas com gente ficam iluminadas (a luz que
+apaga quando a sala esvazia continua valendo), os carros passam de farol aceso e aparecem vaga-lumes no jardim. No
+amanhecer (~5–7 h) e no entardecer (~17–19 h) tudo ganha um tom quente, e durante o dia o sol entra pelas janelas e
+desenha faixas de luz no piso — curtas ao meio-dia, longas e alaranjadas no fim da tarde. Em **Configurações › Ciclo
+dia/noite** dá para escolher automático, sempre dia ou sempre noite; para testar um horário, use `?hora=21:30` na URL.
+
+Os **sons** vêm desligados. Ligados em **Configurações › Sons**, são sintetizados no próprio navegador (sem arquivos
+de áudio) e baixinhos: o teclado de quem trabalha nas salas à vista, o "ding" do elevador quando alguém chega ou vai
+embora, o sino quando alguém precisa de você, o estalo de tarefa concluída e o pingue-pongue e o fliperama das rodas.
+Há volume geral e cada categoria liga e desliga à parte. Com a aba oculta, só o sino toca.
 
 ### Terminal somente leitura
 
@@ -248,10 +276,99 @@ respostas, cada ferramenta chamada (com o comando ou o diff) e o resultado, atua
 dá para digitar nem interferir no agente. Vale para agentes principais e subagentes; no modo demonstração, a conversa
 é fictícia.
 
-Como o terminal mostra a conversa inteira, ele só existe quando o CodeTown está acessível **apenas pelo próprio
-computador** (o padrão) e só abre por `http://localhost` ou `http://127.0.0.1`. Com a porta liberada para a rede
+- **Busca:** com o terminal em foco, `Ctrl+F` (`⌘F` no Mac) ou a lupa do cabeçalho abre a busca na conversa, sem
+  diferenciar maiúsculas nem acentos. O contador mostra a posição ("3/17"); `Enter` e `Shift+Enter` vão para o próximo
+  e o anterior, abrindo os blocos recolhidos ("… +N linhas") onde o termo estiver. A busca continua valendo enquanto
+  chegam mensagens novas. `Esc` fecha a busca; o seguinte fecha o terminal.
+- **Filtro:** **Tudo**, **Só prompts** (os seus prompts e as respostas finais do agente, sem os passos intermediários)
+  ou **Sem ferramentas**.
+- **Copiar:** passe o mouse (ou o foco) sobre um prompt, uma resposta, um comando ou um resultado para copiá-lo.
+- **Histórico:** o relógio da barra superior lista as sessões dos últimos 7 dias de todas as contas (até 150), agrupadas
+  por dia, com busca por título, projeto ou conta. Uma sessão encerrada abre no terminal com projeto, título e data no
+  cabeçalho e "Sessão encerrada às …" no rodapé; uma sessão ainda aberta abre o terminal ao vivo do agente.
+
+Como o terminal (e o histórico) mostra a conversa inteira, ele só existe quando o CodeTown está acessível **apenas pelo
+próprio computador** (o padrão) e só abre por `http://localhost` ou `http://127.0.0.1`. Com a porta liberada para a rede
 (`CODETOWN_BIND=0.0.0.0` ou `CODETOWN_HOST=0.0.0.0`), ele fica desligado. Detalhes em
 [Privacidade e segurança](#privacidade-e-segurança).
+
+### Timelapse do dia
+
+O botão **Timelapse** (relógio com a seta de voltar, ou a tecla `L`) reproduz o dia em alta velocidade: salas
+acendendo e apagando, agentes chegando, trabalhando, esperando você, indo para as rodas, subagentes entrando e saindo.
+A barra de reprodução tem o dia, play/pausa, a velocidade (60×, 180× ou 600×: um dia de 10 h em 10, 3⅓ ou 1 min),
+a linha do tempo arrastável com o gráfico de quem estava presente e trabalhando, as marcas dos picos (clique para
+pular até lá) e **Voltar ao vivo**. Enquanto isso, o escritório fica levemente sépia, com o selo **REPLAY 14:32**, e o
+feed continua mostrando o que acontece agora.
+
+O servidor grava a linha do tempo **a partir do momento em que está ligado** (não dá para reconstruir o passado):
+resumos do que o escritório mostra, sem conversas, em `~/.codetown/timeline/` (no Docker, no volume de dados), com
+limite de tamanho por dia e os últimos **7 dias** guardados. Para não gravar: `CODETOWN_TIMELINE=0`. Detalhes em
+[`server/README.md`](server/README.md#linha-do-tempo-timelapse).
+
+Os personagens andam mais rápido no replay, mas nas velocidades altas quem fica pouco tempo no escritório quase não
+chega à mesa; pular para outro ponto mostra todos já no lugar.
+### Responder pelo escritório
+
+Com o hook instalado (`npm run hooks:install`), quando um agente pede permissão — rodar um comando, editar um
+arquivo, abrir uma página — o pedido aparece no escritório: o personagem levanta a mão, um aviso com **Responder**
+surge na tela e, nos detalhes do agente, o cartão **Pede permissão** mostra o comando (ou o diff da edição) com os
+botões:
+
+- **Aprovar** — e, quando o Claude Code sugere, **Aprovar e não perguntar de novo** (a mesma regra que o terminal
+  ofereceria, por exemplo `Bash(npm test:*)` neste projeto);
+- **Recusar** — com um motivo opcional, que vai para o agente, e a opção de interrompê-lo;
+- **Responder no terminal** — o CodeTown deixa o pedido de lado.
+
+O diálogo continua aparecendo no terminal ao mesmo tempo, e vale o que você responder primeiro: respondeu no
+terminal, o pedido some do escritório sozinho. O contador **precisam de você** (e a tecla `P`) leva até cada pedido.
+Perguntas do agente (`AskUserQuestion`) continuam só no terminal.
+
+- O hook só desvia o pedido quando há **alguma página do CodeTown aberta** neste computador; com o CodeTown parado
+  ou sem nenhuma página, ele sai na hora e o terminal segue normal.
+- Sem resposta pelo escritório em 5 minutos, o pedido volta a valer só no terminal (`npm run hooks:install --
+  --timeout 120` muda o tempo; `--port` se o CodeTown não usa a 4747). Em **subagentes em segundo plano** o Claude
+  Code só mostra o diálogo no terminal depois que o hook termina: responda pelo escritório ou use **Responder no
+  terminal**.
+- Funciona com a mesma trava do terminal somente leitura: só com o CodeTown acessível apenas pelo próprio
+  computador e aberto por `http://localhost`. Confira com `npm run hooks:status`.
+- No modo demonstração, os agentes fictícios também pedem permissão (de mentira), para experimentar.
+### GitHub no escritório
+
+O que os agentes fazem no GitHub anima a sala do projeto, sem token e sem acessar a internet: o CodeTown lê nos
+transcripts as chamadas (`gh pr create`, `gh pr merge`, `git push`, `gh run watch`, `gh pr checks`, `gh run view`,
+`gh release create` e as ferramentas do MCP do GitHub) e os resultados delas.
+
+| Evento | O que acontece |
+| --- | --- |
+| 🎉 **PR aberto ou mergeado, release publicada** | Confete cai na sala, todos comemoram com pulinhos e uma faixa diz o motivo ("PR #12 mergeado!") por ~12 s. |
+| 🚨 **CI vermelho** | Giroflex piscando nos cantos da sala, chão avermelhado e um balão "!" sobre quem viu a falha, até um CI verde na sala (que vira festa) ou por 10 min. |
+| 🚀 **Push** | Só o aviso e o feed. |
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/github-party.png" alt="Sala app-mobile em festa: confete caindo, a faixa dourada 'PR #12 mergeado!' e Jéssica de pé com os braços para cima e uma estrela sobre a cabeça" /></td>
+    <td width="50%"><img src="docs/screenshots/github-alarm.png" alt="Sala data-pipeline em alarme: chão avermelhado, faixa vermelha 'CI falhou (feat/checkout)', giroflex nos cantos de cima e um balão '!' vermelho ao lado de Ícaro" /></td>
+  </tr>
+</table>
+
+Cada evento também gera um aviso ("🎉 Danilo abriu o PR #12 em codetown", "🚨 CI falhou em codetown (feat/x)") e entra
+no feed. Só o que acontece ao vivo anima a sala: o que já estava nos transcripts quando o CodeTown abriu vai só para o
+histórico. Com "reduzir movimento" ligado no sistema, nada pisca nem gira. No modo demonstração, PRs, merges e CIs
+fictícios aparecem de tempos em tempos.
+### Meu dia
+
+O botão **Meu dia** (ou a tecla `M`) mostra para onde foi o dia: quanto tempo os agentes passaram trabalhando e,
+em destaque, quanto tempo ficaram **esperando você** (permissão, pergunta ou escolha) — com a maior espera, quem
+esperou, onde e quando. Ao lado, sessões, subagentes, pedidos, tokens e custo (quando o Claude Code grava o custo no
+transcript), e gráficos por hora, por projeto (do que mais esperou você para o que menos esperou) e por conta, além
+do ranking das maiores esperas. Escolha o dia no seletor (o CodeTown guarda os últimos 30); aberto no dia de hoje,
+o painel se atualiza a cada 30 s. Cada gráfico tem uma versão em tabela, e a legenda liga e desliga cada status.
+
+O tempo é **tempo de agente**: dois agentes trabalhando por uma hora contam duas horas. O CodeTown só conta o que
+acontece enquanto ele está rodando, e o dia segue o fuso do seu navegador. Com o modo demonstração ligado, o painel
+mostra números fictícios (com o selo "demonstração") e deixa alternar para os dados reais; os agentes do demo nunca
+entram nas estatísticas de verdade.
 
 ### Modo demonstração
 
@@ -317,7 +434,8 @@ Tudo funciona sem configurar nada. Se precisar ajustar, use variáveis de ambien
 | `CODETOWN_HOST` | `127.0.0.1` | Interface do servidor no modo Node. Fora de `127.0.0.1`/`localhost`, o terminal somente leitura fica desligado. |
 | `CODETOWN_BIND` | `127.0.0.1` | Só Docker (no `.env`): onde a porta é publicada. `0.0.0.0` libera a rede local (e desliga o terminal somente leitura). |
 | `CODETOWN_CLAUDE_DIRS` | detecção automática | Pastas das contas, separadas por vírgula (ex.: `/caminho/conta1,/caminho/conta2`). |
-| `CODETOWN_DATA_DIR` | `~/.codetown` | Onde o CodeTown guarda os próprios dados (nomes dos personagens). |
+| `CODETOWN_DATA_DIR` | `~/.codetown` | Onde o CodeTown guarda os próprios dados (nomes dos personagens, linha do tempo do timelapse e estatísticas do Meu dia). |
+| `CODETOWN_TIMELINE` | ligado | `0` desliga a gravação da linha do tempo (os dias já gravados continuam no timelapse). No Docker fica sempre ligado. |
 | `CODETOWN_USAGE_DIR` | `~/.codetown/usage` | Onde o tap de statusline grava o uso. |
 | `CODETOWN_DEMO` | desligado | `1` liga o modo demonstração ao iniciar. |
 | `CODETOWN_ALLOWED_HOSTS` | — | Nomes extras aceitos no endereço (ex.: `meu-mac.local`), além de `localhost` e IPs. |
@@ -350,6 +468,8 @@ no host); as demais ficam fixas dentro do container. Opções: `npm run docker:u
   estatísticas.
 - **Subagentes:** os transcripts em `<sessão>/subagents/` (inclusive os de workflows) viram personagens ligados ao
   agente que os chamou.
+- **GitHub:** PRs, pushes, CI e releases saem das mesmas linhas do transcript (o comando e a saída dele, ou o
+  `gitOperation` que o próprio Claude Code grava); nada é consultado no GitHub.
 - **O desenho:** o navegador recebe o estado por SSE e desenha tudo num canvas — personagens, móveis, pisos e paredes
   são pixel art **gerada por código**; já o logotipo, as ilustrações e os quadros das paredes foram gerados com IA.
 
@@ -360,7 +480,7 @@ no host); as demais ficam fixas dentro do container. Opções: `npm run docker:u
 shared/   protocolo (types.ts), atividades em PT-BR, nomes, simulador de demonstração
 server/   servidor HTTP + SSE: contas e uso, leitura das sessões e transcripts, modelo do escritório
 client/   Vite: src/art (pixel art procedural), src/world (o escritório no canvas), src/ui (interface)
-scripts/  build do servidor, docker-up, tap de statusline (+ instalador) e screenshots
+scripts/  build do servidor, docker-up, tap de statusline e hook de permissão (+ instaladores) e screenshots
 ```
 
 | Rota | Descrição |
@@ -369,8 +489,15 @@ scripts/  build do servidor, docker-up, tap de statusline (+ instalador) e scree
 | `GET /api/snapshot` | Estado atual do escritório. |
 | `GET /api/agents/:id` | Detalhes de um agente, com até 200 atividades. |
 | `GET /api/agents/:id/terminal` | SSE do terminal somente leitura (eventos `init` e `append`); só com acesso local. |
-| `GET /api/health` | Saúde: versão, demonstração, Docker, terminal, fontes e status de uso de cada conta. |
+| `GET /api/sessions/recent` | Histórico: sessões dos últimos 7 dias de todas as contas (até 150); só com acesso local. |
+| `GET /api/sessions/:conta/:sessionId/terminal` | SSE da conversa de uma sessão do histórico (mesmo protocolo do terminal); só com acesso local. |
+| `GET /api/stats?day=AAAA-MM-DD` | Estatísticas do Meu dia (tempo por status, projetos, contas, horas, esperas, tokens e custo). |
+| `GET /api/stats/days` | Dias com estatísticas (os últimos 30). |
+| `GET /api/timeline/days` | Dias gravados para o timelapse, com tamanho e horário do primeiro e do último registro. |
+| `GET /api/timeline/:dia` | Linha do tempo de um dia (`AAAA-MM-DD`), em JSONL (com gzip). |
+| `GET /api/health` | Saúde: versão, demonstração, Docker, terminal, responder pelo escritório, fontes e status de uso de cada conta. |
 | `POST /api/demo` | `{"enabled": true \| false}` liga ou desliga os agentes simulados. |
+| `/api/permissions…` | Responder pelo escritório: o hook registra o pedido e espera; a página busca o detalhe e decide. Só com acesso local. |
 
 Mais detalhes do servidor em [`server/README.md`](server/README.md).
 
@@ -384,7 +511,7 @@ Mais detalhes do servidor em [`server/README.md`](server/README.md).
 | `<conta>/sessions/` | `/claude/<conta>/sessions` (somente leitura) | Sessões abertas e seus status. |
 | `<conta>/projects/` | `/claude/<conta>/projects` (somente leitura) | Transcripts das sessões e dos subagentes. |
 | `~/.codetown/usage/` | `/usage` (somente leitura) | Uso capturado pelo tap de statusline. |
-| volume `codetown-data` | `/data` | Dados do próprio CodeTown (nomes dos personagens). |
+| volume `codetown-data` | `/data` | Dados do próprio CodeTown (nomes dos personagens, linha do tempo do timelapse e estatísticas do Meu dia). |
 
 A pasta da conta **nunca** é montada inteira (lá ficam credenciais e configurações). O container roda como usuário sem
 privilégios, com sistema de arquivos somente leitura, sem capabilities extras e com `no-new-privileges`. Os metadados
@@ -394,8 +521,9 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
 
 ## Privacidade e segurança
 
-- **Só leitura:** o CodeTown nunca grava nas pastas do Claude Code. A única exceção é o `npm run usage:install` /
-  `usage:uninstall`, que muda só o `statusLine.command` do `settings.json` — com backup antes.
+- **Só leitura:** o CodeTown nunca grava nas pastas do Claude Code. As exceções são o `npm run usage:install` /
+  `usage:uninstall`, que muda só o `statusLine.command` do `settings.json`, e o `npm run hooks:install` /
+  `hooks:uninstall`, que muda só a lista `hooks.PermissionRequest` — sempre com backup antes.
 - **Só local, por padrão:** o servidor só aceita conexões do próprio computador; liberar a rede local é opcional.
   Não há telemetria nem chamadas externas: o CodeTown não acessa a internet.
 - **Sem credenciais:** o CodeTown não lê senhas nem tokens de acesso. Do `.claude.json` de cada conta aproveita só o
@@ -404,11 +532,25 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
   `sk-…`, `ghp_…`, `AKIA…`, JWTs, senhas em URLs) viram `***` antes de chegar ao navegador.
 - **Protegido contra sites maliciosos:** o servidor recusa endereços que não sejam `localhost`/IP (DNS rebinding) e
   `POST` vindos de outras origens (CSRF), e não deixa a página ser embutida em outros sites.
-- **Terminal somente leitura só local:** a conversa completa das sessões só sai do servidor com o CodeTown acessível
-  apenas pelo próprio computador (`CODETOWN_HOST` local no Node; `CODETOWN_BIND` local no Docker) — não há como
+- **Terminal somente leitura só local:** a conversa completa das sessões (e o histórico das sessões encerradas, com os
+  títulos) só sai do servidor com o CodeTown acessível apenas pelo próprio computador (`CODETOWN_HOST` local no Node;
+  `CODETOWN_BIND` local no Docker) — não há como
   ligá-lo com a porta exposta — e cada pedido precisa vir por `localhost`/`127.0.0.1`: IPs da rede e nomes de
   `CODETOWN_ALLOWED_HOSTS` (proxies, túneis) são recusados. Segredos são mascarados e textos longos truncados antes
   de chegar ao navegador; no modo demonstração, a conversa é fictícia. `CODETOWN_TERMINAL=0` desliga de vez.
+- **Linha do tempo do timelapse:** só os resumos que já aparecem na tela (atividade em uma linha, status, títulos,
+  uso das contas, sem e-mails, comandos completos ou conversas), gravados em `~/.codetown/timeline/` e apagados depois
+  de 7 dias. `CODETOWN_TIMELINE=0` desliga a gravação.
+- **Responder pelo escritório, só local:** aprovar ou recusar age sobre as sessões, então segue a mesma trava do
+  terminal (bind local, `Host` local, nada de proxies ou túneis) e só existe com o hook instalado por você. As
+  respostas exigem JSON e origem local (um site aberto no navegador não consegue mandá-las), o hook só fala com
+  `127.0.0.1` e, na dúvida — CodeTown fora do ar, erro, tempo esgotado —, sai sem decidir: vale o terminal. O comando
+  completo ou o diff só saem do servidor para quem abriu a página pelo próprio computador. "Sempre permitir" só
+  aplica uma regra que o próprio Claude Code sugeriu para aquele pedido. Atenção: qualquer programa ou pessoa que
+  consiga abrir `http://localhost:4747` nesta máquina também consegue responder; em computadores compartilhados
+  com outros usuários, não instale o hook.
+- **Estatísticas do Meu dia:** só números agregados (tempo por status, contagens, tokens, custo) com nomes de projeto,
+  conta e agente, guardados em `CODETOWN_DATA_DIR/stats/` por 30 dias — nada da conversa.
 - **O que aparece na tela:** resumos das atividades (ferramenta, arquivo, comando ou consulta), títulos das sessões,
   tarefas e estatísticas (e, no terminal somente leitura, a conversa). Não exponha a porta em redes em que você não
   confia.
@@ -423,6 +565,7 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
 | `npm run build` / `npm start` | Compila e roda a versão de produção. |
 | `npm test` | Testes (Vitest). |
 | `npm run typecheck` | Verificação de tipos de cliente, servidor e scripts. |
+| `npm run demo:timeline` | Gera uma linha do tempo fictícia (simulador do modo demonstração) para o timelapse. |
 
 Para tirar screenshots sem abrir o seu navegador, `scripts/shot.mjs` usa um Chromium headless isolado (Playwright).
 Na primeira vez, baixe o navegador (uma vez só): `npx playwright-core install chromium-headless-shell`.
@@ -432,7 +575,21 @@ node scripts/shot.mjs 'http://localhost:4747/?mock=1&speed=3' /tmp/codetown.png 
 ```
 
 No console do navegador, `codetown.world.debug` tem ferramentas para testar cenas (ex.:
-`codetown.world.debug.setHour(21)` para ver a noite).
+`codetown.world.debug.setHour(21)` para ver a noite). Para fixar a hora já ao abrir, use `?hora=21:30` na URL.
+
+**Timelapse só com dados fictícios** (ex.: para gravar um GIF): `npm run demo:timeline` roda o simulador do modo
+demonstração offline e grava um dia inteiro (por padrão, ontem das 9h às 19h, com manhã cheia, almoço mais vazio e
+pico à tarde) em `<tmp>/codetown-demo/timeline/`. Depois suba um CodeTown que só leia essa pasta e não mostre as suas
+sessões, e abra o Timelapse:
+
+```bash
+npm run demo:timeline -- --data-dir /tmp/codetown-demo        # opções: --date, --start 8:30, --hours, --sessions, --seed
+mkdir -p /tmp/codetown-demo/vazio
+CODETOWN_DATA_DIR=/tmp/codetown-demo CODETOWN_TIMELINE=0 CODETOWN_CLAUDE_DIRS=/tmp/codetown-demo/vazio \
+  CODETOWN_PORT=4848 npm start                                 # depois de npm run build; abra http://localhost:4848
+```
+
+`CODETOWN_TIMELINE=0` evita gravar nessa pasta; com a gravação ligada, dias com mais de 7 dias são apagados.
 
 ## Solução de problemas
 
@@ -481,6 +638,18 @@ O terminal só existe com o CodeTown acessível apenas pelo próprio computador.
 `http://localhost:4747` (pelo IP da rede ou por um nome de `CODETOWN_ALLOWED_HOSTS` ele é recusado). No Docker, um container
 criado antes desse recurso precisa ser recriado: `npm run docker:up`. O log de inicialização (`npm run docker:logs`)
 diz se o terminal está ligado e, se não estiver, por quê.
+
+</details>
+
+<details>
+<summary><b>O pedido de permissão não aparece no escritório</b></summary>
+
+Rode `npm run hooks:status`: ele diz, por conta, se o hook está instalado (e apontando para esta pasta) e se o
+CodeTown está respondendo pedidos. O pedido só é desviado com alguma página do CodeTown aberta por
+`http://localhost` (ou `127.0.0.1`) e com o terminal somente leitura ligado (mesma trava). Se o CodeTown usa outra
+porta, reinstale com `npm run hooks:install -- --port <porta>`. Sessões abertas antes da instalação costumam
+recarregar o `settings.json` sozinhas; se não, reabra a sessão. Perguntas do agente (`AskUserQuestion`) não passam
+pelo hook.
 
 </details>
 

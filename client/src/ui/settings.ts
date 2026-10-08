@@ -4,6 +4,8 @@ import { h, iconButton, setAttr, setHidden, setText } from './dom';
 import { ICONS } from './icons';
 import { notificationState, type Notifier } from './notify';
 import type { UiPrefs } from './prefs';
+import { SoundSettingsGroup } from './settings-sound';
+import type { SoundControl } from './sound';
 
 type BoolPref = { [K in keyof UiPrefs]: UiPrefs[K] extends boolean ? K : never }[keyof UiPrefs];
 
@@ -57,6 +59,8 @@ export class SettingsPopover implements UiComponent {
   private switches = new Map<BoolPref | 'demo', SwitchRefs>();
   private bubbles: ReturnType<typeof segmented<UiPrefs['bubbles']>>;
   private liveliness: ReturnType<typeof segmented<UiPrefs['liveliness']>>;
+  private daylight: ReturnType<typeof segmented<UiPrefs['daylight']>>;
+  private soundGroup: SoundSettingsGroup;
   private demoGroup: HTMLElement;
   private demoBusy = false;
   private anchor: HTMLElement | null = null;
@@ -64,6 +68,7 @@ export class SettingsPopover implements UiComponent {
   constructor(
     private ctx: UiContext,
     private notifier: Notifier,
+    sound: SoundControl,
   ) {
     const sw = (key: BoolPref | 'demo', label: string, hint: string, onToggle: () => void) => {
       const r = switchRow(label, hint, onToggle);
@@ -90,6 +95,17 @@ export class SettingsPopover implements UiComponent {
       ],
       (v) => ctx.updatePrefs({ liveliness: v }),
     );
+    this.daylight = segmented<UiPrefs['daylight']>(
+      'Ciclo dia/noite',
+      [
+        ['auto', 'Automático'],
+        ['day', 'Sempre dia'],
+        ['night', 'Sempre noite'],
+      ],
+      (v) => ctx.updatePrefs({ daylight: v }),
+    );
+    this.daylight.row.append(h('span', { class: 'ui-set__hint', text: 'Automático: céu, luzes e sol nas janelas seguem a hora local.' }));
+    this.soundGroup = new SoundSettingsGroup(ctx, sound);
 
     this.demoGroup = h(
       'div',
@@ -110,19 +126,15 @@ export class SettingsPopover implements UiComponent {
         sw('showNames', 'Mostrar nomes', 'Etiqueta com o nome acima de cada personagem.', flip('showNames')),
         this.bubbles.row,
         this.liveliness.row,
-        sw('dayNight', 'Dia e noite automáticos', 'Janelas e iluminação seguem a hora local.', flip('dayNight')),
+        this.daylight.row,
       ),
       h(
         'div',
         { class: 'ui-set-group' },
         h('h3', { text: 'Avisos' }),
-        sw('sound', 'Som', 'Sino quando alguém precisa de você; estalo quando uma tarefa termina.', () => {
-          const on = !ctx.prefs.sound;
-          ctx.updatePrefs({ sound: on });
-          this.notifier.setSound(on);
-        }),
         sw('browserNotifications', 'Notificações do navegador', 'Avisa quando alguém precisa de você e a aba está em segundo plano.', () => void this.toggleNotifications()),
       ),
+      this.soundGroup.el,
       this.demoGroup,
     );
     this.el.addEventListener('toggle', () => {
@@ -169,12 +181,14 @@ export class SettingsPopover implements UiComponent {
   render(): void {
     const p = this.ctx.prefs;
     for (const [key, r] of this.switches) {
-      const on = key === 'demo' ? !!this.ctx.store.snapshot?.meta.demo : p[key];
+      const on = key === 'demo' ? !!this.ctx.store.liveSnapshot?.meta.demo : p[key];
       setAttr(r.btn, 'aria-checked', String(on));
       r.btn.disabled = key === 'demo' && this.demoBusy;
     }
     this.bubbles.set(p.bubbles);
     this.liveliness.set(p.liveliness);
+    this.daylight.set(p.daylight);
+    this.soundGroup.render();
     setHidden(this.demoGroup, this.ctx.store.mock);
 
     const notif = this.switches.get('browserNotifications')!;

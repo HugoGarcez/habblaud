@@ -4,16 +4,20 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { OfficeSnapshot } from '../../shared/types';
 import type { Office } from '../model/office';
+import { isLoopbackHost } from './guard';
 
 /** Cliente lento demais (buffer acumulado acima disto) é desconectado; o EventSource reconecta. */
 const MAX_BUFFERED = 8 * 1024 * 1024;
 
 export class Hub {
   private clients = new Set<ServerResponse>();
+  /** Clientes que abriram a página por um Host local (os únicos que podem responder pedidos de permissão). */
+  private local = new WeakSet<ServerResponse>();
   private timer: ReturnType<typeof setTimeout> | null = null;
   private pinger: ReturnType<typeof setInterval> | null = null;
   private lastFlush = 0;
   private unsubscribe: (() => void) | null = null;
+  private snapshotCbs = new Set<(snap: OfficeSnapshot) => void>();
   private readonly throttleMs: number;
   private readonly pingMs: number;
 
@@ -46,6 +50,19 @@ export class Hub {
     return this.clients.size;
   }
 
+  /** Avisado a cada snapshot novo transmitido (ex.: o gravador da linha do tempo). */
+  onSnapshot(cb: (snap: OfficeSnapshot) => void): () => void {
+    this.snapshotCbs.add(cb);
+    return () => void this.snapshotCbs.delete(cb);
+  }
+
+  /** Páginas conectadas por um Host local (localhost/127.x): quem pode responder pelo escritório. */
+  get localSize(): number {
+    let n = 0;
+    for (const c of this.clients) if (this.local.has(c) && !c.destroyed && !c.writableEnded) n++;
+    return n;
+  }
+
   /** Conecta um cliente: snapshot completo + últimos 50 itens do feed, depois o fluxo ao vivo. */
   attach(req: IncomingMessage, res: ServerResponse): void {
     req.socket.setTimeout(0);
@@ -61,6 +78,7 @@ export class Hub {
     res.write(frame('snapshot', snapshot));
     res.write(frame('feed', this.office.recentFeed(50)));
     this.clients.add(res);
+    if (isLoopbackHost(req.headers.host)) this.local.add(res);
     const drop = () => this.clients.delete(res);
     req.on('close', drop);
     res.on('close', drop);
@@ -73,7 +91,16 @@ export class Hub {
     this.timer = null;
     this.lastFlush = Date.now();
     const r = this.office.commit();
-    if (r.changed) this.writeAll(frame('snapshot', r.snapshot));
+    if (r.changed) {
+      this.writeAll(frame('snapshot', r.snapshot));
+      for (const cb of this.snapshotCbs) {
+        try {
+          cb(r.snapshot);
+        } catch {
+          // quem escuta não atrapalha a transmissão
+        }
+      }
+    }
     if (r.feed.length) this.writeAll(frame('feed', r.feed));
     for (const n of r.notices) this.writeAll(frame('notice', n));
     return r.snapshot;

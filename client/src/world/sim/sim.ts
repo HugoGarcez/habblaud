@@ -14,7 +14,7 @@ import { BLOCKED, FREE, SEAT } from '../path/grid';
 import { PROGRAM_SEED } from '../social/gathering';
 import { hasTrait, personaFor, soloWeights } from '../social/persona';
 import { Social } from '../social/social';
-import { browserStorage } from '../social/wallet';
+import { browserStorage, type StorageLike } from '../social/wallet';
 import {
   canDismantle,
   chooseSeat,
@@ -29,6 +29,7 @@ import {
 } from './behavior';
 import { Character, dirOf, facing } from './character';
 import { Elevator } from './elevator';
+import { RoomFxState } from './github';
 import { RoomState } from './room-state';
 import { countShells, latestShellDone, shellLabel, shellStage, shellWaitSince, spinDir, spinPhase, yawnPhase } from './shell';
 import { SpotRegistry } from './spots';
@@ -91,7 +92,7 @@ export class Sim {
   /** Cabines ocupadas (furnitureId). */
   readonly stallBusy = new Set<string>();
   /** Vida social: rodas dos ociosos, personalidades e carteiras (social/social.ts). */
-  readonly social: Social = new Social(this, browserStorage());
+  readonly social: Social;
   /** Depuração: agentes forçados a encerrar e salas forçadas a sumir do snapshot. */
   readonly forcedOffline = new Set<string>();
   readonly hiddenRooms = new Set<string>();
@@ -103,14 +104,19 @@ export class Sim {
   readonly agentPatches = new Map<string, Partial<AgentInfo>>();
   /** Efeitos pontuais (confete) para o render desenhar; o render esvazia a lista. */
   readonly effects: WorldEffect[] = [];
+  /** Festa e alarme das salas (eventos do GitHub; sim/github.ts). */
+  readonly roomFx = new RoomFxState();
   private lastSnapshot: OfficeSnapshot | null = null;
   private shrinkPending = false;
   private nextHousekeeping = 0;
 
+  /** `storage` das carteiras: null = só em memória (o timelapse não mexe nas moedinhas de verdade). */
   constructor(
     private readonly art: ArtModule,
     private readonly options: () => WorldOptions,
+    storage: StorageLike | null = browserStorage(),
   ) {
+    this.social = new Social(this, storage);
     this.building = assembleBuilding(columnsFor([]), [], 0);
     this.finder = new PathFinder(this.building.grid);
     this.spots.setSpots(this.building.spots);
@@ -166,6 +172,7 @@ export class Sim {
       }
     }
     if (layoutDirty) this.relayout();
+    this.roomFx.sync(snap.rooms, input.serverTime, now);
 
     // ---- agentes
     const seen = new Set<string>();
@@ -516,6 +523,7 @@ export class Sim {
     for (const e of this.elevators) e.update(dt, now);
     this.updateRooms(now);
     this.social.update(now);
+    if (this.roomFx.active.size) this.roomFx.update(this, now);
     for (const ch of this.chars.values()) {
       if (ch.missingSince !== null && !ch.leaving && now - ch.missingSince >= MISSING_DEBOUNCE_MS) this.refreshMode(ch);
       this.runCharacter(ch, dt, now);

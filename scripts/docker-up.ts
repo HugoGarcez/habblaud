@@ -11,7 +11,7 @@
 //    somente leitura, em /claude/<conta>/... — nunca a pasta inteira da conta, onde ficam
 //    credenciais e configurações — e a pasta do uso capturado pelo statusline
 //    (~/.codetown/usage, criada se faltar) em /usage, também somente leitura. Passa
-//    CODETOWN_CLAUDE_DIRS, CODETOWN_ACCOUNTS e CODETOWN_USAGE_DIR ao container.
+//    CODETOWN_CLAUDE_DIRS, CODETOWN_ACCOUNTS, CODETOWN_USAGE_DIR e o fuso do host (TZ) ao container.
 // 3. Roda `docker compose up -d --build`, espera o /api/health e mostra a URL.
 //
 // Uso de 5h/semanal ao vivo: tap de statusline (npm run usage:install), que grava os números na
@@ -215,15 +215,32 @@ export function yamlString(value: string): string {
 }
 
 /**
- * `usageDir`: pasta do host com o uso capturado pelo tap de statusline (já existente; caminho real),
- * montada somente leitura em /usage.
+ * Fuso horário do host (TZ ou o do sistema), para o container: sem ele o Node do container usa UTC e
+ * o "dia" do timelapse e do painel do dia viraria às 21h no horário de Brasília. Undefined se inválido.
  */
-export function renderOverride(mounts: AccountMount[], generatedAt: Date = new Date(), usageDir?: string): string {
+export function hostTimeZone(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  let tz = env.TZ?.trim().replace(/^:/, '');
+  if (!tz) {
+    try {
+      tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } catch {
+      return undefined;
+    }
+  }
+  return tz && /^[A-Za-z0-9_+\-]+(?:\/[A-Za-z0-9_+\-]+)*$/.test(tz) ? tz : undefined;
+}
+
+/**
+ * `usageDir`: pasta do host com o uso capturado pelo tap de statusline (já existente; caminho real),
+ * montada somente leitura em /usage. `timeZone`: fuso do host, repassado como TZ.
+ */
+export function renderOverride(mounts: AccountMount[], generatedAt: Date = new Date(), usageDir?: string, timeZone?: string): string {
   const env: Array<[string, string]> = [
     ['CODETOWN_CLAUDE_DIRS', mounts.map((m) => m.mountDir).join(',')],
     ['CODETOWN_ACCOUNTS', JSON.stringify(accountsPayload(mounts))],
   ];
   if (usageDir) env.push(['CODETOWN_USAGE_DIR', CONTAINER_USAGE_DIR]);
+  if (timeZone) env.push(['TZ', timeZone]);
   const lines = [
     `# Gerado por scripts/docker-up.ts em ${generatedAt.toISOString()} — não edite: é recriado a cada \`npm run docker:up\`.`,
     '# Contém caminhos do host e e-mails das contas: fica fora do git e com permissão 600.',
@@ -367,7 +384,7 @@ async function up(opts: Options, port: number): Promise<void> {
   const usageDir = ensureUsageDir();
   if (usageDir) say(`Uso do statusline: monta ${tildify(USAGE_DIR)} em ${CONTAINER_USAGE_DIR}, somente leitura.`);
   const tmp = `${OVERRIDE_FILE}.tmp`;
-  writeFileSync(tmp, renderOverride(mounts, new Date(), usageDir), { mode: 0o600 });
+  writeFileSync(tmp, renderOverride(mounts, new Date(), usageDir, hostTimeZone()), { mode: 0o600 });
   chmodSync(tmp, 0o600);
   renameSync(tmp, OVERRIDE_FILE);
   say('docker-compose.override.yml gerado.');

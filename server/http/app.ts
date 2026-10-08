@@ -2,9 +2,13 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { SourceInfo } from '../../shared/types';
 import type { AccountsService } from '../accounts/service';
+import type { DayStatsService } from '../history/daystats';
 import type { Office } from '../model/office';
+import type { SessionHistory } from '../sources/history';
 import { isJsonContentType, isLoopbackHost } from './guard';
+import { handleSessionsRoute } from './sessions';
 import type { Hub } from './sse';
+import { handleStatsRoute } from './stats';
 import type { TerminalStreams } from './terminal';
 
 export interface ApiDeps {
@@ -18,6 +22,17 @@ export interface ApiDeps {
   terminal?: boolean;
   /** Streams do terminal; sem eles o recurso fica desligado mesmo com `terminal`. */
   terminals?: TerminalStreams;
+  /** Histórico de sessões do terminal (GET /api/sessions/*, http/sessions.ts); mesma trava do terminal. */
+  sessions?: SessionHistory;
+  /** Rotas do timelapse (/api/timeline/*, ver http/timeline.ts); devolve false para o resto. */
+  timeline?: (req: IncomingMessage, res: ServerResponse, url: URL) => boolean;
+  /**
+   * Rotas de /api/permissions (responder pelo escritório, server/permissions/http.ts). Só existem com bind
+   * local (ServerConfig.terminal); a trava do Host local é conferida aqui antes de chamá-las.
+   */
+  permissions?: (req: IncomingMessage, res: ServerResponse, path: string) => void;
+  /** Estatísticas do "Meu dia" (GET /api/stats, http/stats.ts). */
+  stats?: DayStatsService;
 }
 
 /** GET /api/agents/:id/terminal (ids nunca contêm '/'). */
@@ -25,7 +40,7 @@ const TERMINAL_ROUTE = /^\/api\/agents\/([^/]+)\/terminal$/;
 
 const MAX_BODY = 256 * 1024;
 
-class HttpError extends Error {
+export class HttpError extends Error {
   constructor(
     readonly status: number,
     message: string,
@@ -48,7 +63,7 @@ export function sendJson(res: ServerResponse, status: number, body: unknown): vo
 }
 
 /** Lê o corpo JSON. Exige `Content-Type: application/json` (barreira contra CSRF; ver http/guard.ts). */
-function readJson(req: IncomingMessage): Promise<unknown> {
+export function readJson(req: IncomingMessage): Promise<unknown> {
   if (!isJsonContentType(req.headers['content-type'])) {
     req.resume();
     return Promise.reject(new HttpError(415, 'envie o corpo como JSON (Content-Type: application/json)'));
@@ -124,6 +139,7 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
           demo: office.isDemo(),
           docker: deps.inDocker,
           terminal: !!terminals,
+          permissions: !!deps.permissions,
           sources: deps.sources(),
           accounts: accounts.entries().map((a) => ({ id: a.id, usageStatus: accounts.usageView(a.id).status })),
         });
@@ -149,6 +165,21 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       }
       return true;
     }
+    if (path.startsWith('/api/sessions/')) {
+      handleSessionsRoute(req, res, path, { history: deps.terminal ? deps.sessions : undefined, terminals });
+      return true;
+    }
+    if (path === '/api/permissions' || path.startsWith('/api/permissions/')) {
+      // Responder pelo escritório age sobre as sessões: a mesma trava do terminal (bind local + Host local).
+      if (!deps.permissions) {
+        sendJson(res, 403, { error: 'responder pelo escritório desligado: só funciona com o CodeTown acessível apenas pelo próprio computador' });
+      } else if (!isLoopbackHost(req.headers.host)) {
+        sendJson(res, 403, { error: 'pedidos de permissão só são respondidos pelo próprio computador (http://localhost ou http://127.0.0.1)' });
+      } else {
+        deps.permissions(req, res, path);
+      }
+      return true;
+    }
     if (path.startsWith('/api/agents/')) {
       if (!isRead) {
         methodNotAllowed(res, 'GET');
@@ -166,11 +197,16 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       else sendJson(res, 404, { error: 'agente não encontrado' });
       return true;
     }
+    if (path === '/api/stats' || path.startsWith('/api/stats/')) {
+      handleStatsRoute(req, res, url, deps.stats, sendJson);
+      return true;
+    }
     if (path === '/api/demo') {
       if (method !== 'POST') methodNotAllowed(res, 'POST');
       else handleDemo(req, res).catch((err) => fail(res, err));
       return true;
     }
+    if (deps.timeline?.(req, res, url)) return true;
     sendJson(res, 404, { error: 'rota desconhecida' });
     return true;
   };

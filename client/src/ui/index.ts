@@ -11,18 +11,23 @@ import './styles.css';
 import type { OfficeStore } from '../net/store';
 import type { Selection, WorldApi } from '../world/api';
 import type { PanelName, UiComponent, UiContext } from './context';
+import { DayLauncher } from './daystats-launcher';
 import { h } from './dom';
 import { Drawer } from './drawer';
 import { FeedPanel } from './feed';
 import { HelpDialog } from './help';
+import { HistoryPopover } from './history';
 import { HoverTip } from './hovertip';
 import { hasRunningShells } from './model';
 import { Notifier } from './notify';
 import { ConnectionBanner, EmptyState, Splash } from './overlays';
+import { focusPermission, nextPermissionAgent } from './permission';
 import { loadPrefs, safeLocalStorage, savePrefs, worldOptionsFrom, type UiPrefs } from './prefs';
 import { SettingsPopover } from './settings';
 import { Sidebar } from './sidebar';
+import { SoundControl } from './sound';
 import { TERMINAL_UNAVAILABLE_HINT, TerminalPanel } from './terminal';
+import { TimelapsePlayer } from './timelapse';
 import { Toasts } from './toasts';
 import { TopBar } from './topbar';
 import { UpdateBanner } from './update';
@@ -58,6 +63,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
   let settings: SettingsPopover;
   let help: HelpDialog;
   let area: FreeArea;
+  let timelapse: TimelapsePlayer;
   /** A seleção em curso partiu da UI (lista, feed, aviso...), não de um clique no canvas. */
   let uiSelecting = false;
 
@@ -126,27 +132,40 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
     },
     openHelp: (section) => help.open(section),
     toggleSettings: () => settings.toggle(topbar.settingsBtn),
+    toggleTimelapse() {
+      // O terminal mostra a conversa de agora: não combina com o dia reproduzido.
+      if (!timelapse.isOpen && terminal.isOpen) terminal.close();
+      timelapse.toggle();
+    },
+    isTimelapseOpen: () => timelapse.isOpen,
   };
 
   // ---------------------------------------------------------------- componentes
-  const notifier = new Notifier(ctx);
+  const sound = new SoundControl(ctx);
+  const notifier = new Notifier(ctx, sound.board);
   topbar = new TopBar(ctx);
   sidebar = new Sidebar(ctx);
   const terminal = new TerminalPanel(ctx);
+  // Histórico de sessões (terminal somente leitura): botão no grupo dos painéis da barra superior.
+  const history = new HistoryPopover(ctx, terminal);
+  topbar.panelGroup.prepend(history.button);
   drawer = new Drawer(ctx, terminal);
   const feed = new FeedPanel(ctx);
   const toasts = new Toasts(ctx);
-  settings = new SettingsPopover(ctx, notifier);
+  settings = new SettingsPopover(ctx, notifier, sound);
   help = new HelpDialog();
+  const day = new DayLauncher(ctx, (el) => root.append(el));
+  topbar.addPanelButton(day.button);
   const empty = new EmptyState(ctx);
   const banner = new ConnectionBanner(ctx);
   const update = new UpdateBanner(store);
   const tip = new HoverTip(ctx);
   const splash = new Splash(ctx);
+  timelapse = new TimelapsePlayer(ctx);
   const scrim = h('div', { class: 'ui-scrim', attrs: { 'aria-hidden': 'true' }, on: { click: () => ctx.togglePanel('sidebar', false) } });
 
   root.classList.add('ui-root');
-  root.append(topbar.el, sidebar.el, scrim, feed.el, drawer.el, terminal.el, toasts.el, banner.el, update.el, empty.el, tip.el, settings.el, help.el, live, splash.el);
+  root.append(timelapse.vignette, topbar.el, sidebar.el, scrim, feed.el, drawer.el, terminal.el, timelapse.el, timelapse.badge, toasts.el, banner.el, update.el, empty.el, tip.el, settings.el, history.el, help.el, live, splash.el);
   area = new FreeArea(world, { root, topbar: topbar.el, sidebar: sidebar.el, drawer: drawer.el, feed: feed.el }, () => ({
     sidebar: panels.sidebar,
     feed: panels.feed,
@@ -154,7 +173,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
     narrow: ctx.isNarrow(),
   }));
 
-  const components: UiComponent[] = [topbar, sidebar, drawer, terminal, feed, toasts, settings, empty, banner, tip, notifier, splash];
+  const components: UiComponent[] = [topbar, sidebar, drawer, terminal, history, feed, toasts, settings, empty, banner, tip, notifier, splash, timelapse, sound, day];
 
   // ---------------------------------------------------------------- renderização agrupada por quadro
   let rafId = 0;
@@ -195,7 +214,8 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
 
   // ---------------------------------------------------------------- eventos
   store.on('snapshot', (snap) => {
-    if (store.connection === 'open') skew = snap.serverTime - Date.now();
+    // No timelapse o "agora" da interface é o instante reproduzido (serverTime do snapshot reconstruído).
+    if (store.connection === 'open' || store.replaying) skew = snap.serverTime - Date.now();
     invalidate();
   });
   store.on('connection', () => invalidate());
@@ -233,10 +253,10 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
   function onKey(e: KeyboardEvent): void {
     if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === 'Escape') {
-      if (help.isOpen || settings.isOpen) return; // diálogo/popover tratam o próprio Esc
-      // O terminal flutua sobre tudo: fecha primeiro (a gaveta continua aberta).
+      if (help.isOpen || settings.isOpen || history.isOpen) return; // diálogo/popover tratam o próprio Esc
+      // O terminal flutua sobre tudo: fecha primeiro (a busca dele, depois ele; a gaveta continua aberta).
       if (terminal.isOpen) {
-        terminal.close();
+        terminal.escape();
         e.preventDefault();
       } else if (ctx.isNarrow() && panels.sidebar) {
         ctx.togglePanel('sidebar', false);
@@ -268,10 +288,30 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
         e.preventDefault();
         toggleTerminal();
         break;
+      case 'l':
+      case 'L':
+        if (store.mock) break;
+        e.preventDefault();
+        ctx.toggleTimelapse();
+        break;
+      case 'p':
+      case 'P': {
+        // Próximo pedido de permissão para responder pelo escritório (só leva até ele: nunca aprova).
+        e.preventDefault();
+        const next = nextPermissionAgent(store.snapshot?.agents ?? [], selection?.type === 'agent' ? selection.id : undefined);
+        if (next) focusPermission(ctx, next.id);
+        else ctx.announce('Nenhum pedido de permissão para responder agora.');
+        break;
+      }
       case 'o':
       case 'O':
         e.preventDefault();
         ctx.camera('overview');
+        break;
+      case 'm':
+      case 'M':
+        e.preventDefault();
+        day.toggle();
         break;
       case '[':
         e.preventDefault();
