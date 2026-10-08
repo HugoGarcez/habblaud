@@ -217,8 +217,9 @@ rm -rf ~/.codetown                          # apaga os dados locais (uso captura
 ```
 
 Depois é só apagar a pasta do projeto — rode o `usage:uninstall` e o `hooks:uninstall` **antes**, senão o
-statusline das contas passa a dar erro (e o hook de permissão, a falhar em silêncio). O `usage:uninstall` deixa cópias `settings.json.codetown-backup-<data>` na pasta de cada conta
-(ex.: `~/.claude/`); apague-as se não precisar mais.
+statusline das contas passa a dar erro (e o hook de permissão, a falhar em silêncio). Os dois instaladores
+(`usage:install` e `hooks:install`) e os dois desinstaladores deixam cópias `settings.json.codetown-backup-<data>` na
+pasta de cada conta (ex.: `~/.claude/`); apague-as se não precisar mais.
 
 ## Como usar
 
@@ -333,6 +334,7 @@ Perguntas do agente (`AskUserQuestion`) continuam só no terminal.
 - Funciona com a mesma trava do terminal somente leitura: só com o CodeTown acessível apenas pelo próprio
   computador e aberto por `http://localhost`. Confira com `npm run hooks:status`.
 - No modo demonstração, os agentes fictícios também pedem permissão (de mentira), para experimentar.
+
 ### GitHub no escritório
 
 O que os agentes fazem no GitHub anima a sala do projeto, sem token e sem acessar a internet: o CodeTown lê nos
