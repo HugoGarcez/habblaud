@@ -10,6 +10,8 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+## [0.3.1] - 2026-10-08
+
 ### Corrigido
 
 - Quem cochilava na mesa (ocioso há mais de 10 minutos) e levantava para uma roda, uma festa ou um passeio saía
@@ -65,6 +67,7 @@ Primeira versão publicada.
   Subagentes chegam, trabalham e entregam ao principal. Mostra as duas contas, com o uso de 5 horas e semanal de
   cada uma (tap de statusline), além de feed de atividade, avisos e modo demonstração. Roda no Node ou no Docker local.
 
-[Não lançado]: https://github.com/marmottajr/codetown/compare/v0.3.0...HEAD
+[Não lançado]: https://github.com/marmottajr/codetown/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/marmottajr/codetown/releases/tag/v0.3.1
 [0.3.0]: https://github.com/marmottajr/codetown/releases/tag/v0.3.0
 [0.2.0]: https://github.com/marmottajr/codetown/releases/tag/v0.2.0
