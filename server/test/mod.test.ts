@@ -122,4 +122,18 @@ describe('plugin codetown-permissoes', () => {
     expect(r.stdout).toBe('');
     expect(Date.now() - t0).toBeLessThan(5_000);
   });
+
+  it('o caminho antigo (scripts/permission-hook.mjs, das instalações até a 0.2) continua funcionando como atalho', () => {
+    const input = JSON.stringify({ session_id: 's', hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: { command: 'ls' } });
+    const r = spawnSync(process.execPath, [join(ROOT, 'scripts', 'permission-hook.mjs')], {
+      input,
+      encoding: 'utf8',
+      // Com o debug ligado o script conta no stderr o que fez: prova que o main do script novo rodou.
+      env: { PATH: process.env.PATH ?? '', CODETOWN_PORT: '1', CODETOWN_HOOK_DEBUG: '1' },
+      timeout: 10_000,
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe('');
+    expect(r.stderr).toMatch(/codetown/i);
+  });
 });

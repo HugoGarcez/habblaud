@@ -62,7 +62,8 @@ describe('hooks-install.ts (funções puras)', () => {
   it('o script mora no plugin codetown-permissoes; o caminho antigo (scripts/, até a 0.2) e o novo são "nossos"', () => {
     expect(HOOK_SCRIPT.endsWith(join('mod', 'codetown-permissoes', 'hooks', 'permission-hook.mjs'))).toBe(true);
     expect(existsSync(HOOK_SCRIPT)).toBe(true);
-    expect(existsSync(LEGACY_HOOK_SCRIPT)).toBe(false);
+    // O caminho antigo virou um atalho para o novo (instalações de antes da 0.3 seguem funcionando).
+    expect(existsSync(LEGACY_HOOK_SCRIPT)).toBe(true);
     const legacy = hookEntry(hookCommand('node', '/repo/codetown/scripts/permission-hook.mjs', OPTS), OPTS);
     expect(isOurHook(legacy)).toBe(true);
     expect(isOurHook(entry)).toBe(true);
@@ -169,11 +170,11 @@ describe('hooks-install.ts (arquivos, HOME falso)', () => {
     expect(out.join('\n')).toContain('não estava instalado');
   });
 
-  it('status de uma instalação antiga (scripts/permission-hook.mjs, que não existe mais): avisa e manda reinstalar', async () => {
+  it('status de uma instalação antiga (scripts/permission-hook.mjs, hoje um atalho): avisa e manda reinstalar', async () => {
     const legacy = hookEntry(hookCommand(process.execPath, LEGACY_HOOK_SCRIPT, OPTS), OPTS);
     writeFileSync(join(home, '.claude', 'settings.json'), JSON.stringify({ hooks: { PermissionRequest: [{ matcher: '*', hooks: [legacy] }] } }));
     await exec('status');
-    expect(out.join('\n')).toContain(`o hook aponta para ${LEGACY_HOOK_SCRIPT} (esse arquivo não existe mais: o hook falha e vale só o terminal); rode npm run hooks:install`);
+    expect(out.join('\n')).toContain(`o hook aponta para ${LEGACY_HOOK_SCRIPT}; rode npm run hooks:install para atualizar`);
     out = [];
     expect(await exec('install')).toBe(0);
     expect(read('.claude').hooks.PermissionRequest).toEqual([{ matcher: '*', hooks: [expected] }]);

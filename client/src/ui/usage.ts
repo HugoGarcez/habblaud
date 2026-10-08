@@ -16,6 +16,12 @@ export const SOURCE_LABEL: Record<NonNullable<AccountInfo['usage']>['source'], s
   statusline: 'ao vivo (statusline do Claude Code)',
 };
 
+/** Origem para mostrar: o arquivo ao vivo pode ter sido gravado pelo mod do CodeTown ou pelo tap. */
+export function sourceLabel(u: NonNullable<AccountInfo['usage']>): string {
+  if (u.source === 'statusline' && u.via === 'mod') return 'ao vivo (mod do CodeTown)';
+  return SOURCE_LABEL[u.source] ?? u.source;
+}
+
 /**
  * Como ligar o uso de uma conta, em ordem de preferência (dica do cartão e ajuda).
  * Trechos entre crases viram código (sem quebra de linha no meio do comando).
@@ -266,14 +272,14 @@ export class UsageCards {
       const sonnet = usageWindowView(u.sevenDaySonnet, u.fetchedAt, now, WEEK_MS);
       if (opus) rows.push(['Opus (semana)', opus.summary]);
       if (sonnet) rows.push(['Sonnet (semana)', sonnet.summary]);
-      rows.push(['Origem', SOURCE_LABEL[u.source] ?? u.source]);
+      rows.push(['Origem', sourceLabel(u)]);
       rows.push(['Atualizado', relativeTime(u.fetchedAt, now)]);
     }
     syncRows(r.tipRows, rows);
 
     let note = '';
     if (state === 'empty')
-      note = u ? `A última leitura (${SOURCE_LABEL[u.source] ?? u.source}, ${relativeTime(u.fetchedAt, now)}) não trouxe números de 5 h nem da semana.` : 'Ainda não há números de uso para esta conta.';
+      note = u ? `A última leitura (${sourceLabel(u)}, ${relativeTime(u.fetchedAt, now)}) não trouxe números de 5 h nem da semana.` : 'Ainda não há números de uso para esta conta.';
     else if (state === 'stale') note = 'Números antigos: refletem a última leitura, não o uso de agora.';
     else if (u?.source === 'cache') note = 'Cache do /usage: atualiza quando alguém roda /usage nesta conta.';
     else if (five?.renewed || week?.renewed) note = 'Uma das janelas já reiniciou depois da última leitura.';

@@ -10,6 +10,8 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+## [0.3.0] - 2026-10-08
+
 ### Adicionado
 
 - **Mod do CodeTown para o Claude Code** (2.1.287 ou mais novo): `npm run mod:install` instala, em cada conta, o
@@ -23,6 +25,11 @@ do meio (0.**3**.0).
 - O tap de statusline (`npm run usage:install`) e o hook de permissão (`npm run hooks:install`) viram o jeito antigo,
   para o Claude Code anterior ao 2.1.287. O `npm run mod:install` tira os dois da conta (com backup), porque o mod faz
   o mesmo. A interface e o README passam a ensinar o `npm run mod:install`.
+- O script do hook de permissão mudou para `mod/codetown-permissoes/hooks/permission-hook.mjs`. O caminho antigo
+  (`scripts/permission-hook.mjs`) virou um atalho, então quem instalou o hook antes continua funcionando.
+- Em Contas e uso, a origem dos números diz quando vêm do mod ("ao vivo (mod do CodeTown)").
+- O leitor do uso ao vivo ignora um arquivo lido pela metade e fica com o último número bom, em vez de esconder a
+  conta por um ciclo.
 
 ## [0.2.0] - 2026-10-08
 
@@ -53,5 +60,6 @@ Primeira versão publicada.
   Subagentes chegam, trabalham e entregam ao principal. Mostra as duas contas, com o uso de 5 horas e semanal de
   cada uma (tap de statusline), além de feed de atividade, avisos e modo demonstração. Roda no Node ou no Docker local.
 
-[Não lançado]: https://github.com/marmottajr/codetown/compare/v0.2.0...HEAD
+[Não lançado]: https://github.com/marmottajr/codetown/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/marmottajr/codetown/releases/tag/v0.3.0
 [0.2.0]: https://github.com/marmottajr/codetown/releases/tag/v0.2.0

@@ -239,11 +239,13 @@ export interface AccountUsage {
   sevenDaySonnet?: UsageWindow;
   /**
    * Origem dos números (as duas são arquivos locais gravados a partir do próprio Claude Code):
-   * - 'statusline': capturado ao vivo do JSON que o Claude Code envia ao statusline (campo rate_limits),
-   *   gravado em ~/.codetown/usage/<conta>.json pelo scripts/statusline-tap.mjs (recomendado);
+   * - 'statusline': capturado ao vivo e gravado em ~/.codetown/usage/<conta>.json pelo mod do CodeTown
+   *   (mod/codetown, recomendado) ou pelo scripts/statusline-tap.mjs (campo rate_limits do statusline);
    * - 'cache': `cachedUsageUtilization` gravado pelo próprio Claude Code (atualiza quando alguém roda /usage).
    */
   source: 'cache' | 'statusline';
+  /** Quem gravou o arquivo ao vivo ('statusline'): o mod do CodeTown no Claude Code ou o tap de statusline. */
+  via?: 'mod' | 'tap';
   /** Quando os números foram obtidos na origem (epoch ms). */
   fetchedAt: number;
 }

@@ -1,7 +1,7 @@
 {
   "name": "codetown",
   "displayName": "CodeTown",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Liga a sessão ao CodeTown: grava o uso do plano (5h e semanal) para o escritório, avisa embaixo do prompt quando outra sessão precisa de você e adiciona o comando /codetown.",
   "author": { "name": "Márcio Junior", "url": "https://github.com/marmottajr" },
   "homepage": "https://github.com/marmottajr/codetown#readme",

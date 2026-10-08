@@ -193,7 +193,8 @@ export async function run(argv = process.argv.slice(2), env = process.env, stdin
   }
 }
 
-async function main() {
+/** Ponto de entrada (exportado para o atalho do caminho antigo, scripts/permission-hook.mjs). */
+export async function main() {
   const { timeoutMs } = parseOptions(process.argv.slice(2));
   // Rede de segurança: nada mantém o processo vivo além do tempo limite.
   setTimeout(() => process.exit(0), timeoutMs + 15_000).unref();

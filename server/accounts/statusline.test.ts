@@ -33,6 +33,7 @@ describe('arquivo do tap de statusline', () => {
       configDir: '/Users/fulano/.claude-conta2',
       usage: {
         source: 'statusline',
+        via: 'tap',
         fetchedAt: NOW - 60_000,
         fiveHour: { utilization: 42, resetsAt: Date.parse('2026-10-06T14:00:00Z') },
         sevenDay: { utilization: 15, resetsAt: Date.parse('2026-10-09T23:00:00Z') },
@@ -52,9 +53,10 @@ describe('arquivo do tap de statusline', () => {
     expect(clamped.usage.fiveHour).toEqual({ utilization: 100 });
   });
 
-  it('arquivo do mod do Claude Code: o mesmo formato com "source": "mod" (campo extra ignorado)', () => {
+  it('arquivo do mod do Claude Code: o mesmo formato com "source": "mod", que vira usage.via', () => {
     const fromMod = parseStatuslineFile(JSON.stringify(record({ source: 'mod' })), 'x.json', NOW);
-    expect(fromMod).toEqual(parseStatuslineFile(JSON.stringify(record()), 'x.json', NOW));
+    const fromTap = parseStatuslineFile(JSON.stringify(record()), 'x.json', NOW)!;
+    expect(fromMod).toEqual({ ...fromTap, usage: { ...fromTap.usage, via: 'mod' } });
     expect(fromMod?.usage.fiveHour).toEqual({ utilization: 42, resetsAt: Date.parse('2026-10-06T14:00:00Z') });
   });
 
