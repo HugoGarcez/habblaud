@@ -5226,6 +5226,8 @@ button.ui-term__think:hover,
 
   .ui-hist {
     width: auto;
+  }
+}
 
 /* ------------------------------------------------------------------ timelapse (ui/timelapse.ts) */
 
@@ -5587,6 +5589,7 @@ html.is-replay #world {
   .ui-lapse-badge {
     padding: 5px 10px 5px 8px;
   }
+}
 /* ------------------------------------------------------------------------------------------------
    Responder pelo escritório: cartão "Pede permissão" na gaveta do agente (ui/permission.ts), o atalho
    "Responder" nos avisos e o destaque do contador "precisam de você". A prévia (comando/diff) reaproveita
@@ -5809,6 +5812,7 @@ html.is-replay #world {
 /* Contador "precisam de você" com pedido para responder por aqui: um cadeado discreto. */
 .ui-counter--waiting.has-answer .ui-counter__label::after {
   content: ' · 🔐';
+}
 /* ------------------------------------------------------------------ ambiente: sons nas configurações */
 
 .ui-snd__details {
