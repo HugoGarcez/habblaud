@@ -3,7 +3,7 @@
 import * as artModule from '../art';
 import { TILE, type ArtModule } from '../art/api';
 import type { OfficeStore } from '../net/store';
-import { DEFAULT_WORLD_OPTIONS, type Selection, type SocialEvent, type WorldApi, type WorldOptions, type WorldPlayback } from './api';
+import { DEFAULT_WORLD_OPTIONS, type Selection, type SocialEvent, type SoundCue, type WorldApi, type WorldOptions, type WorldPlayback } from './api';
 import { loadWorldAssets, type WorldAssets } from './assets';
 import { Camera, overviewFrame } from './camera';
 import { createDebug, type WorldDebug } from './debug';
@@ -14,6 +14,7 @@ import { rebaseSnapshot } from './playback';
 import { Overlay } from './render/overlay';
 import { Renderer } from './render/renderer';
 import { Sim } from './sim/sim';
+import { SoundCues } from './sound-cues';
 
 export * from './api';
 export type { WorldDebug } from './debug';
@@ -34,6 +35,8 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
   const selectCbs = new Set<(s: Selection) => void>();
   const hoverCbs = new Set<(id: string | null) => void>();
   const socialCbs = new Set<(e: SocialEvent) => void>();
+  const soundCbs = new Set<(c: SoundCue) => void>();
+  let cues = new SoundCues(sim, camera);
   let selection: Selection = null;
   let hover: string | null = null;
   let mouse: { x: number; y: number } | null = null;
@@ -254,6 +257,8 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
       renderer.frame(now, dt, options, { agent: selection?.type === 'agent' ? selection.id : null, room: selection?.type === 'room' ? selection.id : null, hover });
       overlay.draw(now, options, { agent: selection?.type === 'agent' ? selection.id : null, room: selection?.type === 'room' ? selection.id : null, hover });
       renderer.pruneHeads();
+      // No timelapse o mundo fica mudo: o teclado e o elevador em alta velocidade só fariam barulho.
+      if (soundCbs.size && !playback) cues.update(now, (c) => soundCbs.forEach((cb) => cb(c)));
       if (mouse) {
         const hit = pick(mouse.x, mouse.y);
         setHover(hit?.type === 'agent' ? hit.id : null);
@@ -304,6 +309,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
     }
     overlay = new Overlay(renderer.ctx, sim, renderer, camera);
     debug = createDebug(sim, renderer, camera, markMoved);
+    cues = new SoundCues(sim, camera);
     lastCols = -1;
     setHover(null);
   };
@@ -363,6 +369,10 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
       worldNow = p ? p.clock() : 0;
       rebuild();
     },
+    onSound: (cb) => {
+      soundCbs.add(cb);
+      return () => void soundCbs.delete(cb);
+    },
     destroy: () => {
       cancelAnimationFrame(raf);
       abort.abort();
@@ -373,6 +383,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
       selectCbs.clear();
       hoverCbs.clear();
       socialCbs.clear();
+      soundCbs.clear();
     },
     get debug() {
       return debug;

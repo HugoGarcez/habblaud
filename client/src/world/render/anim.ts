@@ -65,23 +65,3 @@ export function furnitureScale(a: BuildAnim, order: number): number {
 export function sweepDelay(i: number, j: number, w: number, h: number): number {
   return (i + j * 0.8) / (w + h * 0.8);
 }
-
-/** Fator noturno (0 = dia, 1 = noite) pela hora local fracionária. */
-export function nightFactor(hour: number): number {
-  const h = ((hour % 24) + 24) % 24;
-  if (h >= 7 && h < 17.25) return 0;
-  if (h >= 17.25 && h < 19.5) return (h - 17.25) / 2.25;
-  if (h >= 5.25 && h < 7) return 1 - (h - 5.25) / 1.75;
-  return 1;
-}
-
-/**
- * Intensidade (0–1) do pôr do sol (céu laranja/rosado no exterior): pico às ~18h20, some até
- * ~19h40; um toque mais fraco no amanhecer. Pela hora local fracionária.
- */
-export function duskFactor(hour: number): number {
-  const h = ((hour % 24) + 24) % 24;
-  const eve = Math.max(0, 1 - Math.abs(h - 18.3) / 1.35);
-  const dawn = Math.max(0, 1 - Math.abs(h - 6.1) / 1.0) * 0.6;
-  return Math.max(eve, dawn);
-}

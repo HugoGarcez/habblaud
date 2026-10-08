@@ -5,7 +5,7 @@ import { TILE, type ArtModule, type CharacterFrameRequest, type IconName, type S
 import type { WorldOptions } from '../api';
 import type { WorldAssets } from '../assets';
 import type { Camera } from '../camera';
-import { BUILDING_H, COL_W, CORE_COLS, CORRIDOR_H, CORRIDOR_Y } from '../constants';
+import { BUILDING_H, COL_W, CORE_COLS, CORRIDOR_Y } from '../constants';
 import { layoutExterior, slotShell, type ExteriorLayout, type SlotShell } from '../layout/exterior';
 import { slotAt } from '../layout/geometry';
 import type { ExteriorProp } from '../layout/types';
@@ -14,9 +14,11 @@ import type { Character } from '../sim/character';
 import type { RoomState } from '../sim/room-state';
 import { cobwebScale, hourglassIcon, HOURGLASS_FLIP_MS, STORM_LIFT } from '../sim/shell';
 import type { Sim } from '../sim/sim';
-import { buildAnim, duskFactor, furnitureScale, nightFactor, NO_ANIM, sweepDelay, type BuildAnim } from './anim';
+import { buildAnim, furnitureScale, NO_ANIM, sweepDelay, type BuildAnim } from './anim';
+import { daylightModeOf, parseHourParam } from './daylight';
+import { Lighting } from './lighting';
 import { Particles } from './particles';
-import { carSprite, glowSprite, propSprite, shadowSprite } from './props';
+import { carSprite, propSprite, shadowSprite } from './props';
 import { countBadge, fallbackIcon } from './shell-sprites';
 import { buildAreaVis, furnitureSprites, opaqueBounds, paintShell, toWallVis, WALL_MARGIN, wallItemOrigin, wallSprites, type AreaVis, type FurnVis, type WallVis } from './scene';
 
@@ -76,8 +78,8 @@ export class Renderer {
   readonly areas = new Map<string, AreaVis>();
   readonly heads = new Map<string, HeadInfo>();
   exterior: ExteriorLayout;
-  private shells: SlotShell[] = [];
-  private shellWindows: WallVis[] = [];
+  shells: SlotShell[] = [];
+  shellWindows: WallVis[] = [];
   private base: HTMLCanvasElement | null = null;
   private baseX = 0;
   private baseY = 0;
@@ -85,7 +87,7 @@ export class Renderer {
   private layoutVersion = -1;
   private assetsVersion = 0;
   private builtAssetsVersion = 0;
-  private cars: Car[] = [];
+  cars: Car[] = [];
   private nextCarAt = 0;
   private ents: Ent[] = [];
   private pool: Ent[] = [];
@@ -98,10 +100,12 @@ export class Renderer {
   private iconCount = 0;
   private elevatorVis: WallVis[] = [];
   private occupiedSlots = new Set<number>();
-  /** Hora forçada (depuração) ou null para a hora local. */
-  hourOverride: number | null = null;
+  /** Hora forçada (?hora=21:30 na URL ou depuração) ou null para a hora local. */
+  hourOverride: number | null = parseHourParam(typeof location === 'undefined' ? '' : location.search);
   /** Relógio da hora do dia (céu, iluminação, relógio de parede); o timelapse troca pelo instante reproduzido. */
   clock: () => number = () => Date.now();
+  /** Ciclo dia/noite: mapa de luz e brilhos. */
+  readonly lighting: Lighting;
   assets: WorldAssets | null = null;
   /** Último fator noturno aplicado (usado pelo overlay). */
   night = 0;
@@ -116,17 +120,12 @@ export class Renderer {
   ) {
     this.ctx = canvas.getContext('2d', { alpha: false })!;
     this.exterior = layoutExterior(sim.building.cols);
+    this.lighting = new Lighting(art, sim);
   }
 
   setAssets(a: WorldAssets | null): void {
     this.assets = a;
     this.assetsVersion++;
-  }
-
-  hour(): number {
-    if (this.hourOverride !== null) return this.hourOverride;
-    const d = this.date;
-    return d.getHours() + d.getMinutes() / 60;
   }
 
   // =================================================================== sincronização com a simulação
@@ -351,8 +350,12 @@ export class Renderer {
       const sh = Math.min(this.base.height - sy, Math.ceil(vy1 - vy0) + 3);
       if (sw > 0 && sh > 0) ctx.drawImage(this.base, sx, sy, sw, sh, this.baseX + sx, this.baseY + sy, sw, sh);
     }
-    // sem ciclo dia/noite: céu de início de tarde nas janelas
-    const hour = opts.dayNight ? this.hour() : 13.5;
+    // hora do ciclo dia/noite (preferência ou hora forçada; o relógio de parede acompanha a forçada)
+    if (this.hourOverride !== null) {
+      const min = Math.round(this.hourOverride * 60);
+      this.date.setHours(Math.floor(min / 60) % 24, min % 60);
+    }
+    const hour = this.lighting.update(now, daylightModeOf(opts), this.hourOverride, this.date);
     const t = now;
 
     // janelas da fachada nos slots vazios
@@ -480,8 +483,8 @@ export class Renderer {
     this.particles.draw(ctx, vx0, vy0, vx1, vy1, now);
 
     // ---- luz: noite, salas apagadas, brilhos
-    this.night = opts.dayNight ? nightFactor(hour) : 0;
-    this.drawLighting(now, vx0, vy0, vx1, vy1, hour, opts.dayNight);
+    this.night = this.lighting.night;
+    this.drawLighting(now, vx0, vy0, vx1, vy1);
 
     // ---- ícones sobre as cabeças (por cima da escuridão)
     for (let i = 0; i < this.iconCount; i++) {
@@ -512,7 +515,7 @@ export class Renderer {
     for (const id of this.heads.keys()) if (!this.sim.chars.has(id)) this.heads.delete(id);
   }
 
-  private roomInSlot(slot: number): RoomState | undefined {
+  roomInSlot(slot: number): RoomState | undefined {
     if (!this.occupiedSlots.has(slot)) return undefined;
     for (const r of this.sim.rooms.values()) if (r.slot === slot && r.present) return r;
     return undefined;
@@ -1145,65 +1148,15 @@ export class Renderer {
 
   // =================================================================== luz
 
-  /** Alguém (visível, fora de elevador/cabine) está fisicamente dentro do retângulo? */
-  private someoneIn(r: { x: number; y: number; w: number; h: number }): boolean {
-    for (const c of this.sim.chars.values()) {
-      if (c.gone || c.inside) continue;
-      if (c.tx >= r.x && c.ty >= r.y && c.tx < r.x + r.w && c.ty < r.y + r.h) return true;
-    }
-    return false;
-  }
-
-  private drawLighting(now: number, vx0: number, vy0: number, vx1: number, vy1: number, hour: number, dayNight: boolean): void {
+  /**
+   * Luz: o mapa do ciclo dia/noite (exterior, interiores e halos; nada de dia), a sombra das salas
+   * com a luz apagada (e a transição de acender/apagar) e os brilhos por cima.
+   */
+  private drawLighting(now: number, vx0: number, vy0: number, vx1: number, vy1: number): void {
     const { ctx } = this;
+    const view = { x0: vx0, y0: vy0, x1: vx1, y1: vy1 };
+    this.lighting.drawAmbient(ctx, this, view, now, this.dt);
     const n = this.night;
-    const dusk = dayNight ? duskFactor(hour) : 0;
-    const bw = this.sim.building.cols * COL_W * TILE;
-    const bh = BUILDING_H * TILE;
-    const w = vx1 - vx0 + 4;
-    /** Pinta o exterior visível (fora do prédio) e os pátios dos slots vazios. */
-    const exterior = () => {
-      if (vy0 < 0) ctx.fillRect(vx0 - 2, vy0 - 2, w, -vy0 + 2);
-      if (vy1 > bh) ctx.fillRect(vx0 - 2, bh, w, vy1 - bh + 2);
-      if (vx0 < 0) ctx.fillRect(vx0 - 2, 0, -vx0 + 2, bh);
-      if (vx1 > bw) ctx.fillRect(bw, 0, vx1 - bw + 2, bh);
-      for (const sh of this.shells) {
-        if (this.roomInSlot(sh.slot)) continue;
-        const r = sh.rect;
-        const top = sh.rect.y === 0 ? 0 : (r.y + 1) * TILE;
-        const h = sh.rect.y === 0 ? (r.h - 2) * TILE : (r.h - 1) * TILE;
-        ctx.fillRect(r.x * TILE, top, r.w * TILE, h);
-      }
-    };
-    // pôr do sol: o exterior ganha um tom laranja/rosado (multiplicação mantém a textura)
-    if (dusk > 0.01) {
-      ctx.globalCompositeOperation = 'multiply';
-      ctx.fillStyle = `rgba(255,176,136,${0.5 * dusk})`;
-      exterior();
-      ctx.globalCompositeOperation = 'source-over';
-    }
-    if (n > 0.01) {
-      // noite: exterior azul-noite
-      ctx.fillStyle = `rgba(10,16,46,${0.5 * n})`;
-      exterior();
-      // interior: áreas acesas e ocupadas ficam quentes (sem véu escuro); vazias escurecem um pouco
-      for (const vis of this.areas.values()) {
-        const p = vis.px;
-        if (p.x > vx1 || p.x + p.w < vx0 || p.y > vy1 || p.y + p.h < vy0) continue;
-        const room = vis.room;
-        if (room && !room.lightOn && room.light(now) < 0.05) continue; // a sombra da sala apagada cuida disso
-        const busy = room ? true : this.someoneIn(vis.layout.rect);
-        if (busy) {
-          ctx.globalCompositeOperation = 'multiply';
-          ctx.fillStyle = `rgba(255,232,200,${0.55 * n})`;
-          ctx.fillRect(p.x, p.y, p.w, p.h);
-          ctx.globalCompositeOperation = 'source-over';
-        } else {
-          ctx.fillStyle = `rgba(14,20,52,${0.13 * n})`;
-          ctx.fillRect(p.x, p.y, p.w, p.h);
-        }
-      }
-    }
     // salas com a luz apagada (e a transição de acender/apagar)
     for (const vis of this.areas.values()) {
       const room = vis.room;
@@ -1218,79 +1171,7 @@ export class Renderer {
       ctx.fillStyle = `rgba(8,12,36,${dark})`;
       ctx.fillRect(s.x, s.y, s.w, s.h);
     }
-    // brilhos: monitores (noite ou sala escura), luz das janelas no gramado, postes e luminárias
-    ctx.globalCompositeOperation = 'lighter';
-    const cool = glowSprite('#7fb8ff', 48);
-    const warm = glowSprite('#ffcf7a', 64);
-    for (const vis of this.areas.values()) {
-      const room = vis.room;
-      const dark = room ? 1 - room.light(now) : 0;
-      const k = Math.max(n, dark);
-      if (k < 0.2) continue;
-      for (const f of vis.furniture) {
-        if (f.ax < vx0 - 40 || f.ax > vx1 + 40 || f.ay < vy0 - 40 || f.ay > vy1 + 40) continue;
-        if (f.kind === 'desk' || f.kind === 'desk_back') {
-          const mode = this.deskScreen(f, vis);
-          if (mode === 'off') continue;
-          // quem trabalha à noite fica com o rosto iluminado pela tela
-          ctx.globalAlpha = (mode === 'idle' ? 0.2 : 0.35) * k;
-          ctx.drawImage(cool, Math.round(f.ax - 24), Math.round(f.ay - 34));
-        } else if (f.kind === 'floor_lamp' && n > 0.2 && (!room || room.lightOn)) {
-          ctx.globalAlpha = 0.35 * n;
-          ctx.drawImage(warm, Math.round(f.ax - 32), Math.round(f.ay - 46));
-        } else if (f.kind === 'vending_machine' || f.kind === 'arcade') {
-          ctx.globalAlpha = 0.25 * k;
-          ctx.drawImage(cool, Math.round(f.ax - 24), Math.round(f.ay - 36));
-        }
-      }
-    }
-    if (n > 0.2) {
-      this.drawWindowSpill(now, n, warm, vx0, vx1);
-      for (const prop of this.exterior.props) {
-        if (prop.kind !== 'lamp' || prop.x < vx0 - 64 || prop.x > vx1 + 64) continue;
-        ctx.globalAlpha = 0.55 * n;
-        ctx.drawImage(warm, Math.round(prop.x - 32), Math.round(prop.y - 60));
-        ctx.globalAlpha = 0.25 * n;
-        ctx.drawImage(warm, Math.round(prop.x - 32), Math.round(prop.y - 26));
-      }
-    }
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = 'source-over';
-  }
-
-  /** À noite, a luz das janelas e das fachadas de vidro se projeta no gramado e na calçada. */
-  private drawWindowSpill(now: number, n: number, warm: HTMLCanvasElement, vx0: number, vx1: number): void {
-    const { ctx } = this;
-    const bw = this.sim.building.cols * COL_W * TILE;
-    const bh = BUILDING_H * TILE;
-    const patch = (cx: number, cy: number, pw: number, ph: number, a: number) => {
-      if (cx + pw / 2 < vx0 || cx - pw / 2 > vx1) return;
-      ctx.globalAlpha = a * n;
-      ctx.drawImage(warm, Math.round(cx - pw / 2), Math.round(cy - ph / 2), pw, ph);
-    };
-    for (const vis of this.areas.values()) {
-      const room = vis.room;
-      const lit = room ? room.light(now) : 1;
-      if (lit < 0.3) continue;
-      const r = vis.layout.rect;
-      if (r.y === 0) {
-        // janelas da parede norte -> gramado ao norte do prédio
-        for (const w of vis.wallItems) if (w.kind === 'window') patch(w.cx, -10, 46, 26, 0.3 * lit);
-      } else if (vis.layout.kind !== 'corridor' && r.y + r.h >= BUILDING_H) {
-        // salas ao sul: brilho suave sobre a cerca viva e a calçada
-        for (const fx of [0.25, 0.75]) patch((r.x + r.w * fx) * TILE, bh + 14, 70, 22, 0.16 * lit);
-      }
-    }
-    // fachadas de vidro do corredor (entrada a oeste e ponta leste)
-    const cy = (CORRIDOR_Y + CORRIDOR_H / 2) * TILE;
-    patch(-18, cy, 44, 70, 0.32);
-    patch(bw + 18, cy, 44, 70, 0.22);
-    // janelas do corredor que dão para os pátios dos slots vazios
-    for (const w of this.shellWindows) {
-      const slot = Number(w.areaId.slice(6));
-      if (this.roomInSlot(slot)) continue;
-      patch(w.cx, w.baseY - 2 * TILE - 12, 40, 22, 0.24);
-    }
+    this.lighting.drawGlows(ctx, this, view, now);
   }
 
   private safe(fn: () => void): void {
