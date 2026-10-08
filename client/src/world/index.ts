@@ -162,7 +162,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
     if (best) return { type: 'agent', id: best };
     const tx = Math.floor(w.x / TILE);
     const ty = Math.floor(w.y / TILE);
-    for (const room of sim.rooms.values()) if (room.present && inRect(room.layout.rect, tx, ty)) return { type: 'room', id: room.id };
+    for (const room of sim.rooms.values()) if (room.present && !room.ghost && inRect(room.layout.rect, tx, ty)) return { type: 'room', id: room.id };
     return null;
   };
 

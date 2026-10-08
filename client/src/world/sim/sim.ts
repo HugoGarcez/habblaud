@@ -3,7 +3,7 @@
 import type { AgentInfo, OfficeSnapshot, RoomInfo } from '../../../../shared/types';
 import type { ArtModule, Dir, RoomTheme } from '../../art/api';
 import type { WorldOptions } from '../api';
-import { COL_W, DISMANTLE_DELAY_MS, FOOT_DX, FOOT_DY, MISSING_DEBOUNCE_MS, RUN_SPEED, TILE, WALK_SPEED } from '../constants';
+import { COL_W, COMPACT_DELAY_MS, DISMANTLE_DELAY_MS, FOOT_DX, FOOT_DY, MISSING_DEBOUNCE_MS, RUN_SPEED, TILE, WALK_SPEED } from '../constants';
 import { assembleBuilding, type BuildingLayout } from '../layout/building';
 import { RECEPTION_ID } from '../layout/core';
 import { columnsFor, inRect } from '../layout/geometry';
@@ -49,6 +49,8 @@ export { SHELL_DONE_TOOL } from './shell';
 const CHEER_MS = 2_200;
 const SULK_MS = 4_000;
 const MAX_EFFECTS = 32;
+/** Dono das reservas dos lugares de uma sala fantasma (endereço antigo de uma mudança). */
+const GHOST_OWNER = '@mudança';
 
 const FALLBACK_THEME: RoomTheme = {
   carpet: '#5b7fa6',
@@ -107,6 +109,9 @@ export class Sim {
   /** Festa e alarme das salas (eventos do GitHub; sim/github.ts). */
   readonly roomFx = new RoomFxState();
   private lastSnapshot: OfficeSnapshot | null = null;
+  /** Desde quando há uma vaga livre antes da última sala (0 = não há). */
+  private gapSince = 0;
+  private moveSeq = 0;
   private shrinkPending = false;
   private nextHousekeeping = 0;
 
@@ -140,7 +145,8 @@ export class Sim {
     // ---- salas
     let layoutDirty = false;
     const listed = new Set<string>();
-    for (const r of snap.rooms) {
+    // na ordem de chegada (slot do servidor): na carga inicial as salas ocupam as vagas 0, 1, 2... nessa ordem
+    for (const r of [...snap.rooms].sort((a, b) => a.slot - b.slot)) {
       if (this.hiddenRooms.has(r.id)) continue;
       listed.add(r.id);
       const rs = this.rooms.get(r.id);
@@ -156,19 +162,11 @@ export class Sim {
         rs.readyToDismantleAt = 0;
         if (rs.phase === 'dismantling') rs.rebuild(now);
       }
-      if (rs.phase === 'pending' && rs.slot !== r.slot) {
-        rs.slot = r.slot;
-        rs.layout = layoutProjectRoom({ id: r.id, slot: r.slot, seed: r.seed }, rs.theme);
-      }
     }
     for (const rs of this.rooms.values()) {
       if (!listed.has(rs.id) && rs.listed) {
         rs.listed = false;
         rs.unlistedAt = now;
-        if (rs.phase === 'pending') {
-          rs.setPhase('gone', now);
-          layoutDirty = true;
-        }
       }
     }
     if (layoutDirty) this.relayout();
@@ -228,12 +226,21 @@ export class Sim {
     } catch {
       theme = FALLBACK_THEME;
     }
-    const layout = layoutProjectRoom({ id: r.id, slot: r.slot, seed: r.seed }, theme);
-    const slotBusy = [...this.rooms.values()].some((o) => o.slot === r.slot && o.phase !== 'gone' && o.id !== r.id);
-    const phase = first ? 'ready' : slotBusy ? 'pending' : 'building';
-    const rs = new RoomState(r, theme, layout, phase, now, first);
+    // a primeira vaga livre do prédio (o slot do servidor só dá a ordem de chegada)
+    const slot = this.freeSlot();
+    const layout = layoutProjectRoom({ id: r.id, slot, seed: r.seed }, theme);
+    const rs = new RoomState(r, theme, layout, first ? 'ready' : 'building', now, first, slot);
     this.rooms.set(r.id, rs);
     return rs;
+  }
+
+  /** Menor vaga sem sala (contando as que ainda estão desmontando). */
+  private freeSlot(): number {
+    const used = new Set<number>();
+    for (const r of this.rooms.values()) if (r.phase !== 'gone') used.add(r.slot);
+    let slot = 0;
+    while (used.has(slot)) slot++;
+    return slot;
   }
 
   private updateAgent(ch: Character, a: AgentInfo, now: number): void {
@@ -503,9 +510,16 @@ export class Sim {
         ch.seated = false;
         ch.sortY = null;
       }
-      // caminhos em andamento são recalculados a partir do tile atual
-      if (ch.step?.t === 'go') ch.step.path = undefined;
-      for (const s of ch.queue) if (s.t === 'go') s.path = undefined;
+      // caminhos em andamento são recalculados a partir do tile atual; destino que deixou de existir (o
+      // prédio encolheu e levou o bebedouro do corredor, a sala foi desmontada) invalida o plano: sem isto o
+      // passo não acharia caminho e teletransportaria o personagem para fora do prédio
+      let stale = false;
+      for (const s of ch.step ? [ch.step, ...ch.queue] : ch.queue) {
+        if (s.t !== 'go') continue;
+        s.path = undefined;
+        if (!this.building.grid.nearestWalkable(s.tx, s.ty, 4)) stale = true;
+      }
+      if (stale) this.interrupt(ch);
       if (!this.building.grid.walkable(ch.tx, ch.ty) && !ch.atSpot && !ch.inside) {
         const n = this.building.grid.nearestWalkable(ch.tx, ch.ty);
         if (n) {
@@ -560,13 +574,6 @@ export class Sim {
     let dirty = false;
     for (const room of this.rooms.values()) {
       if (room.phase === 'building' && room.progress(now) >= 1) room.setPhase('ready', now);
-      if (room.phase === 'pending') {
-        const busy = [...this.rooms.values()].some((o) => o !== room && o.slot === room.slot && o.phase !== 'gone' && o.phase !== 'pending');
-        if (!busy) {
-          room.setPhase('building', now);
-          dirty = true;
-        }
-      }
       if (room.phase === 'dismantling' && room.progress(now) >= 1) {
         room.setPhase('gone', now);
         dirty = true;
@@ -588,6 +595,92 @@ export class Sim {
       }
     }
     if (dirty) this.relayout();
+    this.compact(now);
+  }
+
+  // =================================================================== mudança de sala
+
+  /**
+   * Sem buracos entre as salas: quando uma vaga fica livre antes da última sala (um terminal fechou e a
+   * sala foi desmontada), a sala mais distante se muda para ela depois de COMPACT_DELAY_MS. Uma sala por
+   * vez, só sala pronta e com a sessão aberta; o prédio encolhe quando o endereço antigo é desmontado.
+   */
+  private compact(now: number): void {
+    const free = this.freeSlot();
+    let far: RoomState | null = null;
+    for (const r of this.rooms.values()) {
+      if (r.slot > free && !r.ghost && r.listed && r.phase === 'ready' && (!far || r.slot > far.slot)) far = r;
+    }
+    if (!far) {
+      this.gapSince = 0;
+      return;
+    }
+    if (!this.gapSince) this.gapSince = now;
+    if (now - this.gapSince < COMPACT_DELAY_MS) return;
+    this.gapSince = 0;
+    this.moveRoom(far, free, now);
+  }
+
+  /**
+   * Muda a sala para outra vaga: ela é construída de novo lá (apagada; o primeiro a chegar acende a luz)
+   * e o endereço antigo vira uma sala fantasma que espera esvaziar, apaga e é desmontada. Os lugares
+   * mantêm os ids (cada um continua com a sua mesa, agora na sala nova); quem está sentado ou a caminho
+   * de um lugar da sala passa a usar o lugar equivalente da fantasma, levanta dali e vai andando.
+   */
+  moveRoom(room: RoomState, slot: number, now: number): void {
+    const before = room.layout;
+    const ghostId = `${room.id}#mudança${++this.moveSeq}`;
+    const ghostLayout = layoutProjectRoom({ id: ghostId, slot: room.slot, seed: room.seed }, room.theme);
+    const ghost = new RoomState({ ...room.info, id: ghostId, seed: room.seed }, room.theme, ghostLayout, 'ready', now, false, room.slot);
+    ghost.ghost = true;
+    ghost.listed = false;
+    ghost.unlistedAt = now;
+    ghost.lightOn = room.lightOn;
+    ghost.lightAt = room.lightAt;
+    this.rooms.set(ghostId, ghost);
+    // o layout é determinístico pela semente: o i-ésimo lugar da fantasma é o i-ésimo da sala antiga
+    const alias = new Map<string, string>();
+    before.spots.forEach((s, i) => {
+      const g = ghostLayout.spots[i];
+      if (g && g.kind === s.kind) alias.set(s.id, g.id);
+    });
+
+    room.slot = slot;
+    room.layout = layoutProjectRoom({ id: room.id, slot, seed: room.seed }, room.theme);
+    room.setPhase('building', now);
+    room.lightOn = false;
+    room.lightAt = -1e9;
+    room.switchClaim = null;
+    room.readyToDismantleAt = 0;
+    room.version++;
+    this.relayout();
+    // os lugares da fantasma não são de ninguém (nenhum passeio ou roda vai parar lá)
+    for (const s of ghostLayout.spots) this.spots.reserve(s.id, GHOST_OWNER);
+
+    for (const ch of this.chars.values()) {
+      if (ch.gone) continue;
+      let touched = false;
+      if (ch.atSpot && alias.has(ch.atSpot)) {
+        ch.atSpot = alias.get(ch.atSpot)!;
+        touched = true;
+      }
+      // a caminho de um lugar, do interruptor ou de um canto da sala antiga: o plano fica velho (o passo que não
+      // pode ser interrompido termina no endereço antigo: senta na fantasma, mexe na luz da fantasma)
+      for (const step of ch.step ? [ch.step, ...ch.queue] : ch.queue) {
+        if (step.t === 'enter' && alias.has(step.spot)) {
+          step.spot = alias.get(step.spot)!;
+          touched = true;
+        } else if (step.t === 'switch' && step.room === room.id) {
+          step.room = ghostId;
+          touched = true;
+        } else if (step.t === 'go' && inRect(before.rect, step.tx, step.ty)) touched = true;
+      }
+      if (ch.tempSpots.some((id) => alias.has(id))) touched = true;
+      if (touched || (ch.roomId === room.id && ch.standTile) || inRect(before.rect, ch.tx, ch.ty)) {
+        ch.standTile = null;
+        this.interrupt(ch);
+      }
+    }
   }
 
   private switchClaimValid(room: RoomState): boolean {

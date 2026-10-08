@@ -96,7 +96,9 @@ agentes; embaixo, o feed de atividade.
 </table>
 
 **A luz apaga.** Quando você fecha a última sessão de um projeto, o último personagem vai até o interruptor,
-apaga a luz, sai pelo elevador — e a sala é desmontada, virando jardim até um novo projeto chegar.
+apaga a luz, sai pelo elevador — e a sala é desmontada, virando jardim até um novo projeto chegar. Se o jardim
+ficou entre duas salas, a sala mais distante se muda para lá: é montada no lugar vago, o pessoal vai andando até
+ela, e o endereço antigo apaga e é desmontado. Assim o prédio não fica com buracos e encolhe sozinho.
 
 | 1. A sala é montada, ainda apagada | 2. Alguém acende a luz e todos trabalham | 3. O último sai e apaga a luz | 4. A sala vira jardim |
 | --- | --- | --- | --- |

@@ -155,9 +155,10 @@ export interface RoomInfo {
   /** Caminho completo do projeto. */
   path: string;
   /**
-   * Posição da sala no prédio, atribuída pelo servidor e estável enquanto a sala existir.
-   * Mapeamento no cliente: coluna = floor(slot / 2); slot par = lado norte do corredor, ímpar = lado sul.
-   * Um slot liberado só é reutilizado após um período de espera (para dar tempo à animação de saída).
+   * Ordem de chegada da sala, atribuída pelo servidor e estável enquanto a sala existir (um slot liberado só é
+   * reutilizado após um período de espera). O cliente usa só como ordem: no prédio, cada sala ocupa a primeira vaga
+   * livre e, quando uma vaga fica livre entre salas, a mais distante se muda para ela (client/src/world/sim/sim.ts,
+   * compact). Vaga no cliente: coluna = floor(vaga / 2); par = lado norte do corredor, ímpar = lado sul.
    */
   slot: number;
   /** Semente para cores/decoração determinísticas. */
