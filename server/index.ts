@@ -11,6 +11,8 @@ import { createRequestGuard } from './http/guard';
 import { Hub } from './http/sse';
 import { createStaticHandler } from './http/static';
 import { TerminalStreams } from './http/terminal';
+import { createTimelineHandler } from './http/timeline';
+import { TIMELINE_DIR, TimelineRecorder } from './history/timeline';
 import { errMsg, log } from './log';
 import { NameStore } from './model/names';
 import { Office } from './model/office';
@@ -54,11 +56,19 @@ const terminals = config.terminal ? new TerminalStreams({ office, transcriptPath
 const history = config.terminal
   ? new SessionHistory({ accounts: () => accounts.entries(), openAgentOf: (acc, sid) => openMainAgent(office.list(), acc, sid) })
   : undefined;
+// Linha do tempo do timelapse: grava cada snapshot novo (com throttle) em <dataDir>/timeline.
+const timelineDir = join(config.dataDir, TIMELINE_DIR);
+const timeline = config.timeline ? new TimelineRecorder({ dir: timelineDir }) : undefined;
+if (timeline) hub.onSnapshot((snap) => timeline.ingest(snap));
 
 if (config.demo) office.setDemo(true);
 watcher.start();
 accounts.start();
 hub.start();
+if (timeline) {
+  timeline.start();
+  timeline.ingest(hub.current());
+}
 const ticker = setInterval(() => {
   try {
     office.tick();
@@ -77,6 +87,7 @@ const api = createApiHandler({
   terminal: config.terminal,
   terminals,
   sessions: history,
+  timeline: createTimelineHandler({ dir: timelineDir, recording: !!timeline }),
 });
 
 const server = http.createServer();
@@ -141,6 +152,7 @@ server.listen(config.port, config.host, () => {
   if (office.isDemo()) log.info('   Modo demonstração ligado (agentes simulados misturados aos reais).');
   if (config.terminal) log.info('   Terminal somente leitura: ligado (acesso só local).');
   else log.info(`   Terminal somente leitura: desligado (${terminalOffReason(process.env, config.host, config.inDocker)}).`);
+  log.info(timeline ? `   Linha do tempo (timelapse): gravando em ${timelineDir}.` : '   Linha do tempo (timelapse): gravação desligada (CODETOWN_TIMELINE).');
 });
 
 let shuttingDown = false;
@@ -153,6 +165,7 @@ function shutdown(signal: string): void {
   accounts.stop();
   hub.stop();
   terminals?.stop();
+  timeline?.stop();
   names.flush();
   void closeVite?.();
   server.close(() => process.exit(0));

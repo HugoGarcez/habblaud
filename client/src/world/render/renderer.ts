@@ -100,6 +100,8 @@ export class Renderer {
   private occupiedSlots = new Set<number>();
   /** Hora forçada (depuração) ou null para a hora local. */
   hourOverride: number | null = null;
+  /** Relógio da hora do dia (céu, iluminação, relógio de parede); o timelapse troca pelo instante reproduzido. */
+  clock: () => number = () => Date.now();
   assets: WorldAssets | null = null;
   /** Último fator noturno aplicado (usado pelo overlay). */
   night = 0;
@@ -312,7 +314,7 @@ export class Renderer {
 
   frame(now: number, dt: number, opts: WorldOptions, sel: { agent: string | null; room: string | null; hover: string | null }): void {
     const { ctx, camera } = this;
-    this.date.setTime(Date.now());
+    this.date.setTime(this.clock());
     this.dt = dt;
     this.updateCars(now, dt);
     const W = this.canvas.width;

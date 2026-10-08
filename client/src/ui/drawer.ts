@@ -527,7 +527,9 @@ class AgentView {
       open
         ? 'Fechar o terminal somente leitura (T)'
         : !available
-          ? TERMINAL_UNAVAILABLE_HINT
+          ? this.ctx.store.replaying
+            ? 'Sem terminal no timelapse: a conversa é a de agora, não a do momento reproduzido.'
+            : TERMINAL_UNAVAILABLE_HINT
           : !live
             ? 'O agente já saiu do escritório.'
             : 'Ver a conversa desta sessão como no terminal do Claude Code, só para leitura (T)',

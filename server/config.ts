@@ -33,6 +33,8 @@ export interface ServerConfig {
    * CodeTown acessível apenas pelo próprio computador (ver terminalOffReason).
    */
   terminal: boolean;
+  /** Grava a linha do tempo do escritório para o timelapse (<dataDir>/timeline); CODETOWN_TIMELINE=0 desliga. */
+  timeline: boolean;
   /** Raiz do projeto (onde fica o package.json); serve dist/client a partir daqui. */
   rootDir: string;
   version: string;
@@ -134,6 +136,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
     usageDir: resolve(env.CODETOWN_USAGE_DIR?.trim() || join(home, '.codetown', 'usage')),
     allowedHosts: parseAllowedHosts(env.CODETOWN_ALLOWED_HOSTS),
     terminal: terminalOffReason(env, host, inDocker) === undefined,
+    timeline: !env.CODETOWN_TIMELINE?.trim() || isTruthy(env.CODETOWN_TIMELINE),
     rootDir,
     version: readVersion(rootDir),
   };

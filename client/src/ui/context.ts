@@ -46,4 +46,7 @@ export interface UiContext {
   /** Abre a ajuda; com `section`, rola até ela (ex.: "usage" = Contas e uso). */
   openHelp(section?: HelpSection): void;
   toggleSettings(): void;
+  /** Abre/fecha o timelapse do dia (ui/timelapse.ts). */
+  toggleTimelapse(): void;
+  isTimelapseOpen(): boolean;
 }

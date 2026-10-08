@@ -202,7 +202,7 @@ npm run usage:uninstall                     # devolve o statusline original das 
 npm run docker:down                         # para o container
 docker volume rm codetown_codetown-data     # apaga os dados do container (nomes dos personagens)
 docker image rm codetown:local              # apaga a imagem
-rm -rf ~/.codetown                          # apaga os dados locais (uso capturado e nomes)
+rm -rf ~/.codetown                          # apaga os dados locais (uso capturado, nomes e linha do tempo)
 ```
 
 Depois é só apagar a pasta do projeto — rode o `usage:uninstall` **antes**, senão o statusline das contas passa a
@@ -238,8 +238,8 @@ um **chip colorido com a letra da conta** (C, D…).
 
 **Câmera:** arraste para mover, role para dar zoom, clique duplo num personagem para segui-lo.
 
-**Atalhos:** `/` busca · `F` seguir o selecionado · `O` ou `0` visão geral · `Esc` limpar seleção ·
-`[` painel lateral · `]` feed · setas/`WASD` mover · `+` `-` zoom · `?` ajuda.
+**Atalhos:** `/` busca · `F` seguir o selecionado · `T` terminal · `L` timelapse · `O` ou `0` visão geral ·
+`Esc` limpar seleção · `[` painel lateral · `]` feed · setas/`WASD` mover · `+` `-` zoom · `?` ajuda.
 
 ### Terminal somente leitura
 
@@ -263,6 +263,23 @@ Como o terminal (e o histórico) mostra a conversa inteira, ele só existe quand
 próprio computador** (o padrão) e só abre por `http://localhost` ou `http://127.0.0.1`. Com a porta liberada para a rede
 (`CODETOWN_BIND=0.0.0.0` ou `CODETOWN_HOST=0.0.0.0`), ele fica desligado. Detalhes em
 [Privacidade e segurança](#privacidade-e-segurança).
+
+### Timelapse do dia
+
+O botão **Timelapse** (relógio com a seta de voltar, ou a tecla `L`) reproduz o dia em alta velocidade: salas
+acendendo e apagando, agentes chegando, trabalhando, esperando você, indo para as rodas, subagentes entrando e saindo.
+A barra de reprodução tem o dia, play/pausa, a velocidade (60×, 180× ou 600×: um dia de 10 h em 10, 3⅓ ou 1 min),
+a linha do tempo arrastável com o gráfico de quem estava presente e trabalhando, as marcas dos picos (clique para
+pular até lá) e **Voltar ao vivo**. Enquanto isso, o escritório fica levemente sépia, com o selo **REPLAY 14:32**, e o
+feed continua mostrando o que acontece agora.
+
+O servidor grava a linha do tempo **a partir do momento em que está ligado** (não dá para reconstruir o passado):
+resumos do que o escritório mostra, sem conversas, em `~/.codetown/timeline/` (no Docker, no volume de dados), com
+limite de tamanho por dia e os últimos **7 dias** guardados. Para não gravar: `CODETOWN_TIMELINE=0`. Detalhes em
+[`server/README.md`](server/README.md#linha-do-tempo-timelapse).
+
+Os personagens andam mais rápido no replay, mas nas velocidades altas quem fica pouco tempo no escritório quase não
+chega à mesa; pular para outro ponto mostra todos já no lugar.
 
 ### Modo demonstração
 
@@ -328,7 +345,8 @@ Tudo funciona sem configurar nada. Se precisar ajustar, use variáveis de ambien
 | `CODETOWN_HOST` | `127.0.0.1` | Interface do servidor no modo Node. Fora de `127.0.0.1`/`localhost`, o terminal somente leitura fica desligado. |
 | `CODETOWN_BIND` | `127.0.0.1` | Só Docker (no `.env`): onde a porta é publicada. `0.0.0.0` libera a rede local (e desliga o terminal somente leitura). |
 | `CODETOWN_CLAUDE_DIRS` | detecção automática | Pastas das contas, separadas por vírgula (ex.: `/caminho/conta1,/caminho/conta2`). |
-| `CODETOWN_DATA_DIR` | `~/.codetown` | Onde o CodeTown guarda os próprios dados (nomes dos personagens). |
+| `CODETOWN_DATA_DIR` | `~/.codetown` | Onde o CodeTown guarda os próprios dados (nomes dos personagens e a linha do tempo do timelapse). |
+| `CODETOWN_TIMELINE` | ligado | `0` desliga a gravação da linha do tempo (os dias já gravados continuam no timelapse). No Docker fica sempre ligado. |
 | `CODETOWN_USAGE_DIR` | `~/.codetown/usage` | Onde o tap de statusline grava o uso. |
 | `CODETOWN_DEMO` | desligado | `1` liga o modo demonstração ao iniciar. |
 | `CODETOWN_ALLOWED_HOSTS` | — | Nomes extras aceitos no endereço (ex.: `meu-mac.local`), além de `localhost` e IPs. |
@@ -383,6 +401,8 @@ scripts/  build do servidor, docker-up, tap de statusline (+ instalador) e scree
 | `GET /api/sessions/recent` | Histórico: sessões dos últimos 7 dias de todas as contas (até 150); só com acesso local. |
 | `GET /api/sessions/:conta/:sessionId/terminal` | SSE da conversa de uma sessão do histórico (mesmo protocolo do terminal); só com acesso local. |
 | `GET /api/health` | Saúde: versão, demonstração, Docker, terminal, fontes e status de uso de cada conta. |
+| `GET /api/timeline/days` | Dias gravados para o timelapse, com tamanho e horário do primeiro e do último registro. |
+| `GET /api/timeline/:dia` | Linha do tempo de um dia (`AAAA-MM-DD`), em JSONL (com gzip). |
 | `POST /api/demo` | `{"enabled": true \| false}` liga ou desliga os agentes simulados. |
 
 Mais detalhes do servidor em [`server/README.md`](server/README.md).
@@ -397,7 +417,7 @@ Mais detalhes do servidor em [`server/README.md`](server/README.md).
 | `<conta>/sessions/` | `/claude/<conta>/sessions` (somente leitura) | Sessões abertas e seus status. |
 | `<conta>/projects/` | `/claude/<conta>/projects` (somente leitura) | Transcripts das sessões e dos subagentes. |
 | `~/.codetown/usage/` | `/usage` (somente leitura) | Uso capturado pelo tap de statusline. |
-| volume `codetown-data` | `/data` | Dados do próprio CodeTown (nomes dos personagens). |
+| volume `codetown-data` | `/data` | Dados do próprio CodeTown (nomes dos personagens e a linha do tempo do timelapse). |
 
 A pasta da conta **nunca** é montada inteira (lá ficam credenciais e configurações). O container roda como usuário sem
 privilégios, com sistema de arquivos somente leitura, sem capabilities extras e com `no-new-privileges`. Os metadados
@@ -423,6 +443,9 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
   ligá-lo com a porta exposta — e cada pedido precisa vir por `localhost`/`127.0.0.1`: IPs da rede e nomes de
   `CODETOWN_ALLOWED_HOSTS` (proxies, túneis) são recusados. Segredos são mascarados e textos longos truncados antes
   de chegar ao navegador; no modo demonstração, a conversa é fictícia. `CODETOWN_TERMINAL=0` desliga de vez.
+- **Linha do tempo do timelapse:** só os resumos que já aparecem na tela (atividade em uma linha, status, títulos,
+  uso das contas, sem e-mails, comandos completos ou conversas), gravados em `~/.codetown/timeline/` e apagados depois
+  de 7 dias. `CODETOWN_TIMELINE=0` desliga a gravação.
 - **O que aparece na tela:** resumos das atividades (ferramenta, arquivo, comando ou consulta), títulos das sessões,
   tarefas e estatísticas (e, no terminal somente leitura, a conversa). Não exponha a porta em redes em que você não
   confia.
@@ -437,6 +460,7 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
 | `npm run build` / `npm start` | Compila e roda a versão de produção. |
 | `npm test` | Testes (Vitest). |
 | `npm run typecheck` | Verificação de tipos de cliente, servidor e scripts. |
+| `npm run demo:timeline` | Gera uma linha do tempo fictícia (simulador do modo demonstração) para o timelapse. |
 
 Para tirar screenshots sem abrir o seu navegador, `scripts/shot.mjs` usa um Chromium headless isolado (Playwright).
 Na primeira vez, baixe o navegador (uma vez só): `npx playwright-core install chromium-headless-shell`.
@@ -447,6 +471,20 @@ node scripts/shot.mjs 'http://localhost:4747/?mock=1&speed=3' /tmp/codetown.png 
 
 No console do navegador, `codetown.world.debug` tem ferramentas para testar cenas (ex.:
 `codetown.world.debug.setHour(21)` para ver a noite).
+
+**Timelapse só com dados fictícios** (ex.: para gravar um GIF): `npm run demo:timeline` roda o simulador do modo
+demonstração offline e grava um dia inteiro (por padrão, ontem das 9h às 19h, com manhã cheia, almoço mais vazio e
+pico à tarde) em `<tmp>/codetown-demo/timeline/`. Depois suba um CodeTown que só leia essa pasta e não mostre as suas
+sessões, e abra o Timelapse:
+
+```bash
+npm run demo:timeline -- --data-dir /tmp/codetown-demo        # opções: --date, --start 8:30, --hours, --sessions, --seed
+mkdir -p /tmp/codetown-demo/vazio
+CODETOWN_DATA_DIR=/tmp/codetown-demo CODETOWN_TIMELINE=0 CODETOWN_CLAUDE_DIRS=/tmp/codetown-demo/vazio \
+  CODETOWN_PORT=4848 npm start                                 # depois de npm run build; abra http://localhost:4848
+```
+
+`CODETOWN_TIMELINE=0` evita gravar nessa pasta; com a gravação ligada, dias com mais de 7 dias são apagados.
 
 ## Solução de problemas
 

@@ -24,6 +24,7 @@ import { loadPrefs, safeLocalStorage, savePrefs, worldOptionsFrom, type UiPrefs 
 import { SettingsPopover } from './settings';
 import { Sidebar } from './sidebar';
 import { TERMINAL_UNAVAILABLE_HINT, TerminalPanel } from './terminal';
+import { TimelapsePlayer } from './timelapse';
 import { Toasts } from './toasts';
 import { TopBar } from './topbar';
 import { UpdateBanner } from './update';
@@ -59,6 +60,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
   let settings: SettingsPopover;
   let help: HelpDialog;
   let area: FreeArea;
+  let timelapse: TimelapsePlayer;
   /** A seleção em curso partiu da UI (lista, feed, aviso...), não de um clique no canvas. */
   let uiSelecting = false;
 
@@ -127,6 +129,12 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
     },
     openHelp: (section) => help.open(section),
     toggleSettings: () => settings.toggle(topbar.settingsBtn),
+    toggleTimelapse() {
+      // O terminal mostra a conversa de agora: não combina com o dia reproduzido.
+      if (!timelapse.isOpen && terminal.isOpen) terminal.close();
+      timelapse.toggle();
+    },
+    isTimelapseOpen: () => timelapse.isOpen,
   };
 
   // ---------------------------------------------------------------- componentes
@@ -147,10 +155,11 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
   const update = new UpdateBanner(store);
   const tip = new HoverTip(ctx);
   const splash = new Splash(ctx);
+  timelapse = new TimelapsePlayer(ctx);
   const scrim = h('div', { class: 'ui-scrim', attrs: { 'aria-hidden': 'true' }, on: { click: () => ctx.togglePanel('sidebar', false) } });
 
   root.classList.add('ui-root');
-  root.append(topbar.el, sidebar.el, scrim, feed.el, drawer.el, terminal.el, toasts.el, banner.el, update.el, empty.el, tip.el, settings.el, history.el, help.el, live, splash.el);
+  root.append(timelapse.vignette, topbar.el, sidebar.el, scrim, feed.el, drawer.el, terminal.el, timelapse.el, timelapse.badge, toasts.el, banner.el, update.el, empty.el, tip.el, settings.el, history.el, help.el, live, splash.el);
   area = new FreeArea(world, { root, topbar: topbar.el, sidebar: sidebar.el, drawer: drawer.el, feed: feed.el }, () => ({
     sidebar: panels.sidebar,
     feed: panels.feed,
@@ -158,7 +167,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
     narrow: ctx.isNarrow(),
   }));
 
-  const components: UiComponent[] = [topbar, sidebar, drawer, terminal, history, feed, toasts, settings, empty, banner, tip, notifier, splash];
+  const components: UiComponent[] = [topbar, sidebar, drawer, terminal, history, feed, toasts, settings, empty, banner, tip, notifier, splash, timelapse];
 
   // ---------------------------------------------------------------- renderização agrupada por quadro
   let rafId = 0;
@@ -199,7 +208,8 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
 
   // ---------------------------------------------------------------- eventos
   store.on('snapshot', (snap) => {
-    if (store.connection === 'open') skew = snap.serverTime - Date.now();
+    // No timelapse o "agora" da interface é o instante reproduzido (serverTime do snapshot reconstruído).
+    if (store.connection === 'open' || store.replaying) skew = snap.serverTime - Date.now();
     invalidate();
   });
   store.on('connection', () => invalidate());
@@ -271,6 +281,12 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
       case 'T':
         e.preventDefault();
         toggleTerminal();
+        break;
+      case 'l':
+      case 'L':
+        if (store.mock) break;
+        e.preventDefault();
+        ctx.toggleTimelapse();
         break;
       case 'o':
       case 'O':

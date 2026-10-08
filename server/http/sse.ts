@@ -14,6 +14,7 @@ export class Hub {
   private pinger: ReturnType<typeof setInterval> | null = null;
   private lastFlush = 0;
   private unsubscribe: (() => void) | null = null;
+  private snapshotCbs = new Set<(snap: OfficeSnapshot) => void>();
   private readonly throttleMs: number;
   private readonly pingMs: number;
 
@@ -46,6 +47,12 @@ export class Hub {
     return this.clients.size;
   }
 
+  /** Avisado a cada snapshot novo transmitido (ex.: o gravador da linha do tempo). */
+  onSnapshot(cb: (snap: OfficeSnapshot) => void): () => void {
+    this.snapshotCbs.add(cb);
+    return () => void this.snapshotCbs.delete(cb);
+  }
+
   /** Conecta um cliente: snapshot completo + últimos 50 itens do feed, depois o fluxo ao vivo. */
   attach(req: IncomingMessage, res: ServerResponse): void {
     req.socket.setTimeout(0);
@@ -73,7 +80,16 @@ export class Hub {
     this.timer = null;
     this.lastFlush = Date.now();
     const r = this.office.commit();
-    if (r.changed) this.writeAll(frame('snapshot', r.snapshot));
+    if (r.changed) {
+      this.writeAll(frame('snapshot', r.snapshot));
+      for (const cb of this.snapshotCbs) {
+        try {
+          cb(r.snapshot);
+        } catch {
+          // quem escuta não atrapalha a transmissão
+        }
+      }
+    }
     if (r.feed.length) this.writeAll(frame('feed', r.feed));
     for (const n of r.notices) this.writeAll(frame('notice', n));
     return r.snapshot;

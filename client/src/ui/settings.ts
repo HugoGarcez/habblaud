@@ -169,7 +169,7 @@ export class SettingsPopover implements UiComponent {
   render(): void {
     const p = this.ctx.prefs;
     for (const [key, r] of this.switches) {
-      const on = key === 'demo' ? !!this.ctx.store.snapshot?.meta.demo : p[key];
+      const on = key === 'demo' ? !!this.ctx.store.liveSnapshot?.meta.demo : p[key];
       setAttr(r.btn, 'aria-checked', String(on));
       r.btn.disabled = key === 'demo' && this.demoBusy;
     }
