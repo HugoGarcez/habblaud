@@ -10,6 +10,20 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Adicionado
+
+- **Mod do CodeTown para o Claude Code** (2.1.287 ou mais novo): `npm run mod:install` instala, em cada conta, o
+  marketplace desta pasta com o mod `codetown` (uso de 5 horas e semanal ao vivo, uma linha no terminal quando outra
+  sessão precisa de você e o comando `/codetown`) e o plugin `codetown-permissoes` (responder permissões pelo
+  escritório; `-- --sem-permissoes` deixa de fora). `npm run mod:status` mostra o que cada conta tem e
+  `npm run mod:uninstall` tira tudo. O `npm run docker:up` atualiza o mod de quem já instalou.
+
+### Mudado
+
+- O tap de statusline (`npm run usage:install`) e o hook de permissão (`npm run hooks:install`) viram o jeito antigo,
+  para o Claude Code anterior ao 2.1.287. O `npm run mod:install` tira os dois da conta (com backup), porque o mod faz
+  o mesmo. A interface e o README passam a ensinar o `npm run mod:install`.
+
 ## [0.2.0] - 2026-10-08
 
 Primeira versão publicada.

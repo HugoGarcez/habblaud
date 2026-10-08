@@ -277,7 +277,8 @@ export function writeSettings(file: string, settings: Settings, raw: string | un
   return backup;
 }
 
-function usageDirOf(env: NodeJS.ProcessEnv, home: string): string {
+/** Pasta do uso capturado (CODETOWN_USAGE_DIR ou ~/.codetown/usage); também usada pelo mod-install. */
+export function usageDirOf(env: NodeJS.ProcessEnv, home: string): string {
   const d = env.CODETOWN_USAGE_DIR?.trim();
   return d ? resolve(d.replace(/^~(?=\/|$)/, home)) : join(home, '.codetown', 'usage');
 }

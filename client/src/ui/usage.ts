@@ -3,7 +3,7 @@
 // - número velho nunca passa por atual: janela que já renovou depois da leitura mostra "—" e "renovada";
 //   números antigos ficam acinzentados com a idade ("há 6 d") no cabeçalho ou, no celular, um selo no chip;
 // - o reinício vem com verbo implícito no ícone ↻ e contagem regressiva quando falta menos de um dia;
-// - conta sem números diz "sem dados de uso" e oferece "Como ativar" (tap do statusline, recomendado).
+// - conta sem números diz "sem dados de uso" e oferece "Como ativar" (mod do CodeTown, recomendado).
 import type { AccountInfo } from '../../../shared/types';
 import type { UiContext } from './context';
 import { h, KeyedList, setAttr, setHidden, setStyleVar, setText, setTitle, setVariant } from './dom';
@@ -22,8 +22,12 @@ export const SOURCE_LABEL: Record<NonNullable<AccountInfo['usage']>['source'], s
  */
 export const USAGE_SETUP_STEPS: readonly [string, string][] = [
   [
+    'npm run mod:install',
+    'Recomendado: instala o mod do CodeTown no Claude Code (2.1.287 ou mais novo), que passa o uso de 5 h e da semana ao vivo. Rode na pasta do CodeTown, no computador onde o Claude Code roda; nas sessões já abertas, `/reload-plugins`.',
+  ],
+  [
     'npm run usage:install',
-    'Recomendado: liga um tap na linha de status do Claude Code, que passa o uso de 5 h e da semana ao vivo. Rode na pasta do CodeTown, no computador onde o Claude Code roda.',
+    'No Claude Code anterior ao 2.1.287: liga um tap na linha de status, que passa os mesmos números ao vivo.',
   ],
   ['/usage', 'Sem instalar nada: rode `/usage` no Claude Code desta conta para atualizar o cache (os números envelhecem até a próxima vez).'],
 ];
