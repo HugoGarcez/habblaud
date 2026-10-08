@@ -166,7 +166,8 @@ export class UsageCards {
   }
 
   render(): void {
-    const accounts = this.ctx.store.snapshot?.accounts ?? [];
+    // Contas virtuais dos agentes do Orca (Codex, OpenCode…) não têm o uso de 5h/semanal do Claude.
+    const accounts = (this.ctx.store.snapshot?.accounts ?? []).filter((a) => !a.id.startsWith('orca:'));
     this.list.sync(accounts);
     this.el.classList.toggle('is-empty', accounts.length === 0);
     setStyleVar(this.el, '--count', String(accounts.length));

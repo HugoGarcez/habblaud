@@ -22,6 +22,7 @@ import { openMainAgent, SessionHistory } from './sources/history';
 import { createPermissionRoutes } from './permissions/http';
 import { PermissionRegistry } from './permissions/registry';
 import { ClaudeWatcher } from './sources/watcher';
+import { findOrcaBin, OrcaWatcher } from './sources/orca';
 import { createBuildReader } from './build';
 import { UpdateChecker } from './updates/checker';
 
@@ -42,7 +43,7 @@ const names = new NameStore(join(config.dataDir, 'names.json'));
 names.load();
 
 // Office, contas e watcher se referenciam (avisos de mudança / fontes): ligação tardia.
-const late: { office?: Office; watcher?: ClaudeWatcher; permissions?: PermissionRegistry } = {};
+const late: { office?: Office; watcher?: ClaudeWatcher; orca?: OrcaWatcher; permissions?: PermissionRegistry } = {};
 // Versão nova: consulta a release mais recente no GitHub a cada 6 h (HABBLAUD_UPDATE_CHECK=0 desliga).
 const updates = new UpdateChecker({
   current: config.version,
@@ -65,16 +66,23 @@ const office = new Office({
   // No modo dev o Vite serve o cliente direto do código-fonte: não há build para comparar.
   build: config.dev ? undefined : createBuildReader(config.rootDir),
   startedAt,
-  accounts: (sessions) => accounts.list(sessions),
-  sources: () => late.watcher?.sources() ?? [],
-  accountName: (id) => accounts.find(id)?.detected.name,
+  accounts: (sessions) => [...accounts.list(sessions), ...(late.orca?.accounts(sessions) ?? [])],
+  sources: () => [...(late.watcher?.sources() ?? []), ...(late.orca?.sources() ?? [])],
+  accountName: (id) => accounts.find(id)?.detected.name ?? late.orca?.accountName(id),
   terminal: config.terminal,
   permissions: () => late.permissions?.snapshot() ?? new Map(),
   updates: () => updates.status(),
 });
 const watcher = new ClaudeWatcher({ accounts, office, inDocker: config.inDocker });
+// Agentes do Orca (Codex, OpenCode, Antigravity…): lidos pela CLI do Orca, fora do Docker. HABBLAUD_ORCA=0 desliga.
+const orca = new OrcaWatcher({
+  office,
+  bin: config.inDocker || process.env.HABBLAUD_ORCA === '0' ? undefined : findOrcaBin(),
+  idleMaxMs: Number(process.env.HABBLAUD_ORCA_IDLE_MIN) > 0 ? Number(process.env.HABBLAUD_ORCA_IDLE_MIN) * 60_000 : undefined,
+});
 late.office = office;
 late.watcher = watcher;
+late.orca = orca;
 const hub = new Hub(office);
 // "Meu dia": amostra o escritório a cada segundo e persiste em <dataDir>/stats/ (ver history/daystats.ts).
 const stats = new DayStatsService({ dir: join(config.dataDir, 'stats'), snapshot: () => hub.current() });
@@ -103,6 +111,7 @@ late.permissions = permissions;
 
 if (config.demo) office.setDemo(true);
 watcher.start();
+orca.start();
 accounts.start();
 hub.start();
 if (timeline) {
@@ -124,7 +133,7 @@ const api = createApiHandler({
   office,
   hub,
   accounts,
-  sources: () => watcher.sources(),
+  sources: () => [...watcher.sources(), ...orca.sources()],
   version: config.version,
   inDocker: config.inDocker,
   terminal: config.terminal,
@@ -195,6 +204,7 @@ server.listen(config.port, config.host, () => {
     const usage = accounts.usageView(a.id).status;
     log.info(`   Conta ${a.detected.short} (${a.id}): ${src?.sessions ?? 0} sessão(ões) aberta(s) · uso: ${usage} · ${a.dir}`);
   }
+  if (orca.enabled) log.info('   Orca: agentes de outros CLIs (Codex, OpenCode, Antigravity…) pelos terminais do Orca.');
   if (office.isDemo()) log.info('   Modo demonstração ligado (agentes simulados misturados aos reais).');
   if (config.terminal) log.info('   Terminal somente leitura: ligado (acesso só local).');
   else log.info(`   Terminal somente leitura: desligado (${terminalOffReason(process.env, config.host, config.inDocker)}).`);
@@ -215,6 +225,7 @@ function shutdown(signal: string): void {
   clearInterval(ticker);
   stats.stop();
   watcher.stop();
+  orca.stop();
   accounts.stop();
   hub.stop();
   terminals?.stop();
