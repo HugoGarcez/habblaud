@@ -1,7 +1,8 @@
 // Responder pelo escritório: cartão do pedido de permissão na gaveta do agente (Aprovar, Recusar com
 // motivo, "sempre permitir" e Responder no terminal) e os atalhos que levam até ele (aviso, contador da
-// barra superior e tecla P). O pedido chega pelo hook PermissionRequest (scripts/permission-hook.mjs);
-// o diálogo continua no terminal e vale o que for respondido primeiro.
+// barra superior e tecla P). O pedido chega pelo hook PermissionRequest
+// (mod/codetown-permissoes/hooks/permission-hook.mjs); o diálogo continua no terminal e vale o que for
+// respondido primeiro.
 import type { AgentInfo, PermissionDecision, PermissionRequestInfo, PermissionSuggestionInfo } from '../../../shared/types';
 import type { UiContext } from './context';
 import { h, KeyedList, setAttr, setHidden, setText, setTitle } from './dom';

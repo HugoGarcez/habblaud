@@ -1,6 +1,6 @@
 // Servidor de teste para "responder pelo escritório": Office + Hub + rotas de verdade (guard, app e
 // /api/permissions) numa porta livre do 127.0.0.1, com um agente principal na sessão "sess-1".
-// Usado pelos testes das rotas e do hook (scripts/permission-hook.mjs rodado como processo).
+// Usado pelos testes das rotas e do hook (mod/codetown-permissoes/hooks/permission-hook.mjs rodado como processo).
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { AccountsService } from '../accounts/service';

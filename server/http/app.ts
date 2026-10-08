@@ -1,6 +1,6 @@
 // Rotas da API (/api/*). Respostas JSON; rotas desconhecidas -> 404 JSON.
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { SourceInfo, UpdateStatus } from '../../shared/types';
+import type { AgentInfo, ModSummary, OfficeSnapshot, SourceInfo, UpdateStatus } from '../../shared/types';
 import type { AccountsService } from '../accounts/service';
 import type { DayStatsService } from '../history/daystats';
 import type { Office } from '../model/office';
@@ -101,6 +101,49 @@ function updatesSummary(s: UpdateStatus | undefined): { state: UpdateStatus['sta
   return s ? { state: s.state, latest: s.latest, available: s.available } : { state: 'off', available: false };
 }
 
+/** Subagentes aninhados mais fundo que isto não existem na prática; o limite só evita laço num parentId torto. */
+const MAX_PARENT_HOPS = 16;
+
+/**
+ * Resumo para o mod do Claude Code (GET /api/mod/summary, ver ModSummary). `isReal` diz quem é agente de
+ * verdade: os do demo vivem só no snapshot (não no Office), então `office.has(id)` os separa sem depender
+ * do prefixo "demo:". A própria sessão sai quando vem `session` (e, se vier, `account` também precisa
+ * bater): o principal tem o sessionId atual da sessão (troca no /clear) e os subagentes guardam o da
+ * sessão que os disparou; por garantia, um subagente também sai quando algum ancestral (parentId) é dela.
+ */
+export function modSummary(
+  snap: OfficeSnapshot,
+  isReal: (id: string) => boolean,
+  version: string,
+  own: { account?: string; session?: string } = {},
+): ModSummary {
+  const byId = new Map(snap.agents.map((a) => [a.id, a]));
+  const rooms = new Map(snap.rooms.map((r) => [r.id, r.name]));
+  const isOwn = (a: AgentInfo): boolean => {
+    if (!own.session || (own.account && a.account !== own.account)) return false;
+    let cur: AgentInfo | undefined = a;
+    for (let hops = 0; cur && hops <= MAX_PARENT_HOPS; hops++) {
+      if (cur.sessionId === own.session) return true;
+      cur = cur.parentId ? byId.get(cur.parentId) : undefined;
+    }
+    return false;
+  };
+  const present = snap.agents.filter((a) => isReal(a.id) && a.status !== 'offline' && a.status !== 'done' && !isOwn(a));
+  const waiting = present
+    .filter((a) => a.status === 'waiting')
+    .sort((a, b) => a.statusSince - b.statusSince || a.id.localeCompare(b.id))
+    .map((a) => ({
+      id: a.id,
+      name: a.name,
+      room: rooms.get(a.roomId) ?? a.roomId,
+      account: a.account,
+      waitingFor: a.waitingFor ?? 'responder no terminal',
+      since: a.statusSince,
+      answerable: !!a.permission,
+    }));
+  return { version, agents: present.length, working: present.filter((a) => a.status === 'working').length, waiting };
+}
+
 /** Devolve um handler que trata /api/* e responde false para o resto. */
 export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: ServerResponse, url: URL) => boolean {
   const { office, hub, accounts } = deps;
@@ -154,6 +197,15 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
           sources: deps.sources(),
           accounts: accounts.entries().map((a) => ({ id: a.id, usageStatus: accounts.usageView(a.id).status })),
         });
+      }
+      return true;
+    }
+    if (path === '/api/mod/summary') {
+      // Lido a cada 5 s por sessão com o mod: só contagens e quem espera (nada que o snapshot já não mostre).
+      if (!isRead) methodNotAllowed(res, 'GET');
+      else {
+        const own = { account: url.searchParams.get('account') || undefined, session: url.searchParams.get('session') || undefined };
+        sendJson(res, 200, modSummary(hub.current(), (id) => office.has(id), deps.version, own));
       }
       return true;
     }

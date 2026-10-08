@@ -10,6 +10,8 @@ import {
   hookCommand,
   hookEntry,
   installedHook,
+  isOurHook,
+  LEGACY_HOOK_SCRIPT,
   parseArgs,
   planInstall,
   planUninstall,
@@ -23,13 +25,18 @@ import { tempDir } from './fixtures';
 const OPTS = { port: 4747, timeoutS: DEFAULT_TIMEOUT_S };
 
 describe('hooks-install.ts (funções puras)', () => {
-  const entry = hookEntry(hookCommand('node', '/repo/codetown/scripts/permission-hook.mjs', OPTS), OPTS);
+  const entry = hookEntry(hookCommand('node', '/repo/codetown/mod/codetown-permissoes/hooks/permission-hook.mjs', OPTS), OPTS);
 
   it('comando e entrada do hook: opções só quando diferentes do padrão; tempo limite com folga', () => {
-    expect(hookCommand('node', '/r/scripts/permission-hook.mjs', OPTS)).toBe('node "/r/scripts/permission-hook.mjs"');
+    expect(hookCommand('node', '/r/mod/codetown-permissoes/hooks/permission-hook.mjs', OPTS)).toBe('node "/r/mod/codetown-permissoes/hooks/permission-hook.mjs"');
     expect(hookCommand('/opt/homebrew/bin/node', '/r/x/permission-hook.mjs', { port: 4851, timeoutS: 120 })).toBe('/opt/homebrew/bin/node "/r/x/permission-hook.mjs" --port 4851 --timeout 120');
     expect(hookCommand('/caminho com espaço/node', "/r/$x/permission-hook.mjs", OPTS)).toBe(`"/caminho com espaço/node" '/r/$x/permission-hook.mjs'`);
-    expect(entry).toEqual({ type: 'command', command: 'node "/repo/codetown/scripts/permission-hook.mjs"', timeout: DEFAULT_TIMEOUT_S + 30, statusMessage: STATUS_MESSAGE });
+    expect(entry).toEqual({
+      type: 'command',
+      command: 'node "/repo/codetown/mod/codetown-permissoes/hooks/permission-hook.mjs"',
+      timeout: DEFAULT_TIMEOUT_S + 30,
+      statusMessage: STATUS_MESSAGE,
+    });
     expect(scriptPathOf('node "/a b/permission-hook.mjs" --port 1')).toBe('/a b/permission-hook.mjs');
     expect(scriptPathOf("node '/a/it'\\''s/permission-hook.mjs'")).toBe("/a/it's/permission-hook.mjs");
     expect(scriptPathOf('node /a/permission-hook.mjs')).toBe('/a/permission-hook.mjs');
@@ -50,6 +57,25 @@ describe('hooks-install.ts (funções puras)', () => {
     expect(upd.action).toBe('install');
     const list = upd.action === 'install' ? (upd.settings.hooks as { PermissionRequest: unknown[] }).PermissionRequest : [];
     expect(list).toEqual([other, { matcher: '*', hooks: [moved] }]);
+  });
+
+  it('o script mora no plugin codetown-permissoes; o caminho antigo (scripts/, até a 0.2) e o novo são "nossos"', () => {
+    expect(HOOK_SCRIPT.endsWith(join('mod', 'codetown-permissoes', 'hooks', 'permission-hook.mjs'))).toBe(true);
+    expect(existsSync(HOOK_SCRIPT)).toBe(true);
+    expect(existsSync(LEGACY_HOOK_SCRIPT)).toBe(false);
+    const legacy = hookEntry(hookCommand('node', '/repo/codetown/scripts/permission-hook.mjs', OPTS), OPTS);
+    expect(isOurHook(legacy)).toBe(true);
+    expect(isOurHook(entry)).toBe(true);
+    expect(isOurHook({ type: 'command', command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/permission-hook.mjs"' })).toBe(true);
+    expect(isOurHook({ type: 'command', command: 'meu-hook' })).toBe(false);
+    expect(scriptPathOf(String(legacy.command))).toBe('/repo/codetown/scripts/permission-hook.mjs');
+    expect(scriptPathOf(String(entry.command))).toBe('/repo/codetown/mod/codetown-permissoes/hooks/permission-hook.mjs');
+    // Instalação antiga: install troca pelo caminho novo (sem duplicar) e uninstall tira.
+    const old = { hooks: { PermissionRequest: [{ matcher: '*', hooks: [legacy] }] } };
+    const upd = planInstall(old, entry);
+    expect(upd.action === 'install' && upd.settings).toEqual({ hooks: { PermissionRequest: [{ matcher: '*', hooks: [entry] }] } });
+    expect(upd.message).toMatch(/atualizado/);
+    expect(planUninstall(old)).toEqual({ action: 'uninstall', settings: {}, message: 'hook do CodeTown removido' });
   });
 
   it('install sem hooks antes; formatos desconhecidos não são tocados', () => {
@@ -141,6 +167,17 @@ describe('hooks-install.ts (arquivos, HOME falso)', () => {
     out = [];
     await exec('uninstall');
     expect(out.join('\n')).toContain('não estava instalado');
+  });
+
+  it('status de uma instalação antiga (scripts/permission-hook.mjs, que não existe mais): avisa e manda reinstalar', async () => {
+    const legacy = hookEntry(hookCommand(process.execPath, LEGACY_HOOK_SCRIPT, OPTS), OPTS);
+    writeFileSync(join(home, '.claude', 'settings.json'), JSON.stringify({ hooks: { PermissionRequest: [{ matcher: '*', hooks: [legacy] }] } }));
+    await exec('status');
+    expect(out.join('\n')).toContain(`o hook aponta para ${LEGACY_HOOK_SCRIPT} (esse arquivo não existe mais: o hook falha e vale só o terminal); rode npm run hooks:install`);
+    out = [];
+    expect(await exec('install')).toBe(0);
+    expect(read('.claude').hooks.PermissionRequest).toEqual([{ matcher: '*', hooks: [expected] }]);
+    expect(out.join('\n')).toContain('atualizado');
   });
 
   it('--dry-run não grava; JSON inválido nunca é sobrescrito', async () => {

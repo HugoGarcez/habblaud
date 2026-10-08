@@ -1,0 +1,11 @@
+{
+  "name": "codetown-permissoes",
+  "displayName": "CodeTown: permissões pelo escritório",
+  "version": "0.2.0",
+  "description": "Hook PermissionRequest que deixa aprovar ou recusar pelo CodeTown os pedidos de permissão do Claude Code; o diálogo continua no terminal e vale o que você responder primeiro.",
+  "author": { "name": "Márcio Junior", "url": "https://github.com/marmottajr" },
+  "homepage": "https://github.com/marmottajr/codetown#readme",
+  "repository": "https://github.com/marmottajr/codetown",
+  "license": "MIT",
+  "keywords": ["codetown", "permissoes", "hooks"]
+}
