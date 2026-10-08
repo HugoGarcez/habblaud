@@ -22,6 +22,7 @@ import { ConnectionBanner, EmptyState, Splash } from './overlays';
 import { loadPrefs, safeLocalStorage, savePrefs, worldOptionsFrom, type UiPrefs } from './prefs';
 import { SettingsPopover } from './settings';
 import { Sidebar } from './sidebar';
+import { SoundControl } from './sound';
 import { TERMINAL_UNAVAILABLE_HINT, TerminalPanel } from './terminal';
 import { Toasts } from './toasts';
 import { TopBar } from './topbar';
@@ -129,14 +130,15 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
   };
 
   // ---------------------------------------------------------------- componentes
-  const notifier = new Notifier(ctx);
+  const sound = new SoundControl(ctx);
+  const notifier = new Notifier(ctx, sound.board);
   topbar = new TopBar(ctx);
   sidebar = new Sidebar(ctx);
   const terminal = new TerminalPanel(ctx);
   drawer = new Drawer(ctx, terminal);
   const feed = new FeedPanel(ctx);
   const toasts = new Toasts(ctx);
-  settings = new SettingsPopover(ctx, notifier);
+  settings = new SettingsPopover(ctx, notifier, sound);
   help = new HelpDialog();
   const empty = new EmptyState(ctx);
   const banner = new ConnectionBanner(ctx);
@@ -154,7 +156,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
     narrow: ctx.isNarrow(),
   }));
 
-  const components: UiComponent[] = [topbar, sidebar, drawer, terminal, feed, toasts, settings, empty, banner, tip, notifier, splash];
+  const components: UiComponent[] = [topbar, sidebar, drawer, terminal, feed, toasts, settings, empty, banner, tip, notifier, splash, sound];
 
   // ---------------------------------------------------------------- renderização agrupada por quadro
   let rafId = 0;

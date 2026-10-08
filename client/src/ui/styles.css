@@ -4809,3 +4809,119 @@ button.ui-term__think:hover,
     padding: 6px 10px 10px;
   }
 }
+
+/* ------------------------------------------------------------------ ambiente: sons nas configurações */
+
+.ui-snd__details {
+  transition: opacity 0.2s;
+}
+
+.ui-snd__details.is-off {
+  opacity: 0.45;
+}
+
+.ui-snd__vol {
+  gap: 10px;
+}
+
+.ui-snd__vol .ui-set__label {
+  flex: none;
+}
+
+.ui-snd__range {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  margin: 0;
+  background: transparent;
+  accent-color: #2f7fd1;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.ui-snd__range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--ui-line-strong);
+}
+
+.ui-snd__range::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--ui-line-strong);
+}
+
+.ui-snd__range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 3px;
+  background: #fff;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.2);
+}
+
+.ui-snd__range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 3px;
+  background: #fff;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.2);
+}
+
+.ui-snd__range:disabled {
+  cursor: default;
+}
+
+.ui-snd__value {
+  flex: none;
+  width: 34px;
+  text-align: right;
+  font: 500 12px/1 var(--font-mono);
+  color: var(--ui-muted);
+}
+
+.ui-snd__chips {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+.ui-snd__chip {
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--ui-line);
+  background: rgba(0, 0, 0, 0.2);
+  font-size: 12px;
+  color: var(--ui-muted);
+  transition:
+    background-color 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.ui-snd__chip:hover:not(:disabled) {
+  color: var(--ui-text);
+}
+
+.ui-snd__chip[aria-pressed='true'] {
+  background: var(--ui-accent-soft);
+  border-color: rgba(124, 200, 255, 0.35);
+  color: var(--ui-accent);
+  font-weight: 600;
+}
+
+.ui-snd__chip:disabled {
+  cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-snd__details,
+  .ui-snd__chip {
+    transition: none;
+  }
+}

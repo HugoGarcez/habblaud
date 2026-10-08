@@ -3,7 +3,7 @@
 import * as artModule from '../art';
 import { TILE, type ArtModule } from '../art/api';
 import type { OfficeStore } from '../net/store';
-import { DEFAULT_WORLD_OPTIONS, type Selection, type SocialEvent, type WorldApi, type WorldOptions } from './api';
+import { DEFAULT_WORLD_OPTIONS, type Selection, type SocialEvent, type SoundCue, type WorldApi, type WorldOptions } from './api';
 import { loadWorldAssets } from './assets';
 import { Camera, overviewFrame } from './camera';
 import { createDebug, type WorldDebug } from './debug';
@@ -13,6 +13,7 @@ import { attachInput, type Hit } from './input';
 import { Overlay } from './render/overlay';
 import { Renderer } from './render/renderer';
 import { Sim } from './sim/sim';
+import { SoundCues } from './sound-cues';
 
 export * from './api';
 export type { WorldDebug } from './debug';
@@ -28,6 +29,8 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
   const selectCbs = new Set<(s: Selection) => void>();
   const hoverCbs = new Set<(id: string | null) => void>();
   const socialCbs = new Set<(e: SocialEvent) => void>();
+  const soundCbs = new Set<(c: SoundCue) => void>();
+  const cues = new SoundCues(sim, camera);
   let selection: Selection = null;
   let hover: string | null = null;
   let mouse: { x: number; y: number } | null = null;
@@ -239,6 +242,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
       renderer.frame(now, dt, options, { agent: selection?.type === 'agent' ? selection.id : null, room: selection?.type === 'room' ? selection.id : null, hover });
       overlay.draw(now, options, { agent: selection?.type === 'agent' ? selection.id : null, room: selection?.type === 'room' ? selection.id : null, hover });
       renderer.pruneHeads();
+      if (soundCbs.size) cues.update(now, (c) => soundCbs.forEach((cb) => cb(c)));
       if (mouse) {
         const hit = pick(mouse.x, mouse.y);
         setHover(hit?.type === 'agent' ? hit.id : null);
@@ -320,6 +324,10 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
       socialCbs.add(cb);
       return () => void socialCbs.delete(cb);
     },
+    onSound: (cb) => {
+      soundCbs.add(cb);
+      return () => void soundCbs.delete(cb);
+    },
     destroy: () => {
       cancelAnimationFrame(raf);
       abort.abort();
@@ -330,6 +338,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
       selectCbs.clear();
       hoverCbs.clear();
       socialCbs.clear();
+      soundCbs.clear();
     },
     debug,
   };

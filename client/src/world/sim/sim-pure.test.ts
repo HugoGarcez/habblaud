@@ -17,7 +17,8 @@ import {
 } from './behavior';
 import { SpotRegistry } from './spots';
 import { Elevator } from './elevator';
-import { buildAnim, furnitureScale, nightFactor, sweepDelay } from '../render/anim';
+import { buildAnim, furnitureScale, sweepDelay } from '../render/anim';
+import { ambientAt } from '../render/daylight';
 
 function spot(id: string, kind: SpotDef['kind'], extra: Partial<SpotDef> = {}): SpotDef {
   return { id, kind, areaId: 'a', tx: 0, ty: 0, x: 0, y: 0, dir: 'up', ...extra };
@@ -230,10 +231,10 @@ describe('animações', () => {
   });
 
   it('dia e noite', () => {
-    expect(nightFactor(12)).toBe(0);
-    expect(nightFactor(23)).toBe(1);
-    expect(nightFactor(3)).toBe(1);
-    expect(nightFactor(18.5)).toBeGreaterThan(0);
-    expect(nightFactor(18.5)).toBeLessThan(1);
+    expect(ambientAt(12).night).toBe(0);
+    expect(ambientAt(23).night).toBe(1);
+    expect(ambientAt(3).night).toBe(1);
+    expect(ambientAt(18.5).night).toBeGreaterThan(0);
+    expect(ambientAt(18.5).night).toBeLessThan(1);
   });
 });

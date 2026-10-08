@@ -15,6 +15,24 @@ export interface WorldOptions {
   followSelected: boolean;
   /** Ciclo dia/noite pela hora local (janelas, iluminação). */
   dayNight: boolean;
+  /** (Opcional, aditivo) Ciclo dia/noite: automático, sempre dia ou sempre noite. Vale sobre `dayNight`. */
+  daylight?: DaylightMode;
+}
+
+/** Ciclo dia/noite: segue a hora local, ou fixa o dia ou a noite. */
+export type DaylightMode = 'auto' | 'day' | 'night';
+
+/** Sons do ambiente que o mundo sugere (quem toca, e se toca, é a UI). */
+export type SoundCueKind = 'keys' | 'elevator' | 'pingpong' | 'table' | 'arcade';
+
+export interface SoundCue {
+  kind: SoundCueKind;
+  /** 0..1: proximidade (zoom, fora da tela...). */
+  gain: number;
+  /** -1 (esquerda) .. 1 (direita): posição na tela. */
+  pan: number;
+  /** Teclado: quantas teclas na rajada. */
+  count?: number;
 }
 
 export interface WorldApi {
@@ -46,6 +64,8 @@ export interface WorldApi {
   social?(agentId: string): AgentSocial | null;
   /** (Opcional, aditivo) Acontecimentos sociais (partidas e apostas) para o feed. */
   onSocialEvent?(cb: (e: SocialEvent) => void): () => void;
+  /** (Opcional, aditivo) Sons do ambiente: teclado de quem trabalha à vista, elevador, rodas. */
+  onSound?(cb: (cue: SoundCue) => void): () => void;
   destroy(): void;
 }
 

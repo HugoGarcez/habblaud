@@ -41,6 +41,23 @@ describe('preferências', () => {
     expect(() => savePrefs(broken, DEFAULT_PREFS)).not.toThrow();
   });
   it('extrai só as opções do mundo', () => {
-    expect(worldOptionsFrom({ ...DEFAULT_PREFS, dayNight: false })).toEqual({ showNames: true, bubbles: 'important', liveliness: 'normal', dayNight: false });
+    expect(worldOptionsFrom({ ...DEFAULT_PREFS, daylight: 'day' })).toEqual({ showNames: true, bubbles: 'important', liveliness: 'normal', dayNight: false, daylight: 'day' });
+    expect(worldOptionsFrom({ ...DEFAULT_PREFS, daylight: 'night' })).toMatchObject({ dayNight: true, daylight: 'night' });
+  });
+  it('ciclo dia/noite: valida o modo e migra o interruptor antigo', () => {
+    expect(DEFAULT_PREFS.daylight).toBe('auto');
+    expect(sanitizePrefs({ daylight: 'night' }).daylight).toBe('night');
+    expect(sanitizePrefs({ daylight: 'meio-dia' }).daylight).toBe('auto');
+    expect(sanitizePrefs({ dayNight: false }).daylight).toBe('day');
+    expect(sanitizePrefs({ dayNight: true }).daylight).toBe('auto');
+    expect(sanitizePrefs({ dayNight: false, daylight: 'night' }).daylight).toBe('night');
+  });
+  it('sons: desligados por padrão; volume e categorias validados', () => {
+    expect(DEFAULT_PREFS.sound).toBe(false);
+    const p = sanitizePrefs({ sound: true, sounds: { volume: 3, keys: false, elevator: 'sim' } });
+    expect(p.sound).toBe(true);
+    expect(p.sounds).toEqual({ volume: 1, alerts: true, keys: false, elevator: true, social: true });
+    expect(sanitizePrefs({ sounds: { volume: -1 } }).sounds.volume).toBe(0);
+    expect(sanitizePrefs({ sounds: 'alto' }).sounds).toEqual(DEFAULT_PREFS.sounds);
   });
 });

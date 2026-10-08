@@ -233,13 +233,27 @@ um **chip colorido com a letra da conta** (C, D…).
 - **Gaveta de detalhes:** clique num personagem (no prédio ou na lista) para ver atividade, tarefas, subagentes,
   linha do tempo e estatísticas (ferramentas, tokens, custo, linhas alteradas, modelo, branch).
 - **Feed:** as últimas atividades de todo o escritório.
-- **Configurações (⚙):** nomes, balões, quanto os ociosos passeiam, dia e noite, som, notificações do navegador e
-  modo demonstração. **Ajuda (?):** legenda completa e atalhos.
+- **Configurações (⚙):** nomes, balões, quanto os ociosos passeiam, ciclo dia/noite, sons, notificações do navegador
+  e modo demonstração. **Ajuda (?):** legenda completa e atalhos.
 
 **Câmera:** arraste para mover, role para dar zoom, clique duplo num personagem para segui-lo.
 
 **Atalhos:** `/` busca · `F` seguir o selecionado · `O` ou `0` visão geral · `Esc` limpar seleção ·
 `[` painel lateral · `]` feed · setas/`WASD` mover · `+` `-` zoom · `?` ajuda.
+
+### Dia, noite e sons
+
+O escritório acompanha a **hora local**: de madrugada e à noite o gramado e a rua ficam azulados e escuros, os postes,
+os abajures, as máquinas e os monitores ligados acendem halos de luz, as salas com gente ficam iluminadas (a luz que
+apaga quando a sala esvazia continua valendo), os carros passam de farol aceso e aparecem vaga-lumes no jardim. No
+amanhecer (~5–7 h) e no entardecer (~17–19 h) tudo ganha um tom quente, e durante o dia o sol entra pelas janelas e
+desenha faixas de luz no piso — curtas ao meio-dia, longas e alaranjadas no fim da tarde. Em **Configurações › Ciclo
+dia/noite** dá para escolher automático, sempre dia ou sempre noite; para testar um horário, use `?hora=21:30` na URL.
+
+Os **sons** vêm desligados. Ligados em **Configurações › Sons**, são sintetizados no próprio navegador (sem arquivos
+de áudio) e baixinhos: o teclado de quem trabalha nas salas à vista, o "ding" do elevador quando alguém chega ou vai
+embora, o sino quando alguém precisa de você, o estalo de tarefa concluída e o pingue-pongue e o fliperama das rodas.
+Há volume geral e cada categoria liga e desliga à parte. Com a aba oculta, só o sino toca.
 
 ### Terminal somente leitura
 
@@ -432,7 +446,7 @@ node scripts/shot.mjs 'http://localhost:4747/?mock=1&speed=3' /tmp/codetown.png 
 ```
 
 No console do navegador, `codetown.world.debug` tem ferramentas para testar cenas (ex.:
-`codetown.world.debug.setHour(21)` para ver a noite).
+`codetown.world.debug.setHour(21)` para ver a noite). Para fixar a hora já ao abrir, use `?hora=21:30` na URL.
 
 ## Solução de problemas
 
