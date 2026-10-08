@@ -1,6 +1,6 @@
 {
   "name": "codetown",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "description": "Escritório virtual animado que mostra, em tempo real, o que seus agentes do Claude Code estão fazendo.",
   "license": "MIT",
