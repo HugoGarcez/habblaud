@@ -25,6 +25,10 @@ do meio (0.**3**.0).
   um bug do Node: nodejs/node#56645) logo depois de receber a resposta do escritório. A decisão chegava antes da
   queda, mas sem decisão (como em "Responder no terminal") a sessão podia registrar um erro do hook. Agora o hook
   sai sem cair.
+- O `npm install` alterava o `package-lock.json` (o do repositório estava desatualizado em relação ao
+  `package.json`), e por isso o `git pull` da versão seguinte parava com "Your local changes … would be
+  overwritten". Agora o arquivo fica igual. Quem já tem a alteração roda uma vez `git checkout -- package-lock.json`
+  antes do `git pull`.
 
 ## [0.4.0] - 2026-10-08
 
