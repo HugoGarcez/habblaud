@@ -317,7 +317,7 @@ export interface OfficeSnapshot {
      */
     build?: string;
     /**
-     * Terminal somente leitura (GET /api/agents/:id/terminal) disponível: só quando o Habblaud não fica
+     * Terminal (GET /api/agents/:id/terminal) disponível: só quando o Habblaud não fica
      * exposto além do próprio computador (bind local). Ausente/false = recurso desligado.
      */
     terminal?: boolean;
@@ -404,7 +404,7 @@ export interface ModWaitingAgent {
   answerable: boolean;
 }
 
-// ------------------------------------------------------------------ terminal somente leitura
+// ------------------------------------------------------------------ terminal
 
 /**
  * Como exibir o `input` de uma chamada de ferramenta:
@@ -413,7 +413,7 @@ export interface ModWaitingAgent {
 export type TerminalInputKind = 'command' | 'diff' | 'json' | 'text';
 
 /**
- * Uma entrada do terminal somente leitura: a conversa da sessão reconstruída do transcript JSONL,
+ * Uma entrada do terminal: a conversa da sessão reconstruída do transcript JSONL,
  * no formato em que o Claude Code a mostra. Todo texto já vem com segredos mascarados e truncado.
  * Entradas só são acrescentadas (nunca editadas): o resultado de uma ferramenta chega depois, numa
  * entrada 'result' que aponta para a 'tool' pelo `toolUseId`.
@@ -445,7 +445,7 @@ export interface TerminalInit {
 }
 
 /**
- * Stream do terminal somente leitura (Server-Sent Events) em GET /api/agents/:id/terminal.
+ * Stream do terminal (Server-Sent Events) em GET /api/agents/:id/terminal.
  * Ao conectar (e a cada reconexão, ou se o transcript for truncado/substituído) chega um `init`;
  * depois, `append` com as entradas novas. Erros antes do stream respondem JSON `{error}`:
  * 403 (recurso desligado ou acesso que não é local), 404 (agente/transcript desconhecido),
@@ -454,7 +454,7 @@ export interface TerminalInit {
 export type TerminalMessage = { type: 'init'; data: TerminalInit } | { type: 'append'; data: TerminalEntry[] };
 
 /**
- * Uma sessão recente (aberta ou já encerrada) no histórico do terminal somente leitura, em
+ * Uma sessão recente (aberta ou já encerrada) no histórico do terminal, em
  * GET /api/sessions/recent. A conversa de uma sessão encerrada sai, com o mesmo protocolo do terminal
  * do agente (TerminalMessage), de GET /api/sessions/:conta/:sessionId/terminal.
  */
@@ -501,7 +501,7 @@ export interface PermissionSuggestionInfo {
 /**
  * Pedido de permissão pendente que dá para responder pelo Habblaud: o hook PermissionRequest do Claude Code
  * (mod/habblaud-permissoes/hooks/permission-hook.mjs) o registra e fica esperando a decisão. Só existe com bind local (a mesma
- * trava do terminal somente leitura) e com alguma página do Habblaud aberta.
+ * trava do terminal) e com alguma página do Habblaud aberta.
  * No snapshot vai sem `input` (os argumentos completos só saem por GET /api/permissions/:id, com acesso
  * local); os pedidos fictícios do demo já vêm com ele.
  */

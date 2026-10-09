@@ -1,4 +1,4 @@
-// Histórico do terminal somente leitura (rotas /api/sessions/*):
+// Histórico do terminal (rotas /api/sessions/*):
 //   GET /api/sessions/recent                       -> RecentSessionsResponse (sessões dos últimos 7 dias)
 //   GET /api/sessions/:conta/:sessionId/terminal   -> SSE com o mesmo protocolo do terminal do agente
 // Mesma trava do terminal (ServerConfig.terminal + Host local), porque expõem títulos e conversas. A conta
@@ -15,7 +15,7 @@ import type { TerminalStreams } from './terminal';
 export interface SessionRoutesDeps {
   /** Ausente = recurso desligado (sem bind local). */
   history?: SessionHistory;
-  /** Ausente = terminal somente leitura desligado. */
+  /** Ausente = terminal desligado. */
   terminals?: TerminalStreams;
 }
 

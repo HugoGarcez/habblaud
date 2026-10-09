@@ -1,4 +1,4 @@
-// Terminal somente leitura dos agentes de demonstração: uma conversa fictícia e determinística montada
+// Terminal dos agentes de demonstração: uma conversa fictícia e determinística montada
 // a partir do título e das atividades do agente simulado (nenhum dado real). Código puro.
 //
 // Cada atividade vira uma ou mais entradas com ids derivados do id da atividade: quando o servidor

@@ -105,7 +105,7 @@ function commandPreview(p: Pick<PermissionRequestInfo, 'input' | 'inputKind'> | 
   return !!p && p.inputKind === 'command' && !!p.input?.trim();
 }
 
-/** Prévia dos argumentos (comando, diff, JSON, texto), com as mesmas classes do terminal somente leitura. */
+/** Prévia dos argumentos (comando, diff, JSON, texto), com as mesmas classes do terminal. */
 function previewBlock(p: Pick<PermissionRequestInfo, 'title' | 'input' | 'inputKind'>): HTMLElement | null {
   if (!commandPreview(p) && !showToolInput(p)) return null;
   const kind = p.inputKind ?? 'text';

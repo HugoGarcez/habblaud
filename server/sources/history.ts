@@ -1,4 +1,4 @@
-// Histórico do terminal somente leitura: as sessões recentes de cada conta (abertas ou já encerradas),
+// Histórico do terminal: as sessões recentes de cada conta (abertas ou já encerradas),
 // listadas a partir dos transcripts <config>/projects/<projeto>/<sessionId>.jsonl (no Docker, a pasta
 // projects/ de cada conta montada só para leitura). De cada arquivo lê só o começo (projeto, primeira
 // atividade e o primeiro prompt) e o fim (título e última atividade), nunca o arquivo inteiro, e guarda o

@@ -1,4 +1,4 @@
-// Visão completa do transcript para o terminal somente leitura: converte as linhas JSONL do Claude Code
+// Visão completa do transcript para o terminal: converte as linhas JSONL do Claude Code
 // em TerminalEntry (prompts, respostas, ferramentas e seus resultados), com segredos mascarados e
 // textos truncados. Independente do parser de atividades (transcript.ts): aqui o objetivo é mostrar a
 // conversa como o Claude Code a exibe, não resumir o que o personagem está fazendo.

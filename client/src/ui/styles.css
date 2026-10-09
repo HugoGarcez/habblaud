@@ -5939,7 +5939,7 @@ html.is-replay #world {
 /* ------------------------------------------------------------------------------------------------
    Responder pelo escritório: cartão "Pede permissão" na gaveta do agente (ui/permission.ts), o atalho
    "Responder" nos avisos e o destaque do contador "precisam de você". A prévia (comando/diff) reaproveita
-   as classes do terminal somente leitura (ui-term__in, ui-term__dl...).
+   as classes do terminal (ui-term__in, ui-term__dl...).
    ------------------------------------------------------------------------------------------------ */
 
 .ui-perm {

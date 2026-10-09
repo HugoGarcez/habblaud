@@ -1,4 +1,4 @@
-// Terminal somente leitura: a trava da config (só bind local), os status da rota, o transporte SSE
+// Terminal: a trava da config (só bind local), os status da rota, o transporte SSE
 // (init/append/reset/limite) com um JSONL temporário e parser injetado, o demo e o caminho do transcript
 // que o watcher informa.
 import http from 'node:http';
@@ -22,7 +22,7 @@ import { MAX_STREAMS, TerminalStreams, type TerminalOptions } from './terminal';
 
 setQuiet(true);
 
-describe('trava do terminal somente leitura (config)', () => {
+describe('trava do terminal (config)', () => {
   it('isLoopbackBind: 127.0.0.0/8, ::1 e localhost', () => {
     for (const v of ['127.0.0.1', '127.1.2.3', ' 127.0.0.1 ', '::1', '[::1]', '0:0:0:0:0:0:0:1', 'localhost', 'LocalHost']) expect(isLoopbackBind(v)).toBe(true);
     for (const v of [undefined, '', '0.0.0.0', '::', '[::]', '192.168.0.10', '10.0.0.5', 'fe80::1', '128.0.0.1', 'meu-mac.local', 'app.localhost', '127.0.0.1.nip.io']) {
@@ -221,7 +221,7 @@ const waitFor = (fn: () => void) => vi.waitFor(fn, { timeout: 3_000, interval: 1
 
 // ------------------------------------------------------------------ rota
 
-describe('terminal somente leitura: rota', () => {
+describe('terminal: rota', () => {
   it('recurso desligado: 403 JSON; /api/health e meta.terminal dizem false', async () => {
     const env = await serve({ terminal: false });
     try {
@@ -307,7 +307,7 @@ describe('terminal somente leitura: rota', () => {
 
 // ------------------------------------------------------------------ transporte
 
-describe('terminal somente leitura: transporte', () => {
+describe('terminal: transporte', () => {
   it('init com a conversa do transcript; depois append só com as linhas novas', async () => {
     const env = await serve();
     try {
@@ -448,7 +448,7 @@ describe('terminal somente leitura: transporte', () => {
 
 // ------------------------------------------------------------------ demo
 
-describe('terminal somente leitura: agentes do demo', () => {
+describe('terminal: agentes do demo', () => {
   it('conversa fictícia (demoTerminalEntries): init com o id do agente', async () => {
     const env = await serve();
     try {

@@ -207,7 +207,7 @@ export class ClaudeWatcher {
   }
 
   /**
-   * Caminho do transcript de um agente presente (terminal somente leitura): principal = "<conta>:<pid>"
+   * Caminho do transcript de um agente presente (terminal): principal = "<conta>:<pid>"
    * (depois de /clear ou /resume, o transcript novo); subagente = "<sessionId>:<agentId>". Undefined se o
    * agente não é acompanhado (ou o transcript do principal ainda não foi achado).
    */

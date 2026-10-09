@@ -13,7 +13,7 @@ export interface DemoPermissionSource {
 /** Quanto tempo o "hook" fictício espera antes de devolver o pedido ao terminal. */
 export const DEMO_PERMISSION_MS = 5 * 60_000;
 
-/** Linhas de um diff fictício, no formato do terminal somente leitura ("- antiga" / "+ nova"). */
+/** Linhas de um diff fictício, no formato do terminal ("- antiga" / "+ nova"). */
 const DEMO_DIFFS: readonly string[][] = [
   ['- const total = items.reduce((s, i) => s + i.price, 0);', '+ const total = items.reduce((s, i) => s + i.price * i.qty, 0);', '+ if (total < 0) throw new Error("total inválido");'],
   ['- export const TIMEOUT = 5_000;', '+ export const TIMEOUT = 15_000;'],
@@ -69,7 +69,7 @@ const DEMO_QUESTIONS: readonly DemoQuestion[][] = [
   ],
 ];
 
-/** As perguntas em texto, como o terminal somente leitura mostra os argumentos do AskUserQuestion. */
+/** As perguntas em texto, como o terminal mostra os argumentos do AskUserQuestion. */
 function questionsText(qs: readonly DemoQuestion[]): string {
   return qs.map((q) => [q.question, ...q.options.map((o) => `  - ${o.label}${o.description ? `: ${o.description}` : ''}`)].join('\n')).join('\n\n');
 }
