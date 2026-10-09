@@ -35,7 +35,7 @@ import {
   taskProgress,
   visibleShells,
 } from './model';
-import { PermissionCard } from './permission';
+import { isLocalHostname, PermissionCard } from './permission';
 import { createAgentRow, updateAgentRow } from './rows';
 import { SocialSection } from './social';
 import { TERMINAL_UNAVAILABLE_HINT, type TerminalControl } from './terminal';
@@ -188,10 +188,15 @@ class AgentView {
   private termLabel: HTMLElement;
   private alert: HTMLElement;
   private alertText: HTMLElement;
-  /** Perguntas e opções do AskUserQuestion pendente (só leitura: a resposta é dada no Claude Code). */
+  /**
+   * Perguntas e opções do AskUserQuestion pendente, só para leitura: com o pedido no escritório (hook de
+   * permissão), quem aparece é o cartão de resposta, no lugar do alerta.
+   */
   private alertQuestions: HTMLElement;
   private alertQuestionsKey = '';
-  /** Pedido de permissão para responder por aqui (substitui o alerta genérico enquanto existe). */
+  /** Dica de como responder as perguntas por aqui (o plugin de permissões). */
+  private alertAnswerHint: HTMLElement;
+  /** Pedido de permissão (ou pergunta) para responder por aqui (substitui o alerta genérico enquanto existe). */
   private perm: PermissionCard;
   private shellBox: HTMLElement;
   private shellText: HTMLElement;
@@ -271,13 +276,14 @@ class AgentView {
 
     this.alertText = h('p', { class: 'ui-alert__text' });
     this.alertQuestions = h('div', { class: 'ui-ask', hidden: true });
+    this.alertAnswerHint = h('p', { class: 'ui-ask__answer-hint', hidden: true, text: 'Com o plugin habblaud-permissoes (npm run mod:install), dá para responder as perguntas por aqui.' });
     const alertIcon = h('span', { class: 'ui-alert__icon', attrs: { 'aria-hidden': 'true' } });
     alertIcon.innerHTML = ICONS.hand;
     this.alert = h(
       'div',
       { class: 'ui-alert', role: 'alert', hidden: true },
       alertIcon,
-      h('div', {}, h('strong', { class: 'ui-alert__title', text: 'Precisa de você' }), this.alertText, this.alertQuestions),
+      h('div', {}, h('strong', { class: 'ui-alert__title', text: 'Precisa de você' }), this.alertText, this.alertQuestions, this.alertAnswerHint),
     );
 
     // Esperando o shell: caixa de status (com a fase da espera no escritório) e a lista de comandos rodando.
@@ -455,7 +461,11 @@ class AgentView {
         `Vá ao terminal da ${account?.name ?? a.account} em ${room?.name ?? 'seu projeto'} para responder${a.waitingFor ? `: ${a.waitingFor}` : '.'}`,
       );
     }
-    this.renderQuestions(waiting && a.activity?.kind === 'ask' ? a.activity : undefined);
+    const asking = waiting && a.activity?.kind === 'ask' ? a.activity : undefined;
+    this.renderQuestions(asking);
+    // Sem o pedido no escritório: dá para responder por aqui com o plugin (só com a trava local, como o cartão).
+    const answerable = !!asking?.questions?.length && !this.perm.visible && !this.ctx.store.mock && !!this.ctx.store.snapshot?.meta.terminal && isLocalHostname(location.hostname);
+    setHidden(this.alertAnswerHint, !answerable);
 
     // Esperando o shell.
     setHidden(this.shellBox, !wait);
@@ -523,7 +533,7 @@ class AgentView {
     this.renderStats(a, now);
   }
 
-  /** Lista as perguntas pendentes com as opções, só para leitura (a resposta continua no Claude Code). */
+  /** Lista as perguntas pendentes com as opções, só para leitura (sem o pedido no escritório, a resposta é no Claude Code). */
   private renderQuestions(act: Activity | undefined): void {
     const qs = act?.questions ?? [];
     setHidden(this.alertQuestions, qs.length === 0);

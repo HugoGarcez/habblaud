@@ -6054,6 +6054,131 @@ html.is-replay #world {
   color: #ffb3aa;
 }
 
+/* Perguntas do AskUserQuestion no cartão: rádios (escolha única) ou caixas (várias), com a descrição, e o
+   "Outro" com o campo de texto. Cabeçalho, pergunta, dica e descrição reaproveitam as classes ui-ask__* do
+   alerta "Precisa de você". */
+.ui-perm-ask {
+  display: grid;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.ui-perm-ask__q {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.ui-perm-ask__q + .ui-perm-ask__q {
+  padding-top: 10px;
+  box-shadow: inset 0 1px 0 rgba(255, 181, 71, 0.25);
+}
+
+/* Legenda flutuando: fica no fluxo normal (sem o recorte que o fieldset faz na borda). */
+.ui-perm-ask__legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+}
+
+.ui-perm-ask__legend .ui-ask__question {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.ui-perm-ask__q > .ui-ask__hint {
+  clear: both;
+}
+
+.ui-perm-ask__opt {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 6px 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 181, 71, 0.22);
+  background: rgba(0, 0, 0, 0.18);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ui-perm-ask__opt:hover {
+  border-color: rgba(255, 181, 71, 0.5);
+}
+
+.ui-perm-ask__opt:has(.ui-perm-ask__input:checked) {
+  border-color: rgba(255, 181, 71, 0.75);
+  background: rgba(255, 181, 71, 0.13);
+}
+
+.ui-perm-ask__opt:has(.ui-perm-ask__input:disabled) {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ui-perm-ask__input {
+  flex: none;
+  margin: 2px 0 0;
+  accent-color: var(--st-waiting);
+}
+
+.ui-perm-ask__opt-text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ui-perm-ask__opt-text strong {
+  font-weight: 600;
+  color: #fff3df;
+}
+
+.ui-perm-ask__other {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.ui-perm-ask__other .ui-perm-ask__opt {
+  flex: none;
+  align-items: center;
+  margin-top: 0;
+}
+
+.ui-perm-ask__other .ui-perm-ask__input {
+  margin-top: 0;
+}
+
+.ui-perm-ask__text {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--ui-line-strong);
+  background: rgba(0, 0, 0, 0.32);
+  color: var(--ui-text);
+  font: 12.5px/1.4 var(--font-ui);
+}
+
+.ui-perm-ask__text:focus {
+  outline: none;
+  border-color: rgba(255, 181, 71, 0.7);
+}
+
+.ui-perm-ask__text:disabled {
+  opacity: 0.5;
+}
+
+/* Sem pedido no escritório, a lista do alerta é só leitura: a dica de como responder por aqui. */
+.ui-ask__answer-hint {
+  margin-top: 8px;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
 /* "Responder" no aviso de quem tem pedido para responder pelo escritório. */
 .ui-toast__answer {
   flex: none;

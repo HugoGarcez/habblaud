@@ -70,7 +70,7 @@ const SHORTCUTS: [string[], string][] = [
   [['T'], 'Abrir ou fechar o terminal do agente selecionado (somente leitura)'],
   [['Ctrl+F'], 'Com o terminal em foco: buscar na conversa (⌘F no Mac); Enter e Shift+Enter navegam'],
   [['L'], 'Abrir ou fechar o timelapse do dia'],
-  [['P'], 'Ir até o próximo pedido de permissão para responder pelo escritório'],
+  [['P'], 'Ir até o próximo pedido de permissão ou pergunta para responder pelo escritório'],
   [['M'], 'Meu dia: para onde foi o tempo (trabalhando, esperando você...)'],
   [['O', '0'], 'Visão geral do prédio'],
   [['Esc'], 'Fechar a busca do terminal, depois o terminal; depois, a gaveta e a seleção'],
@@ -135,7 +135,7 @@ export class HelpDialog {
               text: 'No terminal: busca (lupa ou Ctrl/⌘+F), filtro “Tudo / Só prompts / Sem ferramentas” e um botão de copiar em cada entrada. O relógio da barra superior abre o histórico das sessões dos últimos 7 dias, inclusive as já encerradas.',
             }),
             h('li', {
-              text: 'Com o mod do Habblaud instalado (npm run mod:install, que inclui o plugin de permissões), quem “pede permissão” mostra nos detalhes o comando ou a edição e os botões Aprovar, Recusar e Responder no terminal. O diálogo continua no terminal: vale o que você responder primeiro.',
+              text: 'Com o mod do Habblaud instalado (npm run mod:install, que inclui o plugin de permissões), quem “pede permissão” mostra nos detalhes o comando ou a edição e os botões Aprovar, Recusar e Responder no terminal; quem faz uma pergunta mostra as opções (e um “Outro” para escrever) para responder por aqui. O diálogo continua no terminal: vale o que você responder primeiro.',
             }),
           ),
           shortcuts,

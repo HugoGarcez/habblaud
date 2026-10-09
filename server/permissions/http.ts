@@ -4,7 +4,7 @@
 //   POST /api/permissions                 (hook)    registra o pedido: 201 {id, expiresAt} ou 200 {skip}
 //   GET  /api/permissions/:id/wait        (hook)    long-poll: {status: pending | decided | released}
 //   GET  /api/permissions/:id             (página)  detalhe com os argumentos (comando, diff...)
-//   POST /api/permissions/:id/decision    (página)  {behavior: allow | deny | terminal, message?, ...}
+//   POST /api/permissions/:id/decision    (página)  {behavior: allow | deny | terminal | answer, message?, answers?, ...}
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { HttpError, readJson, sendJson } from '../http/app';
 import { InvalidRequest, parseDecision, WAIT_MAX_MS, type PermissionRegistry } from './registry';
@@ -56,7 +56,9 @@ export function createPermissionRoutes(registry: PermissionRegistry): (req: Inco
 
   const decide = async (req: IncomingMessage, res: ServerResponse, id: string) => {
     const d = parseDecision(await readJson(req));
-    if (!d) throw new HttpError(400, 'esperado {behavior: "allow" | "deny" | "terminal", message?, interrupt?, suggestion?}');
+    if (!d) {
+      throw new HttpError(400, 'esperado {behavior: "allow" | "deny" | "terminal", message?, interrupt?, suggestion?} ou {behavior: "answer", answers: [{question, options?, other?}]}');
+    }
     switch (registry.decide(id, d)) {
       case 'ok':
         return sendJson(res, 200, { ok: true });
@@ -66,6 +68,8 @@ export function createPermissionRoutes(registry: PermissionRegistry): (req: Inco
         return sendJson(res, 409, { error: 'este pedido já foi respondido' });
       case 'invalid':
         return sendJson(res, 400, { error: 'sugestão de regra desconhecida para este pedido' });
+      case 'invalid-answer':
+        return sendJson(res, 400, { error: 'resposta que não serve para este pedido: pergunta se responde com "answer" (cada pergunta uma vez, com as opções dela); os outros pedidos, com "allow" ou "deny"' });
     }
   };
 

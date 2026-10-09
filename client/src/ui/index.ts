@@ -299,11 +299,11 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
         break;
       case 'p':
       case 'P': {
-        // Próximo pedido de permissão para responder pelo escritório (só leva até ele: nunca aprova).
+        // Próximo pedido de permissão ou pergunta para responder pelo escritório (só leva até ele: nunca aprova).
         e.preventDefault();
         const next = nextPermissionAgent(store.snapshot?.agents ?? [], selection?.type === 'agent' ? selection.id : undefined);
         if (next) focusPermission(ctx, next.id);
-        else ctx.announce('Nenhum pedido de permissão para responder agora.');
+        else ctx.announce('Nenhum pedido de permissão ou pergunta para responder agora.');
         break;
       }
       case 'o':

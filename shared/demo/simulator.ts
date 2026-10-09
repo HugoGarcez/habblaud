@@ -1,18 +1,19 @@
 // Simulador de escritório para demonstração e desenvolvimento.
 // Puro (sem Node/DOM): roda no servidor (HABBLAUD_DEMO=1) e no navegador (?mock=1).
 //
-// Gera sessões fictícias com ciclos realistas: prompt -> trabalho -> (permissão, com pedido fictício
-// para responder pelo escritório) -> (subagentes)
+// Gera sessões fictícias com ciclos realistas: prompt -> trabalho -> (permissão ou pergunta, com pedido
+// fictício para responder pelo escritório) -> (subagentes)
 // -> (comando longo em primeiro plano) -> fim de turno -> (esperando shell em segundo plano) ->
 // pausa -> ... e encerra sessões de tempos em tempos para exercitar as animações de chegada,
 // saída, "apagar a luz" e sumiço de salas.
 import type { AccountInfo, Activity, AgentInfo, FeedItem, Notice, OfficeSnapshot, PermissionDecision, RoomInfo, ShellJob, TaskItem } from '../types';
 import { describePrompt, describeShellJob, describeTool, SHELL_DONE_TOOL, SHELL_WAIT_TOOL, SPECIAL, type ActivityDescription, type ShellOutcome } from '../activity';
+import { answerSummary, ASK_TOOL, checkAnswers } from '../answers';
 import { describeGitHubEvent, GITHUB_TOOL, RoomEffects } from '../github';
 import { hash32, mulberry32 } from '../hash';
 import { pickName } from '../names';
 import { demoGitHubEvent } from './github';
-import { demoPermission } from './permission';
+import { demoPermission, type DemoPermissionKind } from './permission';
 
 interface DemoProject {
   name: string;
@@ -298,21 +299,28 @@ export class DemoSimulator {
   // ---------------------------------------------------------------- pedidos de permissão (fictícios)
 
   /**
-   * Resposta a um pedido fictício pelo escritório: aprovar ou recusar retomam o trabalho na hora;
-   * "responder no terminal" só tira o pedido do escritório (o agente continua esperando um pouco).
-   * false = pedido desconhecido (já respondido ou de outra instância).
+   * Resposta a um pedido fictício pelo escritório: aprovar, recusar ou responder a pergunta retomam o
+   * trabalho na hora; "responder no terminal" só tira o pedido do escritório (o agente continua esperando
+   * um pouco). false = pedido desconhecido (já respondido ou de outra instância) ou resposta que não serve
+   * (pergunta só se responde com as respostas, conferidas como no servidor).
    */
   decidePermission(requestId: string, d: PermissionDecision, now = Date.now()): boolean {
     const a = [...this.agents.values()].find((x) => x.info.permission?.id === requestId);
     if (!a || a.phase !== 'waiting') return false;
-    const title = a.info.permission!.title;
+    const p = a.info.permission!;
+    const ask = p.tool === ASK_TOOL;
+    const answers = d.behavior === 'answer' && ask ? checkAnswers(p.questions ?? [], d.answers) : undefined;
+    if ((d.behavior === 'answer' && !answers) || (d.behavior === 'allow' && ask)) return false;
+    const title = p.title;
     delete a.info.permission;
     this.dirty = true;
     if (d.behavior === 'terminal') {
       a.phaseUntil = Math.min(a.phaseUntil, now + this.ms(3_000, 8_000));
       return true;
     }
-    if (d.behavior === 'allow') {
+    if (answers) {
+      this.activity(a, now, { kind: 'other', icon: '💬', text: 'Respondido no Habblaud', detail: answerSummary(p.questions ?? [], answers), tool: 'PermissionRequest' });
+    } else if (d.behavior === 'allow') {
       this.activity(a, now, { kind: 'other', icon: '✅', text: d.suggestion !== undefined ? 'Aprovado no Habblaud (sempre permitir)' : 'Aprovado no Habblaud', detail: title, tool: 'PermissionRequest' });
     } else {
       this.activity(a, now, { kind: 'wait', icon: '🚫', text: 'Recusado no Habblaud', detail: d.message ? `${title} — ${d.message}` : title, tool: 'PermissionRequest' });
@@ -323,9 +331,10 @@ export class DemoSimulator {
 
   /**
    * Faz um agente principal que está trabalhando (ou, sem nenhum, qualquer um ocioso) pedir permissão
-   * agora. Para testes e capturas de tela; devolve o id do agente.
+   * agora (`kind` força uma permissão ou uma pergunta do AskUserQuestion; sem ele, é sorteado). Para testes
+   * e capturas de tela; devolve o id do agente.
    */
-  forcePermission(now = Date.now()): string | undefined {
+  forcePermission(now = Date.now(), kind?: DemoPermissionKind): string | undefined {
     const mains = [...this.agents.values()].filter((a) => a.info.kind === 'main' && a.removeAt === undefined);
     const a = mains.find((x) => x.phase === 'working') ?? mains.find((x) => x.phase === 'idle');
     if (!a) return undefined;
@@ -334,20 +343,21 @@ export class DemoSimulator {
       a.actionsLeft = 3;
       this.setStatus(a, 'working', now);
     }
-    this.askPermission(a, now);
+    this.askPermission(a, now, kind);
     return a.info.id;
   }
 
-  /** Para no meio do turno pedindo permissão (com o pedido fictício para responder pelo escritório). */
-  private askPermission(a: SimAgent, now: number): void {
+  /** Para no meio do turno pedindo permissão ou perguntando (com o pedido fictício para responder pelo escritório). */
+  private askPermission(a: SimAgent, now: number, kind?: DemoPermissionKind): void {
     a.phase = 'waiting';
     // Com o cartão para responder, a espera é mais longa (dá tempo de clicar).
     a.phaseUntil = now + this.ms(25_000, 50_000);
-    a.info.waitingFor = 'aprovar uma permissão';
-    a.info.permission = demoPermission(`${this.prefix}perm-${this.tag}-${++this.seq}`, a.project, a.rng, now);
+    a.info.permission = demoPermission(`${this.prefix}perm-${this.tag}-${++this.seq}`, a.project, a.rng, now, kind);
+    const reason = a.info.permission.tool === ASK_TOOL ? 'responder uma pergunta' : 'aprovar uma permissão';
+    a.info.waitingFor = reason;
     this.setStatus(a, 'waiting', now);
-    this.activity(a, now, SPECIAL.waiting('aprovar uma permissão'));
-    this.notice(now, 'alert', `✋ ${a.info.name} precisa de você em ${a.project.name}: aprovar uma permissão`, a.info.id, a.info.roomId);
+    this.activity(a, now, SPECIAL.waiting(reason));
+    this.notice(now, 'alert', `✋ ${a.info.name} precisa de você em ${a.project.name}: ${reason}`, a.info.id, a.info.roomId);
   }
 
   private resumeFromWaiting(a: SimAgent, now: number): void {
@@ -826,6 +836,9 @@ function structuredCloneAgent(a: AgentInfo): AgentInfo {
     activity: a.activity ? { ...a.activity } : undefined,
   };
   if (a.shells) c.shells = a.shells.map((j) => ({ ...j }));
-  if (a.permission) c.permission = { ...a.permission, suggestions: a.permission.suggestions?.map((s) => ({ ...s, rules: s.rules.slice() })) };
+  if (a.permission) {
+    c.permission = { ...a.permission, suggestions: a.permission.suggestions?.map((s) => ({ ...s, rules: s.rules.slice() })) };
+    if (a.permission.questions) c.permission.questions = a.permission.questions.map((q) => ({ ...q, options: q.options.map((o) => ({ ...o })) }));
+  }
   return c;
 }
