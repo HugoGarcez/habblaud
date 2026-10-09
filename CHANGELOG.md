@@ -10,6 +10,30 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Adicionado
+
+- **Codex no escritório.** As sessões do Codex da OpenAI (a CLI `codex` e o app) entram no escritório como as do
+  Claude Code: cada projeto é uma sala (a mesma do Claude Code, quando os dois estão no mesmo projeto), cada sessão um
+  personagem com o selo **CODEX**, com atividade, subagentes, terminal, histórico, uso de 5 horas e semanal (com a
+  idade dos números e "sem cota" quando acabam os créditos) e o Meu dia (só tokens: o Codex não informa custo). Sem
+  instalar nada, o Habblaud lê os arquivos do Codex (`~/.codex`, `CODEX_HOME` ou `~/.codex*`; `HABBLAUD_CODEX_DIRS`
+  escolhe as pastas e `HABBLAUD_CODEX=0` desliga). No Docker, só `sessions/`, `archived_sessions/` e
+  `thread-writer-locks/` são montadas, somente leitura.
+- **Codex ao vivo e aprovar pelo escritório:** `npm run codex:install` acrescenta os hooks do Habblaud no
+  `~/.codex/hooks.json` (com backup; os hooks de outros apps ficam no mesmo lugar) e, depois de aprová-los em `/hooks`
+  no Codex, a sessão aparece na hora, a atividade é a de agora e os pedidos de aprovação esperam a sua resposta no
+  escritório por até 25 s (`-- --espera <s>`) antes de irem ao terminal. `codex:status` confere e `codex:uninstall`
+  tira.
+- **Mensagens ao Codex** pela mesma caixa **Mandar mensagem**, via `codex queue` (entram quando a sessão termina o que
+  está fazendo). No Docker, deixe `npm run codex:bridge` rodando no Mac.
+
+### Alterado
+
+- Uma pasta do Codex nunca vira conta do Claude Code, nem listada em `HABBLAUD_CLAUDE_DIRS` ou `CLAUDE_CONFIG_DIR`; o
+  servidor e o `docker:up` avisam.
+- Com quatro contas ou mais, os cartões de uso do topo ficam mais estreitos e os botões de zoom somem até 1700 px de
+  largura, para não invadir os botões da direita.
+
 ## [0.6.0] - 2026-10-09
 
 Para atualizar: `git pull`, `npm run docker:up` e `npm run mod:install` (traz o plugin de permissões novo e o de
