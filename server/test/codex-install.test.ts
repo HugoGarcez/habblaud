@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  chooseNode,
   DEFAULT_WAIT_S,
   discoverCodexHomes,
   EVENTS,
@@ -14,6 +15,7 @@ import {
   hookCommand,
   installState,
   isOurHandler,
+  nodeMajor,
   parseArgs,
   planInstall,
   planUninstall,
@@ -127,6 +129,23 @@ describe('codex-install.ts (funções puras)', () => {
     expect(() => parseArgs(['install', '--espera', '4'], {})).toThrow(/--espera/);
     expect(() => parseArgs(['install', '--espera', '121'], {})).toThrow(/--espera/);
     expect(() => parseArgs(['install', '--conta'], {})).toThrow(/--conta/);
+    expect(parseArgs(['install', '--node', '/opt/homebrew/bin/node'], {})).toMatchObject({ node: '/opt/homebrew/bin/node' });
+    expect(() => parseArgs(['install', '--node', 'node'], {})).toThrow(/--node/);
+  });
+
+  it('Node dos hooks: o do shell de login se for 22+; senão o primeiro candidato 22+ com caminho absoluto', () => {
+    expect(nodeMajor('v18.12.1')).toBe(18);
+    expect(nodeMajor('v24.17.0\n')).toBe(24);
+    expect(nodeMajor(undefined)).toBeUndefined();
+    const versions: Record<string, string> = { login: 'v18.12.1', '/opt/homebrew/bin/node': 'v25.8.2', '/usr/local/bin/node': 'v18.12.1' };
+    const probe = (bin: string | undefined) => versions[bin ?? 'login'];
+    expect(chooseNode(probe, ['/usr/local/bin/node', '/opt/homebrew/bin/node'])).toEqual({ bin: '/opt/homebrew/bin/node', login: 'v18.12.1', chosen: 'v25.8.2' });
+    versions.login = 'v22.12.0';
+    expect(chooseNode(probe, ['/opt/homebrew/bin/node'])).toEqual({ login: 'v22.12.0' });
+    // Nenhum 22+: `node` mesmo (o instalador avisa).
+    expect(chooseNode(() => undefined, ['/x/node'])).toEqual({ login: undefined });
+    expect(hookCommand('/repo/mod/habblaud-codex/hook.mjs', '/opt/homebrew/bin/node')).toBe('"/opt/homebrew/bin/node" "/repo/mod/habblaud-codex/hook.mjs"');
+    expect(scriptPathOf('"/opt/homebrew/bin/node" "/repo/mod/habblaud-codex/hook.mjs"')).toBe('/repo/mod/habblaud-codex/hook.mjs');
   });
 });
 

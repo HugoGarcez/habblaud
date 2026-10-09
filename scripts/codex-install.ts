@@ -27,9 +27,10 @@
 // - usa um comando sem opções e valores fixos (porta e espera ficam em ~/.habblaud/codex-hook.json, que o hook lê):
 //   mudar a porta não pede aprovação nova; mudar a espera muda o timeout do PermissionRequest e pede.
 // Rodar de novo não duplica (o grupo do Habblaud é reconhecido pelo comando).
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isClaudeDir } from '../server/accounts/detect';
 import { discoverCodexDirs } from '../server/sources/codex/accounts';
@@ -57,6 +58,9 @@ export const STATUS_MESSAGE = 'Aguardando resposta no Habblaud…';
 /** Configuração lida pelo hook (porta e espera), em ~/.habblaud. */
 export const CONFIG_NAME = 'codex-hook.json';
 
+/** Versão mínima do Node para o hook (o mesmo `engines` do Habblaud, na parte que importa: fetch e AbortSignal). */
+export const MIN_NODE_MAJOR = 22;
+
 const USAGE = `Uso: npm run codex:<install|uninstall|status> [-- opções]
 
   install     acrescenta os hooks do Habblaud no hooks.json de cada pasta do Codex (faz backup antes)
@@ -69,6 +73,8 @@ Opções:
   --port <n>       porta do Habblaud (padrão: HABBLAUD_PORT ou ${DEFAULT_PORT})
   --espera <s>     quanto o Codex espera sua resposta no Habblaud antes de pedir a aprovação no terminal
                    (padrão: ${DEFAULT_WAIT_S} s; entre ${MIN_WAIT_S} e ${MAX_WAIT_S})
+  --node <caminho> o Node ${MIN_NODE_MAJOR}+ que roda os hooks (padrão: o \`node\` do shell de login, se for ${MIN_NODE_MAJOR}+;
+                   senão o primeiro ${MIN_NODE_MAJOR}+ entre /opt/homebrew/bin, /usr/local/bin e o deste comando)
   -h, --help       mostra esta ajuda
 
 Pastas: HABBLAUD_CODEX_DIRS (lista separada por vírgula) ou CODEX_HOME e as pastas ~/.codex* do Codex.
@@ -84,9 +90,34 @@ function rec(v: unknown): Rec | undefined {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Rec) : undefined;
 }
 
-/** `node "<hook>"`, sem opções (o comando entra no hash da confiança do Codex). */
-export function hookCommand(scriptPath: string): string {
-  return `node ${quotePath(scriptPath)}`;
+/**
+ * `node "<hook>"` (ou `"<node>" "<hook>"` com um Node escolhido, ver chooseNode), sem opções: o comando entra no hash
+ * da confiança do Codex.
+ */
+export function hookCommand(scriptPath: string, nodeBin?: string): string {
+  return `${nodeBin ? quotePath(nodeBin) : 'node'} ${quotePath(scriptPath)}`;
+}
+
+/** Major de uma versão como `node --version` imprime ("v24.17.0" → 24). */
+export function nodeMajor(version: string | undefined): number | undefined {
+  const m = /^v?(\d+)\./.exec(version?.trim() ?? '');
+  return m ? Number(m[1]) : undefined;
+}
+
+/**
+ * O Node dos hooks. O Codex roda o hook por `$SHELL -lc`: um shell de LOGIN, que no zsh não lê o .zshrc (onde o nvm
+ * costuma estar), então o `node` dele pode ser outro, e antigo. `probe(undefined)` = versão do `node` desse shell;
+ * `probe(caminho)` = versão daquele binário. Shell de login com Node 22+: `node` (comando curto, sobrevive a trocas de
+ * versão). Senão, o primeiro candidato 22+ com caminho absoluto; nenhum: `node` mesmo, com aviso.
+ */
+export function chooseNode(probe: (bin: string | undefined) => string | undefined, candidates: readonly string[]): { bin?: string; login?: string; chosen?: string } {
+  const login = probe(undefined);
+  if ((nodeMajor(login) ?? 0) >= MIN_NODE_MAJOR) return { login };
+  for (const bin of candidates) {
+    const v = probe(bin);
+    if ((nodeMajor(v) ?? 0) >= MIN_NODE_MAJOR) return { bin, login, chosen: v };
+  }
+  return { login };
 }
 
 /** Tempo limite do PermissionRequest para uma espera (s). */
@@ -307,6 +338,8 @@ export interface RunOptions {
   account?: string;
   port: number;
   waitS: number;
+  /** --node: o Node dos hooks, com caminho absoluto (sem ela, chooseNode). */
+  node?: string;
 }
 
 export interface Health {
@@ -323,6 +356,10 @@ export interface RunContext {
   out: (line: string) => void;
   /** Consulta o /api/health do Habblaud (testes injetam um falso). */
   health?: (port: number) => Promise<Health | undefined>;
+  /** Versão de um Node (ver chooseNode); ausente = não consulta e usa `node` (os testes não rodam shells). */
+  nodeProbe?: (bin: string | undefined) => string | undefined;
+  /** Candidatos a Node quando o do shell de login é antigo. */
+  nodeCandidates?: readonly string[];
 }
 
 class FatalError extends Error {}
@@ -334,6 +371,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
   const envPort = Number.parseInt(env.HABBLAUD_PORT ?? '', 10);
   let port = Number.isInteger(envPort) && envPort > 0 && envPort < 65_536 ? envPort : DEFAULT_PORT;
   let waitS = DEFAULT_WAIT_S;
+  let node: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '-h' || a === '--help') return 'help';
@@ -347,11 +385,14 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
     } else if (a === '--espera') {
       waitS = Number(argv[++i]);
       if (!Number.isInteger(waitS) || waitS < MIN_WAIT_S || waitS > MAX_WAIT_S) throw new FatalError(`--espera precisa de um número de segundos entre ${MIN_WAIT_S} e ${MAX_WAIT_S}.`);
+    } else if (a === '--node') {
+      node = argv[++i];
+      if (!node || !isAbsolute(node)) throw new FatalError('--node precisa do caminho absoluto de um Node 22+ (ex.: /opt/homebrew/bin/node).');
     } else if ((a === 'install' || a === 'uninstall' || a === 'status') && !command) command = a;
     else throw new FatalError(`opção desconhecida: ${a}\n\n${USAGE}`);
   }
   if (!command) throw new FatalError(`diga o que fazer: install, uninstall ou status.\n\n${USAGE}`);
-  return { command, dryRun, account, port, waitS };
+  return { command, dryRun, account, port, waitS, ...(node ? { node } : {}) };
 }
 
 export function configPath(home: string): string {
@@ -405,7 +446,16 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
     );
     return 1;
   }
-  const command = hookCommand(ctx.hookPath);
+  let nodeBin = opts.node;
+  if (!nodeBin && ctx.nodeProbe) {
+    const pick = chooseNode(ctx.nodeProbe, ctx.nodeCandidates ?? []);
+    nodeBin = pick.bin;
+    const login = pick.login ? `Node ${pick.login}` : 'nenhum Node';
+    if (pick.bin) out(`i O shell de login (onde o Codex roda os hooks) tem ${login}; o hook precisa do ${MIN_NODE_MAJOR}+ e vai usar ${tildify(pick.bin, home)} (${pick.chosen}).`);
+    else if ((nodeMajor(pick.login) ?? 0) < MIN_NODE_MAJOR)
+      out(`! O shell de login (onde o Codex roda os hooks) tem ${login} e não achei um Node ${MIN_NODE_MAJOR}+: os hooks podem falhar. Use --node <caminho de um Node ${MIN_NODE_MAJOR}+>.`);
+  }
+  const command = hookCommand(ctx.hookPath, nodeBin);
   let failures = 0;
   let changed = 0;
   const approve = new Set<string>();
@@ -521,6 +571,17 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
   return failures ? 1 : 0;
 }
 
+/** Versão de um Node: o do shell de login do Codex (`$SHELL -lc`, bin ausente) ou de um caminho. Falha = undefined. */
+function probeNode(bin: string | undefined): string | undefined {
+  try {
+    const opts = { encoding: 'utf8' as const, timeout: 10_000, stdio: ['ignore', 'pipe', 'ignore'] as ['ignore', 'pipe', 'ignore'] };
+    const out = bin ? execFileSync(bin, ['--version'], opts) : execFileSync(process.env.SHELL || '/bin/sh', ['-lc', 'node --version'], opts);
+    return out.trim().split('\n').pop();
+  } catch {
+    return undefined;
+  }
+}
+
 async function main(): Promise<void> {
   const parsed = parseArgs(process.argv.slice(2));
   if (parsed === 'help') {
@@ -528,7 +589,15 @@ async function main(): Promise<void> {
     return;
   }
   const home = process.env.HOME || homedir();
-  process.exitCode = await run(parsed, { env: process.env, home, now: new Date(), hookPath: HOOK_SCRIPT, out: (l) => console.log(l) });
+  process.exitCode = await run(parsed, {
+    env: process.env,
+    home,
+    now: new Date(),
+    hookPath: HOOK_SCRIPT,
+    out: (l) => console.log(l),
+    nodeProbe: probeNode,
+    nodeCandidates: ['/opt/homebrew/bin/node', '/usr/local/bin/node', process.execPath],
+  });
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
