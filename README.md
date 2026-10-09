@@ -470,6 +470,8 @@ chip da conta do Codex é vazado e leva o selo **CODEX**.
   enxerga o seu Codex).
 - **Uso de 5 horas e semanal:** vem dos próprios arquivos do Codex e só se renova enquanto alguma sessão roda; o cartão
   mostra a idade dos números e "sem cota" quando o workspace ficou sem créditos.
+- **Quando a sessão entra:** com a primeira mensagem (é quando o Codex grava a pasta do projeto); uma CLI aberta e
+  ainda sem conversa não aparece.
 - **Quando a sessão sai do escritório:** a CLI do Codex roda as sessões num servidor em segundo plano, que as mantém
   carregadas até um minuto depois de ficarem ociosas e sem ninguém olhando; por isso o personagem pode demorar um
   pouco para ir embora depois que você fecha o terminal.
@@ -874,8 +876,8 @@ pasta com `HABBLAUD_CODEX_DIRS` (e rode `npm run docker:up` de novo: no Docker, 
 `docker:up` são montadas). Sem os hooks, o Codex aparece pelos arquivos dele, que só são gravados depois de cada passo:
 rode `npm run codex:install`, **aprove os hooks em `/hooks` no Codex** e confira com `npm run codex:status`. O Codex roda
 os hooks pelo shell de login, que pode ter um Node antigo; o `codex:install` escolhe um Node 22+ e diz qual (ou use
-`--node <caminho>`). Uma sessão nova sem projeto conhecido fica um instante na sala "Codex (sem projeto)" e se muda
-quando o Codex diz a pasta.
+`--node <caminho>`). Uma sessão da CLI recém-aberta só aparece com a **primeira mensagem**: antes disso o Codex não
+diz em que pasta ela está (só cria a trava da sessão), e sem a pasta não há sala.
 
 </details>
 

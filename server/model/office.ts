@@ -311,26 +311,6 @@ export class Office {
     this.markDirty();
   }
 
-  /**
-   * Leva um principal (e os subagentes dele) para a sala de outro cwd: a fonte só descobriu o projeto depois (o Codex
-   * abre a sessão antes do primeiro prompt, sem dizer onde). A sala antiga sai se ficar vazia.
-   */
-  moveMain(id: string, cwd: string): void {
-    const rec = this.agents.get(id);
-    if (!rec || rec.info.kind !== 'main') return;
-    const from = rec.info.roomId;
-    const to = normalizeCwd(cwd);
-    if (!to || to === from) return;
-    this.ensureRoom(to, this.now());
-    rec.info.roomId = to;
-    for (const sub of this.descendants(id)) sub.info.roomId = to;
-    if (![...this.agents.values()].some((r) => r.info.roomId === from)) {
-      this.rooms.delete(from);
-      this.recomputeRoomNames();
-    }
-    this.markDirty();
-  }
-
   /** Mesmo processo, sessão nova (/clear, /resume): o personagem continua, tarefas e números zeram. */
   switchSession(id: string, sessionId: string): void {
     const rec = this.agents.get(id);

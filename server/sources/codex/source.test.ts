@@ -8,7 +8,7 @@ import { setQuiet } from '../../log';
 import { NameStore } from '../../model/names';
 import { Office } from '../../model/office';
 import { codexHome, R, SOURCES, threadId } from '../../test/codex-fixtures';
-import { CodexSource, UNKNOWN_CWD } from './source';
+import { CodexSource } from './source';
 
 setQuiet(true);
 
@@ -173,11 +173,13 @@ describe('fonte do Codex: presença pelos locks', () => {
     expect(ctx.agent(`.codex:${C}`)).toBeUndefined();
   });
 
-  it('lock sem rollout: sessão aberta e vazia na sala provisória; muda para o projeto quando o rollout aparece', () => {
+  it('lock sem rollout (CLI aberta, ainda sem mensagem): fica fora até o projeto aparecer e entra direto na sala dele', () => {
     const ctx = setup();
     ctx.home.lock(T, ctx.now() - 20_000);
     ctx.source.boot();
-    expect(ctx.agent()).toMatchObject({ roomId: UNKNOWN_CWD, status: 'idle', provider: 'codex' });
+    // O lock não diz a pasta: sem projeto, sem sala (nada de sala provisória).
+    expect(ctx.agent()).toBeUndefined();
+    expect(ctx.office.commit().snapshot.rooms).toEqual([]);
     ctx.home.rollout(T, [R.meta(T, { at: ctx.now(), cwd: '/projetos/api' }), R.taskStarted('t1', ctx.now()), R.user(T, 't1', 'u1', 'Comece', ctx.now())]);
     ctx.advance(3_100);
     ctx.poll();
@@ -186,16 +188,14 @@ describe('fonte do Codex: presença pelos locks', () => {
     expect(rooms).toEqual(['/projetos/api']);
   });
 
-  it('lock sem rollout espera um pouco (pode ser um subagente prestes a criar o rollout)', () => {
+  it('lock sem rollout: um hook que diz o projeto faz o agente entrar na hora, já na sala certa', () => {
     const ctx = setup();
     ctx.source.boot();
-    ctx.home.lock(T, ctx.now());
-    ctx.advance(4_000);
+    ctx.home.lock(T, ctx.now() - 60_000);
     ctx.poll();
     expect(ctx.agent()).toBeUndefined();
-    ctx.advance(7_000);
-    ctx.poll();
-    expect(ctx.agent()?.roomId).toBe(UNKNOWN_CWD);
+    expect(ctx.hook({ hook_event_name: 'SessionStart', session_id: T, cwd: '/projetos/api', transcript_path: null, model: 'gpt-teste-codex', source: 'startup' })).toBe(true);
+    expect(ctx.agent()).toMatchObject({ roomId: '/projetos/api', status: 'idle', provider: 'codex' });
   });
 
   it('threads internos (guardian, revisão) ficam fora', () => {
@@ -487,14 +487,15 @@ describe('fonte do Codex: contas', () => {
     expect(ctx.source.accountEntries().map((e) => e.id)).toEqual(['.codex', '.codex-trabalho']);
   });
 
-  it('rollout compactado (.zst) sozinho: ignorado (com aviso no log), a sessão fica sem detalhes', () => {
+  it('rollout compactado (.zst) sozinho: ignorado (com aviso no log), a sessão fica fora por falta de projeto', () => {
     const ctx = setup();
     const dir = join(ctx.home.dir, 'sessions', '2026', '10', '01');
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, `rollout-2026-10-01T09-00-00-${T}.jsonl.zst`), Buffer.from([0x28, 0xb5, 0x2f, 0xfd, 0, 1, 2]));
     ctx.home.lock(T, ctx.now() - 60_000);
     ctx.source.boot();
-    expect(ctx.agent()).toMatchObject({ roomId: UNKNOWN_CWD, status: 'idle' });
+    // Sem o rollout legível não há projeto: fica fora (um hook com o cwd o traria).
+    expect(ctx.agent()).toBeUndefined();
     expect(ctx.source.transcriptPathOf(KEY)).toBeUndefined();
   });
 });

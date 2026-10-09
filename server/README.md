@@ -293,8 +293,9 @@ do Codex levam `provider: 'codex'` (ausente = Claude Code). Ids: `<conta>:<threa
   `sessions/AAAA/`, sem `projects/`, que só o Claude Code cria). Uma pasta do Codex nunca vira conta do Claude Code.
   `auth.json` e `config.toml` nunca são lidos; o plano vem de `rate_limits.plan_type`.
 - **Sessões abertas** (`sources/codex/files.ts`, `source.ts`): `thread-writer-locks/<threadId>.lock` existindo há 3 s
-  (os locks rápidos de manutenção ficam de fora; o lock nunca é aberto). Lock sem rollout = sessão aberta e vazia (sala
-  "Codex (sem projeto)" até o cwd aparecer). Lock e rollout parados há 12 h, sem evento de hook = lock de crash. Sem a
+  (os locks rápidos de manutenção ficam de fora; o lock nunca é aberto). Lock sem rollout = sessão aberta e vazia: o
+  lock não diz a pasta, então o principal só entra quando o rollout (criado no 1º prompt) ou um hook disser o cwd.
+  Lock e rollout parados há 12 h, sem evento de hook = lock de crash. Sem a
   pasta de locks: rollout modificado nos últimos 30 min. Evento de hook segura a presença por 60 s.
 - **Rollout** (`sources/codex/rollout.ts`): `sessions/AAAA/MM/DD/rollout-*-<threadId>.jsonl` (a pasta é a data de
   criação; sessão retomada continua no arquivo antigo) e `archived_sessions/`, lidos com `FileTail`. Formatos

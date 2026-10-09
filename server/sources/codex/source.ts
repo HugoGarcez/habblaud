@@ -7,8 +7,9 @@
 //   nunca flock). O lock precisa ter alguns segundos de vida (LOCK_SETTLE_MS, pela idade do arquivo): operações de
 //   manutenção (arquivar, renomear, migrar, compactar) criam locks rápidos que não são sessões;
 // - o rollout do thread (achado pelo id no nome do arquivo) dá o projeto (cwd do session_meta), o título e o que o
-//   agente faz. Lock sem rollout = sessão aberta e ainda vazia (o Codex só cria o arquivo no primeiro prompt): entra
-//   ociosa depois de EMPTY_SESSION_MS, numa sala provisória (UNKNOWN_CWD) até um hook ou o rollout dizer o projeto;
+//   agente faz. Lock sem rollout = sessão aberta e ainda vazia: o Codex só cria o arquivo (e o hook SessionStart só
+//   dispara) no primeiro prompt, e o lock não diz a pasta. Sem o projeto não há sala: o principal só entra quando o
+//   rollout ou um hook disser o cwd (uma CLI recém-aberta aparece com a primeira mensagem);
 // - sem lock = fechada (com a mesma folga de 1,5 s do Claude Code). Lock velho de crash (o Codex só o limpa na
 //   próxima vez que abre): lock criado há mais de STALE_LOCK_MS, rollout parado há mais de STALE_LOCK_MS (ou sem
 //   rollout) e nenhum evento de hook = fechada. Uma escrita nova no rollout (ou um hook) reabre. Limite conhecido:
@@ -49,8 +50,6 @@ import { createCodexTerminalParser } from './terminal';
 
 /** Idade mínima do lock para valer como sessão aberta (os locks de manutenção duram menos). */
 export const LOCK_SETTLE_MS = 3_000;
-/** Lock sem rollout (sessão aberta ainda sem prompt): espera um pouco mais (subagentes criam o rollout logo). */
-export const EMPTY_SESSION_MS = 10_000;
 /** Lock presente com rollout parado há mais que isto e nenhum evento de hook: lock velho de um crash. */
 export const STALE_LOCK_MS = 12 * 3600_000;
 /** Sem `thread-writer-locks/`: presença = rollout modificado nos últimos 30 min. */
@@ -65,8 +64,6 @@ const CLOSE_AFTER_MISSING_MS = 1_500;
 export const WORKING_QUIET_MS = 30 * 60_000;
 /** Sem eventos de turno (legacy antigo): escreveu há pouco = trabalhando. */
 const LEGACY_WORKING_MS = 90_000;
-/** Sala provisória de quem ainda não disse o projeto (sessão aberta sem prompt). */
-export const UNKNOWN_CWD = 'Codex (sem projeto)';
 /** Atividades recuperadas do começo de um rollout grande para a linha do tempo longa. */
 const PREFIX_HISTORY = 120;
 /** Resultados guardados ao ler um rollout antes de o agente entrar no escritório. */
@@ -138,8 +135,6 @@ interface ThreadTracker {
   /** Resultados lidos antes de o agente entrar no escritório (vão como histórico, sem feed). */
   backlog: CodexLineResult[];
   inOffice: boolean;
-  /** Sala em que está no escritório (UNKNOWN_CWD = provisória). */
-  roomCwd?: string;
   hookCwd?: string;
   hookRole?: string;
   status: AgentStatus;
@@ -401,7 +396,6 @@ export class CodexSource implements AgentSource, CodexLive {
       return;
     }
     if (!t.inOffice) this.enter(t, now);
-    else if (t.kind === 'main') this.relocate(t);
   }
 
   private wanted(t: ThreadTracker, now: number, via?: 'lock' | 'recent' | 'hook'): boolean {
@@ -420,9 +414,10 @@ export class CodexSource implements AgentSource, CodexLive {
       // antigo retomado agora tem lock novo (o Codex cria o arquivo ao carregar e o apaga ao descarregar).
       const rolloutIdle = !t.rolloutPath || (t.lastWriteAt !== undefined && now - t.lastWriteAt > STALE_LOCK_MS);
       if (lock && now - lock.createdAt > STALE_LOCK_MS && rolloutIdle) return false;
-      // Sessão aberta ainda sem rollout: espera um pouco (pode ser um subagente prestes a criar o dele).
-      if (!t.rolloutPath && lock && now - lock.createdAt < EMPTY_SESSION_MS && !t.inOffice) return false;
     }
+    // Sem o projeto (sessão aberta ainda sem prompt, só com o lock) não há sala para o principal: espera o rollout ou um
+    // hook dizer o cwd. Isso também segura um lock de subagente até o rollout dele dizer de quem ele é.
+    if (t.kind === 'main' && !this.cwdOf(t)) return false;
     if (t.kind === 'sub') {
       const parent = this.parentKey(t);
       if (!parent || !this.opts.office.has(parent) || this.opts.office.isSubDone(parent) || this.opts.office.get(parent)?.status === 'offline') return false;
@@ -446,8 +441,7 @@ export class CodexSource implements AgentSource, CodexLive {
   private enter(t: ThreadTracker, now: number): void {
     const office = this.opts.office;
     if (t.kind === 'main') {
-      const cwd = this.cwdOf(t) ?? UNKNOWN_CWD;
-      t.roomCwd = cwd;
+      const cwd = this.cwdOf(t)!;
       office.addMain({
         id: t.key,
         provider: 'codex',
@@ -483,14 +477,6 @@ export class CodexSource implements AgentSource, CodexLive {
     }
     this.flushBacklog(t);
     this.applySummary(t);
-  }
-
-  /** Principal na sala provisória que agora sabe o projeto: muda de sala. */
-  private relocate(t: ThreadTracker): void {
-    const cwd = this.cwdOf(t);
-    if (!cwd || t.roomCwd !== UNKNOWN_CWD) return;
-    this.opts.office.moveMain(t.key, cwd);
-    t.roomCwd = cwd;
   }
 
   /** Sai do escritório: principal encerra; subagente entrega (se ainda não tinha entregado). */
