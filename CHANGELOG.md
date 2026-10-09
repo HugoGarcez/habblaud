@@ -10,6 +10,8 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+## [0.5.0] - 2026-10-09
+
 ### Adicionado
 
 - O cartão "Precisa de você" mostra as perguntas do `AskUserQuestion` completas, com as opções e as descrições
@@ -21,7 +23,7 @@ do meio (0.**3**.0).
 
 - Quando um arquivo de transcript era apagado e outro, maior, era criado no lugar, o Habblaud podia não perceber a
   troca: alguns sistemas de arquivos reaproveitam o número (inode) do arquivo apagado, e só o inode era comparado.
-  Agora, quando o sistema informa o momento de criação do arquivo, ele também entra na comparação, e a leitura
+  Agora também contam o momento de criação do arquivo (quando o sistema o informa) e o começo dele, e a leitura
   recomeça do início do arquivo novo.
 - No Windows, com o Node 23 até o 24.19, o hook do plugin `habblaud-permissoes` caía ao sair (código 0xC0000409,
   um bug do Node: nodejs/node#56645) logo depois de receber a resposta do escritório. A decisão chegava antes da
@@ -118,7 +120,8 @@ Primeira versão publicada.
   Subagentes chegam, trabalham e entregam ao principal. Mostra as duas contas, com o uso de 5 horas e semanal de
   cada uma (tap de statusline), além de feed de atividade, avisos e modo demonstração. Roda no Node ou no Docker local.
 
-[Não lançado]: https://github.com/marmottajr/habblaud/compare/v0.4.0...HEAD
+[Não lançado]: https://github.com/marmottajr/habblaud/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/marmottajr/habblaud/releases/tag/v0.5.0
 [0.4.0]: https://github.com/marmottajr/habblaud/releases/tag/v0.4.0
 [0.3.2]: https://github.com/marmottajr/habblaud/releases/tag/v0.3.2
 [0.3.1]: https://github.com/marmottajr/habblaud/releases/tag/v0.3.1
