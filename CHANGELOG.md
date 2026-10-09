@@ -10,6 +10,12 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Corrigido
+
+- No Windows, o mod não gravava o uso de 5 horas e semanal quando o `HOME` não estava definido (o normal fora do Git
+  Bash): agora usa o `USERPROFILE`. E um `CLAUDE_CONFIG_DIR` com `\` (ex.: `C:\Users\voce\.claude-conta2`) virava um
+  nome de arquivo inválido; agora dá a mesma conta, inclusive com o Habblaud no Docker.
+
 ## [0.4.0] - 2026-10-08
 
 ### Alterado

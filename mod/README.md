@@ -16,7 +16,7 @@ instaladores de sempre (`npm run usage:install` e `npm run hooks:install`). A in
   um limite anda um ponto) lê `$.session.usage().rateLimits` e grava `~/.habblaud/usage/<conta>.json` (ou em
   `HABBLAUD_USAGE_DIR`) no mesmo formato do tap de statusline, mais `"source": "mod"`. Substitui o
   `npm run usage:install`: o seu statusline fica intocado. A conta é a pasta de `CLAUDE_CONFIG_DIR` (o primeiro
-  item) ou `~/.claude`. Valores iguais gravados há menos de 10 s não são regravados; falha ao gravar = silêncio.
+  item) ou `~/.claude` (`~` é o `HOME`; no Windows sem ele, o `USERPROFILE`). Valores iguais gravados há menos de 10 s não são regravados; falha ao gravar = silêncio.
 - **"Precisa de você" embaixo do prompt:** a cada 5 s pergunta ao Habblaud local
   (`GET http://127.0.0.1:<HABBLAUD_PORT ou 4747>/api/mod/summary`) quem está esperando, já sem esta sessão e os
   subagentes dela, e mostra `🏢 Valentina precisa de você em loja-virtual` ou
@@ -44,7 +44,7 @@ carregar o módulo; nada fora desta lista é chamado):
 ❯ ./register.ts answers its own command: command.run{command=habblaud}
 ❯ ./register.ts calls: $.clock.after (via askHabblaud), $.clock.every (via schedule), $.clock.now (via writeUsage), $.command.register, $.env.get (via readEnv), $.fs.write (via writeUsage), $.http.fetch (via askHabblaud), $.session.id (via poll), $.session.surfaces (via poll), $.session.usage, $.ui.status (via setStatus)
 ❯ ./register.ts env writes: nothing
-❯ ./register.ts env reads: CLAUDE_CONFIG_DIR, HABBLAUD_PORT, HABBLAUD_USAGE_DIR, HOME
+❯ ./register.ts env reads: CLAUDE_CONFIG_DIR, HABBLAUD_PORT, HABBLAUD_USAGE_DIR, HOME, USERPROFILE
 ```
 
 Em palavras: só observa (nenhum hook decide nada: não aprova ferramentas, não muda prompts, não lê mensagens),

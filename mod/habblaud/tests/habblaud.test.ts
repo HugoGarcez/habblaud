@@ -3,7 +3,7 @@
 // (mock.clock), $.session.usage, $.session.id, $.session.surfaces, $.fs.write, $.http.fetch e $.ui.status.
 import type { CommandRunInput, HttpResponse, On, SessionRateLimit } from 'claude-code'
 import { describe, expect, mock, test } from 'claude-code/testing'
-import { configDirOf, normalizePath, parseSummary, statusText, usageDirOf, windowOf, type Summary, type WaitingAgent } from '../hooks/register'
+import { accountIdOf, configDirOf, normalizePath, parseSummary, statusText, usageDirOf, windowOf, type Summary, type WaitingAgent } from '../hooks/register'
 
 const NOW = Date.parse('2026-10-06T12:00:00Z')
 const SEC = (iso: string) => Date.parse(iso) / 1_000
@@ -106,6 +106,15 @@ describe('uso do plano', () => {
     await $.session.measure({ context: CONTEXT, rateLimits: LIMITS, changed: ['rateLimits'] })
     expect(w.writes.map((x) => x.path)).toEqual(['/home/fulano/uso/.claude.json'])
     expect(JSON.parse(w.writes[0]?.text ?? '')).toMatchObject({ accountId: '.claude', configDir: '/home/fulano/.claude' })
+  })
+
+  test('Windows: sem HOME vale o USERPROFILE, e CLAUDE_CONFIG_DIR com \\ dá a mesma conta', async ($, on) => {
+    const w = world(on, { env: { USERPROFILE: 'C:\\Users\\fulano', CLAUDE_CONFIG_DIR: 'C:\\Users\\fulano\\.claude-conta2\\', HABBLAUD_PORT: PORT } })
+    await $.session.start(START)
+    expect(w.writes.length).toBe(1)
+    // O kit passa o caminho gravado pelo path da máquina que roda o teste: confere só o fim.
+    expect(w.writes[0]?.path).toMatch(/fulano[\\/]\.habblaud[\\/]usage[\\/]\.claude-conta2\.json$/)
+    expect(JSON.parse(w.writes[0]?.text ?? '')).toMatchObject({ accountId: '.claude-conta2', configDir: 'C:/Users/fulano/.claude-conta2' })
   })
 
   test('session.measure: não regrava valores iguais em menos de 10 s; regrava se mudou ou depois disso', async ($, on) => {
@@ -250,6 +259,16 @@ describe('funções puras', () => {
     expect(configDirOf('', undefined)).toBeUndefined()
     expect(usageDirOf(undefined, '/home/f')).toBe('/home/f/.habblaud/usage')
     expect(usageDirOf(undefined, undefined)).toBeUndefined()
+  })
+
+  test('caminhos do Windows: \\ vira /, o drive conta como raiz e ~\\ também é o HOME', () => {
+    expect(normalizePath('C:\\Users\\f\\.claude-conta2\\')).toBe('C:/Users/f/.claude-conta2')
+    expect(normalizePath('C:\\Users\\..\\..\\x')).toBe('C:/x')
+    expect(configDirOf('C:\\Users\\f\\.claude-conta2', undefined)).toBe('C:/Users/f/.claude-conta2')
+    expect(configDirOf('~\\.claude-conta2', 'C:\\Users\\f')).toBe('C:/Users/f/.claude-conta2')
+    expect(configDirOf(undefined, 'C:\\Users\\f')).toBe('C:/Users/f/.claude')
+    expect(accountIdOf('C:/Users/f/.claude-conta2')).toBe('.claude-conta2')
+    expect(usageDirOf(undefined, 'C:\\Users\\f')).toBe('C:/Users/f/.habblaud/usage')
   })
 
   test('janela: percentual limitado a 0–100, reinício em segundos; data inválida fica de fora', () => {
