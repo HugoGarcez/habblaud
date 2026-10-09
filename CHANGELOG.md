@@ -29,6 +29,9 @@ do meio (0.**3**.0).
   `package.json`), e por isso o `git pull` da versão seguinte parava com "Your local changes … would be
   overwritten". Agora o arquivo fica igual. Quem já tem a alteração roda uma vez `git checkout -- package-lock.json`
   antes do `git pull`.
+- No Windows, o mod não gravava o uso de 5 horas e semanal quando o `HOME` não estava definido (o normal fora do Git
+  Bash): agora usa o `USERPROFILE`. E um `CLAUDE_CONFIG_DIR` com `\` (ex.: `C:\Users\voce\.claude-conta2`) virava um
+  nome de arquivo inválido; agora dá a mesma conta, inclusive com o Habblaud no Docker.
 
 ## [0.4.0] - 2026-10-08
 
