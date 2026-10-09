@@ -161,7 +161,10 @@ describe('codex-install.ts (arquivos, HOME falso)', () => {
     expect(discoverCodexHomes({}, home).dirs).toEqual([join(home, '.codex'), join(home, '.codex-trabalho')]);
     const extra = join(tmp.dir, 'outra-conta');
     mkdirSync(extra);
-    expect(discoverCodexHomes({ CODEX_HOME: extra }, home).dirs).toEqual([join(home, '.codex'), join(home, '.codex-trabalho'), extra]);
+    // As mesmas pastas que o servidor acompanha: um CODEX_HOME sem cara de Codex (vazio) fica de fora.
+    expect(discoverCodexHomes({ CODEX_HOME: extra }, home).dirs).toEqual([join(home, '.codex'), join(home, '.codex-trabalho')]);
+    mkdirSync(join(extra, 'thread-writer-locks'));
+    expect(discoverCodexHomes({ CODEX_HOME: extra }, home).dirs).toEqual([extra, join(home, '.codex'), join(home, '.codex-trabalho')]);
     expect(discoverCodexHomes({ HABBLAUD_CODEX_DIRS: `${extra}, ~/.claude, /nao/existe` }, home)).toEqual({ dirs: [extra], refused: [join(home, '.claude')] });
   });
 

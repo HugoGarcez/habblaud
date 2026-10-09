@@ -27,11 +27,12 @@
 // - usa um comando sem opções e valores fixos (porta e espera ficam em ~/.habblaud/codex-hook.json, que o hook lê):
 //   mudar a porta não pede aprovação nova; mudar a espera muda o timeout do PermissionRequest e pede.
 // Rodar de novo não duplica (o grupo do Habblaud é reconhecido pelo comando).
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { expandHome, isClaudeDir, isCodexHome } from '../server/accounts/detect';
+import { isClaudeDir } from '../server/accounts/detect';
+import { discoverCodexDirs } from '../server/sources/codex/accounts';
 import { quotePath, readSettings, tildify, writeSettings, type Settings } from './statusline-install';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -279,49 +280,14 @@ export function installState(file: Settings, command: string, waitS: number): In
 }
 
 /**
- * Pastas do Codex: HABBLAUD_CODEX_DIRS (substitui tudo; pastas que existem e não são do Claude Code) ou CODEX_HOME e
- * as pastas ~/.codex* com cara de Codex (isCodexHome). Ordem: ~/.codex primeiro, depois alfabética.
+ * Pastas do Codex: as MESMAS que o servidor acompanha (discoverCodexDirs da fonte do Codex: HABBLAUD_CODEX_DIRS, que
+ * substitui tudo, ou CODEX_HOME e as pastas ~/.codex* com cara de Codex; ~/.codex primeiro). Pasta do Claude Code
+ * listada por engano fica de fora (`refused`).
  */
 export function discoverCodexHomes(env: NodeJS.ProcessEnv, home: string): { dirs: string[]; refused: string[] } {
-  const isDir = (p: string) => {
-    try {
-      return statSync(p).isDirectory();
-    } catch {
-      return false;
-    }
-  };
+  const dirs: string[] = [];
   const refused: string[] = [];
-  const usable = (p: string) => {
-    if (!isDir(p)) return false;
-    if (isClaudeDir(p)) {
-      refused.push(p);
-      return false;
-    }
-    return true;
-  };
-  const list = (env.HABBLAUD_CODEX_DIRS ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-  if (list.length) return { dirs: [...new Set(list.map((p) => expandHome(p, home)))].filter(usable), refused };
-  const found: string[] = [];
-  const codexHome = env.CODEX_HOME?.trim();
-  if (codexHome) {
-    const p = expandHome(codexHome, home);
-    if (usable(p)) found.push(p);
-  }
-  try {
-    for (const ent of readdirSync(home, { withFileTypes: true })) {
-      if (!ent.name.startsWith('.codex') || (!ent.isDirectory() && !ent.isSymbolicLink())) continue;
-      const p = join(home, ent.name);
-      if (isCodexHome(p) && usable(p)) found.push(p);
-    }
-  } catch {
-    // $HOME ilegível: fica com o CODEX_HOME
-  }
-  const dirs = [...new Set(found.map((p) => expandHome(p, home)))];
-  const def = resolve(home, '.codex');
-  dirs.sort((a, b) => (a === def ? 0 : 1) - (b === def ? 0 : 1) || a.localeCompare(b));
+  for (const p of discoverCodexDirs(env, home)) (isClaudeDir(p) ? refused : dirs).push(p);
   return { dirs, refused };
 }
 
