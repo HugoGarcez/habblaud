@@ -10,6 +10,11 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Adicionado
+
+- Verificação automática no GitHub (Actions): a cada push na `main` e a cada pull request, o projeto roda
+  `typecheck`, testes e build no Node 22.12, a versão mínima que o `package.json` declara.
+
 ### Corrigido
 
 - Quando um arquivo de transcript era apagado e outro, maior, era criado no lugar, o Habblaud podia não perceber a
