@@ -5,7 +5,7 @@
 import http from 'node:http';
 import { join } from 'node:path';
 import { AccountsService } from './accounts/service';
-import { loadConfig, terminalOffReason } from './config';
+import { loadConfig, messagesOffReason, terminalOffReason } from './config';
 import { createApiHandler, sendJson } from './http/app';
 import { createRequestGuard } from './http/guard';
 import { Hub } from './http/sse';
@@ -21,6 +21,8 @@ import { Office } from './model/office';
 import { openMainAgent, SessionHistory } from './sources/history';
 import { createPermissionRoutes } from './permissions/http';
 import { PermissionRegistry } from './permissions/registry';
+import { createMessageRoutes } from './messages/http';
+import { MessageRegistry } from './messages/registry';
 import { ClaudeWatcher } from './sources/watcher';
 import { createBuildReader } from './build';
 import { UpdateChecker } from './updates/checker';
@@ -42,7 +44,7 @@ const names = new NameStore(join(config.dataDir, 'names.json'));
 names.load();
 
 // Office, contas e watcher se referenciam (avisos de mudança / fontes): ligação tardia.
-const late: { office?: Office; watcher?: ClaudeWatcher; permissions?: PermissionRegistry } = {};
+const late: { office?: Office; watcher?: ClaudeWatcher; permissions?: PermissionRegistry; messages?: MessageRegistry } = {};
 // Versão nova: consulta a release mais recente no GitHub a cada 6 h (HABBLAUD_UPDATE_CHECK=0 desliga).
 const updates = new UpdateChecker({
   current: config.version,
@@ -70,6 +72,7 @@ const office = new Office({
   accountName: (id) => accounts.find(id)?.detected.name,
   terminal: config.terminal,
   permissions: () => late.permissions?.snapshot() ?? new Map(),
+  messages: config.messages ? () => late.messages?.reachable() ?? new Set() : undefined,
   updates: () => updates.status(),
 });
 const watcher = new ClaudeWatcher({ accounts, office, inDocker: config.inDocker });
@@ -79,7 +82,7 @@ const hub = new Hub(office);
 // "Meu dia": amostra o escritório a cada segundo e persiste em <dataDir>/stats/ (ver history/daystats.ts).
 const stats = new DayStatsService({ dir: join(config.dataDir, 'stats'), snapshot: () => hub.current() });
 stats.load();
-// Terminal somente leitura: só existe com bind local (ver terminalOffReason em config.ts).
+// Terminal: só existe com bind local (ver terminalOffReason em config.ts).
 const terminals = config.terminal ? new TerminalStreams({ office, transcriptPathOf: (id) => watcher.transcriptPathOf(id) }) : undefined;
 // Histórico do terminal (sessões recentes, abertas ou encerradas): mesma trava.
 const history = config.terminal
@@ -100,6 +103,16 @@ const permissions = config.terminal
     })
   : undefined;
 late.permissions = permissions;
+// Mensagens pelo escritório (plugin habblaud-mensagens): entram na sessão como se você as tivesse digitado, então
+// seguem a mesma trava (e HABBLAUD_MENSAGENS=0 desliga só elas).
+const messages = config.messages
+  ? new MessageRegistry({
+      office,
+      demoAgent: (id) => office.demoAgent(id),
+      demoDeliver: (id, text) => office.deliverDemoMessage(id, text),
+    })
+  : undefined;
+late.messages = messages;
 
 if (config.demo) office.setDemo(true);
 watcher.start();
@@ -110,6 +123,7 @@ if (timeline) {
   timeline.ingest(hub.current());
 }
 permissions?.start();
+messages?.start();
 stats.start();
 updates.start();
 const ticker = setInterval(() => {
@@ -132,6 +146,7 @@ const api = createApiHandler({
   sessions: history,
   timeline: createTimelineHandler({ dir: timelineDir, recording: !!timeline }),
   permissions: permissions ? createPermissionRoutes(permissions) : undefined,
+  messages: messages ? createMessageRoutes(messages) : undefined,
   stats,
   updates,
 });
@@ -196,10 +211,15 @@ server.listen(config.port, config.host, () => {
     log.info(`   Conta ${a.detected.short} (${a.id}): ${src?.sessions ?? 0} sessão(ões) aberta(s) · uso: ${usage} · ${a.dir}`);
   }
   if (office.isDemo()) log.info('   Modo demonstração ligado (agentes simulados misturados aos reais).');
-  if (config.terminal) log.info('   Terminal somente leitura: ligado (acesso só local).');
-  else log.info(`   Terminal somente leitura: desligado (${terminalOffReason(process.env, config.host, config.inDocker)}).`);
+  if (config.terminal) log.info('   Terminal: ligado (acesso só local).');
+  else log.info(`   Terminal: desligado (${terminalOffReason(process.env, config.host, config.inDocker)}).`);
   log.info(timeline ? `   Linha do tempo (timelapse): gravando em ${timelineDir}.` : '   Linha do tempo (timelapse): gravação desligada (HABBLAUD_TIMELINE).');
   log.info(`   Responder pelo escritório: ${config.terminal ? 'ligado (precisa do mod: npm run mod:install; ou do hook antigo: npm run hooks:install)' : 'desligado (mesma trava do terminal)'}.`);
+  log.info(
+    config.messages
+      ? '   Mensagens pelo escritório: ligadas (precisa do plugin habblaud-mensagens: npm run mod:install).'
+      : `   Mensagens pelo escritório: desligadas (${messagesOffReason(process.env, config.host, config.inDocker)}).`,
+  );
   log.info(
     updates.enabled
       ? `   Versão nova: verificando as releases de github.com/${config.repo} a cada 6 h.`
@@ -220,6 +240,7 @@ function shutdown(signal: string): void {
   terminals?.stop();
   timeline?.stop();
   permissions?.stop();
+  messages?.stop();
   updates.stop();
   names.flush();
   void closeVite?.();

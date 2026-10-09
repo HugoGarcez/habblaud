@@ -1,4 +1,4 @@
-// Terminal somente leitura (Server-Sent Events) em GET /api/agents/:id/terminal: a conversa da sessão
+// Terminal (Server-Sent Events) em GET /api/agents/:id/terminal: a conversa da sessão
 // (prompts, respostas, ferramentas e resultados) reconstruída do transcript JSONL por sources/terminal.ts.
 // Eventos nomeados: init | append (o `data` é o de TerminalMessage em shared/types.ts). A rota
 // (http/app.ts) já conferiu que o recurso está ligado e que o acesso é local.
@@ -77,7 +77,7 @@ function parseInto(parser: TerminalParser, lines: readonly string[], out: Termin
     try {
       entries = parser.push(line);
     } catch (err) {
-      log.warnOnce(`terminal-parse:${errMsg(err)}`, `Terminal somente leitura: linha do transcript ignorada (${errMsg(err)}).`);
+      log.warnOnce(`terminal-parse:${errMsg(err)}`, `Terminal: linha do transcript ignorada (${errMsg(err)}).`);
       continue;
     }
     for (const e of entries) out.push(e);

@@ -30,10 +30,15 @@ export interface ServerConfig {
   /** Nomes extras aceitos no cabeçalho Host/Origin (HABBLAUD_ALLOWED_HOSTS); localhost e IPs sempre valem. */
   allowedHosts: Set<string>;
   /**
-   * Terminal somente leitura (GET /api/agents/:id/terminal) ligado: só com bind local, isto é, com o
-   * Habblaud acessível apenas pelo próprio computador (ver terminalOffReason).
+   * Terminal (GET /api/agents/:id/terminal) ligado: só com bind local, isto é, com o Habblaud acessível apenas
+   * pelo próprio computador (ver terminalOffReason). É a trava de tudo o que mostra ou age sobre as sessões.
    */
   terminal: boolean;
+  /**
+   * Mensagens pelo escritório (POST /api/messages e a caixa de entrada do plugin habblaud-mensagens) ligadas: a
+   * trava do terminal e HABBLAUD_MENSAGENS sem desligar (ver messagesOffReason).
+   */
+  messages: boolean;
   /** Grava a linha do tempo do escritório para o timelapse (<dataDir>/timeline); HABBLAUD_TIMELINE=0 desliga. */
   timeline: boolean;
   /** Raiz do projeto (onde fica o package.json); serve dist/client a partir daqui. */
@@ -104,8 +109,8 @@ export function isLoopbackBind(value: string | undefined): boolean {
 }
 
 /**
- * Por que o terminal somente leitura fica desligado (undefined = ligado). Os transcripts têm a conversa
- * inteira, então ele só liga quando o Habblaud não fica exposto além do próprio computador:
+ * Por que o terminal fica desligado (undefined = ligado). Os transcripts têm a conversa inteira, então ele
+ * só liga quando o Habblaud não fica exposto além do próprio computador:
  * - Node: o HABBLAUD_HOST precisa ser loopback;
  * - Docker: o processo sempre escuta em 0.0.0.0 dentro do container e quem decide a exposição é a porta
  *   publicada no host, HABBLAUD_BIND (o docker-compose.yml repassa o mesmo valor ao container). Ausente
@@ -122,6 +127,18 @@ export function terminalOffReason(env: NodeJS.ProcessEnv, host: string, inDocker
     return isLoopbackBind(bind) ? undefined : `a porta está exposta na rede: HABBLAUD_BIND=${bind}`;
   }
   return isLoopbackBind(host) ? undefined : `a porta está exposta na rede: HABBLAUD_HOST=${host}`;
+}
+
+/**
+ * Por que as mensagens pelo escritório ficam desligadas (undefined = ligadas). Elas entram na sessão como se você
+ * as tivesse digitado, então seguem a trava do terminal; HABBLAUD_MENSAGENS com qualquer valor que não seja
+ * "ligado" (0, false, off, no...) desliga só elas.
+ */
+export function messagesOffReason(env: NodeJS.ProcessEnv, host: string, inDocker: boolean): string | undefined {
+  const flag = env.HABBLAUD_MENSAGENS?.trim();
+  if (flag && !isTruthy(flag)) return `HABBLAUD_MENSAGENS=${flag}`;
+  const terminal = terminalOffReason(env, host, inDocker);
+  return terminal ? `mesma trava do terminal: ${terminal}` : undefined;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] = process.argv): ServerConfig {
@@ -143,6 +160,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
     usageDir: resolve(env.HABBLAUD_USAGE_DIR?.trim() || join(home, '.habblaud', 'usage')),
     allowedHosts: parseAllowedHosts(env.HABBLAUD_ALLOWED_HOSTS),
     terminal: terminalOffReason(env, host, inDocker) === undefined,
+    messages: messagesOffReason(env, host, inDocker) === undefined,
     timeline: !env.HABBLAUD_TIMELINE?.trim() || isTruthy(env.HABBLAUD_TIMELINE),
     rootDir,
     version: pkg.version,

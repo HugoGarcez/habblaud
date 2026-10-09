@@ -57,10 +57,15 @@ export interface OfficeDeps {
   sources: () => SourceInfo[];
   /** Nome amigável da conta (ex.: "Conta D") para os avisos. */
   accountName: (id: string) => string | undefined;
-  /** Terminal somente leitura ligado (ver OfficeSnapshot.meta.terminal e ServerConfig.terminal). */
+  /** Terminal ligado (ver OfficeSnapshot.meta.terminal e ServerConfig.terminal). */
   terminal?: boolean;
   /** Pedidos de permissão pendentes por agente (PermissionRegistry.snapshot), postos no snapshot. */
   permissions?: () => ReadonlyMap<string, PermissionRequestInfo>;
+  /**
+   * Agentes cuja sessão o registro de mensagens vê conectada (MessageRegistry.reachable): viram AgentInfo.canMessage.
+   * Ausente = mensagens pelo escritório desligadas (OfficeSnapshot.meta.messages).
+   */
+  messages?: () => ReadonlySet<string>;
   /** Verificação de versão nova no GitHub (ver OfficeSnapshot.meta.updates). */
   updates?: () => UpdateStatus;
   now?: () => number;
@@ -666,11 +671,16 @@ export class Office {
 
   // ---------------------------------------------------------------- pedidos de permissão (server/permissions)
 
-  /** Aviso de pedido de permissão vindo do hook; usa o dedupe do "precisa de você" (o mesmo pedido, outro caminho). */
-  noticePermission(id: string, what: string): void {
+  /**
+   * Aviso de pedido de permissão (ou de pergunta do AskUserQuestion) vindo do hook; usa o dedupe do "precisa de
+   * você" (o mesmo pedido, outro caminho).
+   */
+  noticePermission(id: string, what: string, kind: 'permission' | 'question' = 'permission'): void {
     const info = this.agents.get(id)?.info;
     if (!info) return;
-    this.notice('wait', id, 'alert', `🔐 ${info.name} pede permissão em ${this.roomName(info.roomId)}: ${what}`, info.roomId);
+    const room = this.roomName(info.roomId);
+    const text = kind === 'question' ? `❓ ${info.name} tem uma pergunta em ${room}: ${what}` : `🔐 ${info.name} pede permissão em ${room}: ${what}`;
+    this.notice('wait', id, 'alert', text, info.roomId);
     this.markDirty();
   }
 
@@ -687,6 +697,23 @@ export class Office {
   /** Pedido fictício do demo (já vem completo no snapshot). */
   demoPermission(requestId: string): PermissionRequestInfo | undefined {
     return this.demoSnap?.agents.find((a) => a.permission?.id === requestId)?.permission;
+  }
+
+  // ---------------------------------------------------------------- mensagens pelo escritório (server/messages)
+
+  /** Agente fictício do demo (só existe no snapshot), para o registro de mensagens. */
+  demoAgent(id: string): AgentInfo | undefined {
+    return this.demoSnap?.agents.find((a) => a.id === id);
+  }
+
+  /** Entrega fictícia de uma mensagem a um agente do demo. false = ele já saiu (ou o demo foi desligado). */
+  deliverDemoMessage(agentId: string, text: string): boolean {
+    if (!this.demo) return false;
+    const now = this.now();
+    if (!this.demo.receiveMessage(agentId, text, now)) return false;
+    this.demoSnap = this.demo.snapshot(now);
+    this.markDirty();
+    return true;
   }
 
   // ---------------------------------------------------------------- demonstração
@@ -775,6 +802,15 @@ export class Office {
     }
     const perms = this.deps.permissions?.();
     const real = [...this.agents.values()].map((r) => applyPermission(cloneAgent(r.info), perms?.get(r.info.id)));
+    const reach = this.deps.messages?.();
+    // Mensagens pelo escritório: principais presentes cuja sessão está com o plugin conectado. No demo quem decide é
+    // o simulador; com o recurso desligado, ninguém recebe.
+    for (const a of real) if (reach?.has(a.id) && a.kind === 'main' && a.status !== 'offline' && a.status !== 'done') a.canMessage = true;
+    const demoAgents = (this.demoSnap?.agents ?? []).map((a) => {
+      if (reach || !a.canMessage) return a;
+      const { canMessage: _off, ...rest } = a;
+      return rest;
+    });
     const trim = (a: AgentInfo): AgentInfo => (a.recent.length > SNAPSHOT_RECENT ? { ...a, recent: a.recent.slice(-SNAPSHOT_RECENT) } : a);
     const sessions = new Map<string, number>();
     for (const a of real) if (a.kind === 'main' && a.status !== 'offline') sessions.set(a.account, (sessions.get(a.account) ?? 0) + 1);
@@ -782,7 +818,7 @@ export class Office {
       rev: this.rev,
       serverTime: now,
       rooms,
-      agents: [...real, ...(this.demoSnap?.agents ?? [])].map(trim),
+      agents: [...real, ...demoAgents].map(trim),
       accounts: [...this.deps.accounts(sessions), ...(this.demoSnap?.accounts ?? [])],
       meta: {
         demo: this.isDemo(),
@@ -791,6 +827,7 @@ export class Office {
         version: this.deps.version,
         build: this.deps.build?.(),
         terminal: this.deps.terminal === true,
+        messages: this.deps.messages !== undefined,
         updates: this.deps.updates?.(),
       },
     };

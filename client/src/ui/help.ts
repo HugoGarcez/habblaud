@@ -67,10 +67,10 @@ const INTRO =
 const SHORTCUTS: [string[], string][] = [
   [['/'], 'Buscar agente, projeto ou conta'],
   [['F'], 'Seguir o agente selecionado'],
-  [['T'], 'Abrir ou fechar o terminal do agente selecionado (somente leitura)'],
+  [['T'], 'Abrir ou fechar o terminal do agente selecionado'],
   [['Ctrl+F'], 'Com o terminal em foco: buscar na conversa (⌘F no Mac); Enter e Shift+Enter navegam'],
   [['L'], 'Abrir ou fechar o timelapse do dia'],
-  [['P'], 'Ir até o próximo pedido de permissão para responder pelo escritório'],
+  [['P'], 'Ir até o próximo pedido de permissão ou pergunta para responder pelo escritório'],
   [['M'], 'Meu dia: para onde foi o tempo (trabalhando, esperando você...)'],
   [['O', '0'], 'Visão geral do prédio'],
   [['Esc'], 'Fechar a busca do terminal, depois o terminal; depois, a gaveta e a seleção'],
@@ -129,13 +129,16 @@ export class HelpDialog {
             h('li', { text: 'Clique em um personagem ou sala para ver os detalhes; duplo clique aproxima a câmera.' }),
             h('li', { text: 'Passe o mouse sobre um personagem para ver o que ele está fazendo.' }),
             h('li', {
-              text: 'Nos detalhes de um agente, “Abrir terminal” mostra a conversa da sessão como no Claude Code, ao vivo e só para leitura (precisa do acesso local, bind 127.0.0.1).',
+              text: 'Nos detalhes de um agente, “Abrir terminal” mostra a conversa da sessão como no Claude Code, ao vivo (precisa do acesso local, bind 127.0.0.1).',
+            }),
+            h('li', {
+              text: 'Com o plugin habblaud-mensagens (npm run mod:install), dá para mandar mensagens ao agente principal pelos detalhes dele ou pela caixa no rodapé do terminal: o texto entra na sessão como se você o tivesse digitado. Enter manda, Shift+Enter quebra a linha.',
             }),
             h('li', {
               text: 'No terminal: busca (lupa ou Ctrl/⌘+F), filtro “Tudo / Só prompts / Sem ferramentas” e um botão de copiar em cada entrada. O relógio da barra superior abre o histórico das sessões dos últimos 7 dias, inclusive as já encerradas.',
             }),
             h('li', {
-              text: 'Com o mod do Habblaud instalado (npm run mod:install, que inclui o plugin de permissões), quem “pede permissão” mostra nos detalhes o comando ou a edição e os botões Aprovar, Recusar e Responder no terminal. O diálogo continua no terminal: vale o que você responder primeiro.',
+              text: 'Com o mod do Habblaud instalado (npm run mod:install, que inclui o plugin de permissões), quem “pede permissão” mostra nos detalhes o comando ou a edição e os botões Aprovar, Recusar e Responder no terminal; quem faz uma pergunta mostra as opções (e um “Outro” para escrever) para responder por aqui. O diálogo continua no terminal: vale o que você responder primeiro.',
             }),
           ),
           shortcuts,

@@ -1,18 +1,20 @@
 // Simulador de escritório para demonstração e desenvolvimento.
 // Puro (sem Node/DOM): roda no servidor (HABBLAUD_DEMO=1) e no navegador (?mock=1).
 //
-// Gera sessões fictícias com ciclos realistas: prompt -> trabalho -> (permissão, com pedido fictício
-// para responder pelo escritório) -> (subagentes)
+// Gera sessões fictícias com ciclos realistas: prompt -> trabalho -> (permissão ou pergunta, com pedido
+// fictício para responder pelo escritório) -> (subagentes)
 // -> (comando longo em primeiro plano) -> fim de turno -> (esperando shell em segundo plano) ->
 // pausa -> ... e encerra sessões de tempos em tempos para exercitar as animações de chegada,
 // saída, "apagar a luz" e sumiço de salas.
 import type { AccountInfo, Activity, AgentInfo, FeedItem, Notice, OfficeSnapshot, PermissionDecision, RoomInfo, ShellJob, TaskItem } from '../types';
 import { describePrompt, describeShellJob, describeTool, SHELL_DONE_TOOL, SHELL_WAIT_TOOL, SPECIAL, type ActivityDescription, type ShellOutcome } from '../activity';
+import { answerSummary, ASK_TOOL, checkAnswers } from '../answers';
 import { describeGitHubEvent, GITHUB_TOOL, RoomEffects } from '../github';
 import { hash32, mulberry32 } from '../hash';
+import { describeMessage, MESSAGE_TOOL } from '../messages';
 import { pickName } from '../names';
 import { demoGitHubEvent } from './github';
-import { demoPermission } from './permission';
+import { demoPermission, type DemoPermissionKind } from './permission';
 
 interface DemoProject {
   name: string;
@@ -244,6 +246,19 @@ export class DemoSimulator {
     this.target = Math.max(0, Math.floor(n));
   }
 
+  /**
+   * Mensagem mandada pelo escritório a um agente principal (fictícia: nada vai a uma sessão de verdade): a
+   * atividade "Mensagem pelo Habblaud" e, se ele estava à toa, o próximo turno começa logo, como se respondesse.
+   * false = agente desconhecido, subagente ou que já saiu.
+   */
+  receiveMessage(agentId: string, text: string, now = Date.now()): boolean {
+    const a = this.agents.get(agentId);
+    if (!a || a.info.kind !== 'main' || a.removeAt !== undefined || a.phase === 'leaving') return false;
+    this.activity(a, now, describeMessage(text));
+    if (a.phase === 'idle') a.phaseUntil = Math.min(a.phaseUntil, now + this.ms(1_500, 3_000));
+    return true;
+  }
+
   /** Avança a simulação até `now`. */
   tick(now: number): DemoTickResult {
     if (now >= this.nextSpawnAt) {
@@ -298,21 +313,28 @@ export class DemoSimulator {
   // ---------------------------------------------------------------- pedidos de permissão (fictícios)
 
   /**
-   * Resposta a um pedido fictício pelo escritório: aprovar ou recusar retomam o trabalho na hora;
-   * "responder no terminal" só tira o pedido do escritório (o agente continua esperando um pouco).
-   * false = pedido desconhecido (já respondido ou de outra instância).
+   * Resposta a um pedido fictício pelo escritório: aprovar, recusar ou responder a pergunta retomam o
+   * trabalho na hora; "responder no terminal" só tira o pedido do escritório (o agente continua esperando
+   * um pouco). false = pedido desconhecido (já respondido ou de outra instância) ou resposta que não serve
+   * (pergunta só se responde com as respostas, conferidas como no servidor).
    */
   decidePermission(requestId: string, d: PermissionDecision, now = Date.now()): boolean {
     const a = [...this.agents.values()].find((x) => x.info.permission?.id === requestId);
     if (!a || a.phase !== 'waiting') return false;
-    const title = a.info.permission!.title;
+    const p = a.info.permission!;
+    const ask = p.tool === ASK_TOOL;
+    const answers = d.behavior === 'answer' && ask ? checkAnswers(p.questions ?? [], d.answers) : undefined;
+    if ((d.behavior === 'answer' && !answers) || (d.behavior === 'allow' && ask)) return false;
+    const title = p.title;
     delete a.info.permission;
     this.dirty = true;
     if (d.behavior === 'terminal') {
       a.phaseUntil = Math.min(a.phaseUntil, now + this.ms(3_000, 8_000));
       return true;
     }
-    if (d.behavior === 'allow') {
+    if (answers) {
+      this.activity(a, now, { kind: 'other', icon: '💬', text: 'Respondido no Habblaud', detail: answerSummary(p.questions ?? [], answers), tool: 'PermissionRequest' });
+    } else if (d.behavior === 'allow') {
       this.activity(a, now, { kind: 'other', icon: '✅', text: d.suggestion !== undefined ? 'Aprovado no Habblaud (sempre permitir)' : 'Aprovado no Habblaud', detail: title, tool: 'PermissionRequest' });
     } else {
       this.activity(a, now, { kind: 'wait', icon: '🚫', text: 'Recusado no Habblaud', detail: d.message ? `${title} — ${d.message}` : title, tool: 'PermissionRequest' });
@@ -323,9 +345,10 @@ export class DemoSimulator {
 
   /**
    * Faz um agente principal que está trabalhando (ou, sem nenhum, qualquer um ocioso) pedir permissão
-   * agora. Para testes e capturas de tela; devolve o id do agente.
+   * agora (`kind` força uma permissão ou uma pergunta do AskUserQuestion; sem ele, é sorteado). Para testes
+   * e capturas de tela; devolve o id do agente.
    */
-  forcePermission(now = Date.now()): string | undefined {
+  forcePermission(now = Date.now(), kind?: DemoPermissionKind): string | undefined {
     const mains = [...this.agents.values()].filter((a) => a.info.kind === 'main' && a.removeAt === undefined);
     const a = mains.find((x) => x.phase === 'working') ?? mains.find((x) => x.phase === 'idle');
     if (!a) return undefined;
@@ -334,20 +357,21 @@ export class DemoSimulator {
       a.actionsLeft = 3;
       this.setStatus(a, 'working', now);
     }
-    this.askPermission(a, now);
+    this.askPermission(a, now, kind);
     return a.info.id;
   }
 
-  /** Para no meio do turno pedindo permissão (com o pedido fictício para responder pelo escritório). */
-  private askPermission(a: SimAgent, now: number): void {
+  /** Para no meio do turno pedindo permissão ou perguntando (com o pedido fictício para responder pelo escritório). */
+  private askPermission(a: SimAgent, now: number, kind?: DemoPermissionKind): void {
     a.phase = 'waiting';
     // Com o cartão para responder, a espera é mais longa (dá tempo de clicar).
     a.phaseUntil = now + this.ms(25_000, 50_000);
-    a.info.waitingFor = 'aprovar uma permissão';
-    a.info.permission = demoPermission(`${this.prefix}perm-${this.tag}-${++this.seq}`, a.project, a.rng, now);
+    a.info.permission = demoPermission(`${this.prefix}perm-${this.tag}-${++this.seq}`, a.project, a.rng, now, kind);
+    const reason = a.info.permission.tool === ASK_TOOL ? 'responder uma pergunta' : 'aprovar uma permissão';
+    a.info.waitingFor = reason;
     this.setStatus(a, 'waiting', now);
-    this.activity(a, now, SPECIAL.waiting('aprovar uma permissão'));
-    this.notice(now, 'alert', `✋ ${a.info.name} precisa de você em ${a.project.name}: aprovar uma permissão`, a.info.id, a.info.roomId);
+    this.activity(a, now, SPECIAL.waiting(reason));
+    this.notice(now, 'alert', `✋ ${a.info.name} precisa de você em ${a.project.name}: ${reason}`, a.info.id, a.info.roomId);
   }
 
   private resumeFromWaiting(a: SimAgent, now: number): void {
@@ -423,6 +447,8 @@ export class DemoSimulator {
       statusSince: now,
       stats: { toolCalls: 0, tokensIn: 0, tokensOut: 0, costUSD: 0, linesAdded: 0, linesRemoved: 0, subagents: 0 },
       seed: hash32(id),
+      // Sessão fictícia "com o plugin de mensagens": dá para mandar mensagem pelo escritório (receiveMessage).
+      canMessage: true,
     };
     const a: SimAgent = {
       info,
@@ -505,6 +531,7 @@ export class DemoSimulator {
     if (now >= a.closeAt && a.phase === 'idle') {
       a.phase = 'leaving';
       this.setStatus(a, 'offline', now);
+      delete a.info.canMessage;
       a.removeAt = now + OFFLINE_GRACE_MS;
       this.notice(now, 'info', `🚪 ${a.info.name} encerrou a sessão`, a.info.id, a.info.roomId);
       return;
@@ -760,7 +787,7 @@ export class DemoSimulator {
     a.info.activity = act;
     a.info.recent = [...a.info.recent, act].slice(-30);
     a.info.lastEventAt = now;
-    const synthetic = d.tool === SHELL_DONE_TOOL || d.tool === SHELL_WAIT_TOOL || d.tool === GITHUB_TOOL;
+    const synthetic = d.tool === SHELL_DONE_TOOL || d.tool === SHELL_WAIT_TOOL || d.tool === GITHUB_TOOL || d.tool === MESSAGE_TOOL;
     if (!synthetic && d.kind !== 'prompt' && d.kind !== 'done' && d.kind !== 'wait' && d.kind !== 'think') {
       a.info.stats.toolCalls++;
     }
@@ -826,6 +853,9 @@ function structuredCloneAgent(a: AgentInfo): AgentInfo {
     activity: a.activity ? { ...a.activity } : undefined,
   };
   if (a.shells) c.shells = a.shells.map((j) => ({ ...j }));
-  if (a.permission) c.permission = { ...a.permission, suggestions: a.permission.suggestions?.map((s) => ({ ...s, rules: s.rules.slice() })) };
+  if (a.permission) {
+    c.permission = { ...a.permission, suggestions: a.permission.suggestions?.map((s) => ({ ...s, rules: s.rules.slice() })) };
+    if (a.permission.questions) c.permission.questions = a.permission.questions.map((q) => ({ ...q, options: q.options.map((o) => ({ ...o })) }));
+  }
   return c;
 }

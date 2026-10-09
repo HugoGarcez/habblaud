@@ -16,19 +16,23 @@ const MAX_OPTIONS = 6;
 /** Perguntas de um AskUserQuestion para exibir no escritório (mascaradas e cortadas, como o resto). */
 function askQuestions(raw: unknown): AskQuestion[] {
   const clean = (v: unknown, n: number) => (typeof v === 'string' && v.trim() ? truncate(maskSecrets(v.slice(0, n * 4)), n) : '');
-  const qs = Array.isArray(raw) ? raw.filter((q): q is Record<string, unknown> => !!q && typeof q === 'object') : [];
-  return qs.slice(0, MAX_QUESTIONS).flatMap((q) => {
+  const obj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object';
+  // As posições contam no original (com as entradas inválidas): a resposta pelo escritório volta por elas.
+  const qs = Array.isArray(raw) ? raw.slice(0, MAX_QUESTIONS) : [];
+  return qs.flatMap((q, index) => {
+    if (!obj(q)) return [];
     const question = clean(q.question, 300);
     if (!question) return [];
-    const opts = Array.isArray(q.options) ? q.options.filter((o): o is Record<string, unknown> => !!o && typeof o === 'object') : [];
-    const options = opts.slice(0, MAX_OPTIONS).flatMap((o) => {
+    const opts = Array.isArray(q.options) ? q.options.slice(0, MAX_OPTIONS) : [];
+    const options = opts.flatMap((o, index) => {
+      if (!obj(o)) return [];
       const label = clean(o.label, 80);
       if (!label) return [];
       const description = clean(o.description, 200);
-      return [{ label, ...(description ? { description } : {}) }];
+      return [{ index, label, ...(description ? { description } : {}) }];
     });
     const header = clean(q.header, 30);
-    return [{ question, ...(header ? { header } : {}), ...(q.multiSelect === true ? { multiSelect: true } : {}), options }];
+    return [{ index, question, ...(header ? { header } : {}), ...(q.multiSelect === true ? { multiSelect: true } : {}), options }];
   });
 }
 

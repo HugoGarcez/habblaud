@@ -148,7 +148,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
   topbar = new TopBar(ctx);
   sidebar = new Sidebar(ctx);
   const terminal = new TerminalPanel(ctx);
-  // Histórico de sessões (terminal somente leitura): botão no grupo dos painéis da barra superior.
+  // Histórico de sessões (terminal): botão no grupo dos painéis da barra superior.
   const history = new HistoryPopover(ctx, terminal);
   topbar.panelGroup.prepend(history.button);
   drawer = new Drawer(ctx, terminal);
@@ -299,11 +299,11 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
         break;
       case 'p':
       case 'P': {
-        // Próximo pedido de permissão para responder pelo escritório (só leva até ele: nunca aprova).
+        // Próximo pedido de permissão ou pergunta para responder pelo escritório (só leva até ele: nunca aprova).
         e.preventDefault();
         const next = nextPermissionAgent(store.snapshot?.agents ?? [], selection?.type === 'agent' ? selection.id : undefined);
         if (next) focusPermission(ctx, next.id);
-        else ctx.announce('Nenhum pedido de permissão para responder agora.');
+        else ctx.announce('Nenhum pedido de permissão ou pergunta para responder agora.');
         break;
       }
       case 'o':
@@ -327,7 +327,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
     }
   }
 
-  /** Atalho T: abre o terminal somente leitura do agente selecionado (ou fecha o que estiver aberto). */
+  /** Atalho T: abre o terminal do agente selecionado (ou fecha o que estiver aberto). */
   function toggleTerminal(): void {
     const id = selection?.type === 'agent' ? selection.id : null;
     if (terminal.isOpen && (id === null || terminal.agentId === id)) terminal.close();

@@ -80,12 +80,18 @@ export interface Activity {
   questions?: AskQuestion[];
 }
 
-/** Uma pergunta do AskUserQuestion, já mascarada e cortada. Só leitura: a resposta é dada no Claude Code. */
+/**
+ * Uma pergunta do AskUserQuestion, já mascarada e cortada. Com o pedido no escritório (PermissionRequestInfo.questions),
+ * dá para responder por lá; senão a resposta é dada no Claude Code.
+ */
 export interface AskQuestion {
+  /** Posição da pergunta em `tool_input.questions` (entradas inválidas são puladas, então pode haver saltos). */
+  index: number;
   question: string;
   header?: string;
   multiSelect?: boolean;
-  options: Array<{ label: string; description?: string }>;
+  /** `index` = posição da opção em `options` do original: é ela que volta na resposta (PermissionAnswer). */
+  options: Array<{ index: number; label: string; description?: string }>;
 }
 
 export type TaskStatus = 'pending' | 'in_progress' | 'completed';
@@ -155,6 +161,11 @@ export interface AgentInfo {
    * houver vários). Enquanto existe, o agente aparece como 'waiting'. Ver PermissionRequestInfo.
    */
   permission?: PermissionRequestInfo;
+  /**
+   * Dá para mandar mensagem a este agente pelo Habblaud (só principais): a sessão tem o plugin habblaud-mensagens
+   * e perguntou pela caixa de entrada há pouco. Ver POST /api/messages.
+   */
+  canMessage?: boolean;
 }
 
 export interface RoomInfo {
@@ -306,10 +317,15 @@ export interface OfficeSnapshot {
      */
     build?: string;
     /**
-     * Terminal somente leitura (GET /api/agents/:id/terminal) disponível: só quando o Habblaud não fica
+     * Terminal (GET /api/agents/:id/terminal) disponível: só quando o Habblaud não fica
      * exposto além do próprio computador (bind local). Ausente/false = recurso desligado.
      */
     terminal?: boolean;
+    /**
+     * Mensagens pelo escritório ligadas (POST /api/messages): a mesma trava do terminal e HABBLAUD_MENSAGENS sem
+     * desligar. Quem recebe agora diz AgentInfo.canMessage. Ausente/false = recurso desligado.
+     */
+    messages?: boolean;
     /** Verificação de versão nova no GitHub (ausente nos testes e no timelapse). */
     updates?: UpdateStatus;
   };
@@ -388,7 +404,7 @@ export interface ModWaitingAgent {
   answerable: boolean;
 }
 
-// ------------------------------------------------------------------ terminal somente leitura
+// ------------------------------------------------------------------ terminal
 
 /**
  * Como exibir o `input` de uma chamada de ferramenta:
@@ -397,7 +413,7 @@ export interface ModWaitingAgent {
 export type TerminalInputKind = 'command' | 'diff' | 'json' | 'text';
 
 /**
- * Uma entrada do terminal somente leitura: a conversa da sessão reconstruída do transcript JSONL,
+ * Uma entrada do terminal: a conversa da sessão reconstruída do transcript JSONL,
  * no formato em que o Claude Code a mostra. Todo texto já vem com segredos mascarados e truncado.
  * Entradas só são acrescentadas (nunca editadas): o resultado de uma ferramenta chega depois, numa
  * entrada 'result' que aponta para a 'tool' pelo `toolUseId`.
@@ -429,7 +445,7 @@ export interface TerminalInit {
 }
 
 /**
- * Stream do terminal somente leitura (Server-Sent Events) em GET /api/agents/:id/terminal.
+ * Stream do terminal (Server-Sent Events) em GET /api/agents/:id/terminal.
  * Ao conectar (e a cada reconexão, ou se o transcript for truncado/substituído) chega um `init`;
  * depois, `append` com as entradas novas. Erros antes do stream respondem JSON `{error}`:
  * 403 (recurso desligado ou acesso que não é local), 404 (agente/transcript desconhecido),
@@ -438,7 +454,7 @@ export interface TerminalInit {
 export type TerminalMessage = { type: 'init'; data: TerminalInit } | { type: 'append'; data: TerminalEntry[] };
 
 /**
- * Uma sessão recente (aberta ou já encerrada) no histórico do terminal somente leitura, em
+ * Uma sessão recente (aberta ou já encerrada) no histórico do terminal, em
  * GET /api/sessions/recent. A conversa de uma sessão encerrada sai, com o mesmo protocolo do terminal
  * do agente (TerminalMessage), de GET /api/sessions/:conta/:sessionId/terminal.
  */
@@ -485,7 +501,7 @@ export interface PermissionSuggestionInfo {
 /**
  * Pedido de permissão pendente que dá para responder pelo Habblaud: o hook PermissionRequest do Claude Code
  * (mod/habblaud-permissoes/hooks/permission-hook.mjs) o registra e fica esperando a decisão. Só existe com bind local (a mesma
- * trava do terminal somente leitura) e com alguma página do Habblaud aberta.
+ * trava do terminal) e com alguma página do Habblaud aberta.
  * No snapshot vai sem `input` (os argumentos completos só saem por GET /api/permissions/:id, com acesso
  * local); os pedidos fictícios do demo já vêm com ele.
  */
@@ -505,6 +521,11 @@ export interface PermissionRequestInfo {
   subagent?: string;
   /** Regras "sempre permitir" que podem ser aplicadas junto com a aprovação. */
   suggestions?: PermissionSuggestionInfo[];
+  /**
+   * Pedido do AskUserQuestion: as perguntas, para responder pelo escritório (decisão `answer`). Vai também no
+   * snapshot (sem elas o cartão não tem o que mostrar).
+   */
+  questions?: AskQuestion[];
   /** Outros pedidos do mesmo agente esperando depois deste. */
   queued?: number;
   createdAt: number;
@@ -512,14 +533,59 @@ export interface PermissionRequestInfo {
   expiresAt: number;
 }
 
+/**
+ * Resposta a uma pergunta do AskUserQuestion, por POSIÇÃO (AskQuestion.index e o `index` das opções): o hook troca
+ * as posições pelos textos originais que recebeu do Claude Code (a página só vê os textos mascarados e cortados).
+ */
+export interface PermissionAnswer {
+  /** AskQuestion.index. */
+  question: number;
+  /** Posições das opções escolhidas (uma só sem multiSelect). */
+  options?: number[];
+  /** Texto livre ("Outro"). Sem multiSelect, vale no lugar de uma opção. */
+  other?: string;
+}
+
 /** Corpo de POST /api/permissions/:id/decision (vindo da página). */
 export interface PermissionDecision {
-  /** allow = aprovar; deny = recusar; terminal = devolver o pedido ao terminal (o hook sai sem decidir). */
-  behavior: 'allow' | 'deny' | 'terminal';
+  /**
+   * allow = aprovar; deny = recusar; terminal = devolver o pedido ao terminal (o hook sai sem decidir);
+   * answer = responder as perguntas de um AskUserQuestion (`answers`).
+   */
+  behavior: 'allow' | 'deny' | 'terminal' | 'answer';
   /** Recusa: motivo repassado ao agente. */
   message?: string;
   /** Recusa: interrompe o agente (ele para e espera você). */
   interrupt?: boolean;
   /** Aprovação: aplica junto a sugestão desta posição (PermissionSuggestionInfo.index). */
   suggestion?: number;
+  /** Resposta (`answer`): uma por pergunta do pedido. */
+  answers?: PermissionAnswer[];
+}
+
+// ------------------------------------------------------------------ mensagens pelo escritório
+
+/**
+ * Situação de uma mensagem mandada pela página a um agente (GET /api/messages/:id):
+ * queued = esperando a sessão buscar; sent = a sessão buscou e está entregando; delivered = entrou na sessão (ou
+ * na fila dela, se o agente estava ocupado); failed = não entrou (`error` diz por quê).
+ */
+export type OutboxStatus = 'queued' | 'sent' | 'delivered' | 'failed';
+
+export interface OutboxMessage {
+  id: string;
+  /** AgentInfo.id do destinatário (sempre um principal). */
+  agentId: string;
+  status: OutboxStatus;
+  error?: string;
+  createdAt: number;
+  /** Última mudança de status. */
+  updatedAt: number;
+}
+
+/** Mensagem entregue ao plugin habblaud-mensagens (POST /api/mod/inbox). */
+export interface InboxMessage {
+  id: string;
+  /** O texto como foi digitado: o plugin o manda à sessão como se você o tivesse digitado. */
+  text: string;
 }

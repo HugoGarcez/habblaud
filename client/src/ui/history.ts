@@ -1,6 +1,6 @@
 // Histórico de sessões (popover aberto pelo botão da barra superior): as sessões dos últimos 7 dias de todas as
 // contas (GET /api/sessions/recent), agrupadas por dia, com busca por título, projeto ou conta. Clicar abre a
-// conversa no terminal somente leitura (modo "sessão encerrada"); uma sessão ainda aberta abre o terminal ao vivo
+// conversa no terminal (modo "sessão encerrada"); uma sessão ainda aberta abre o terminal ao vivo
 // do agente. Só existe com o terminal ligado (acesso local). O agrupamento, a busca e a validação da resposta são
 // puros e testados em ui/history.test.ts; a montagem usa só textContent.
 import type { RecentSession } from '../../../shared/types';
@@ -173,7 +173,7 @@ export class HistoryPopover implements UiComponent {
       'div',
       { class: 'ui-popover ui-hist', role: 'dialog', tabIndex: -1, attrs: { 'aria-label': 'Histórico de sessões', id: 'ui-history', popover: 'auto' } },
       h('div', { class: 'ui-popover__head' }, h('h2', { text: 'Histórico de sessões' }), close),
-      h('p', { class: 'ui-hist__hint', text: 'Últimos 7 dias, de todas as contas. Clique para ler a conversa no terminal (somente leitura).' }),
+      h('p', { class: 'ui-hist__hint', text: 'Últimos 7 dias, de todas as contas. Clique para ler a conversa no terminal.' }),
       h('label', { class: 'ui-search ui-hist__search' }, searchIcon, this.input),
       this.stateEl,
       this.listEl,
@@ -315,7 +315,7 @@ export class HistoryPopover implements UiComponent {
     const when = s.firstAt !== undefined && calendarDayDiff(s.firstAt, s.lastAt) !== 0 ? `${formatDateTime(s.firstAt)} → ${formatDateTime(s.lastAt)}` : s.firstAt !== undefined ? `${formatDateTime(s.firstAt)} → ${formatClock(s.lastAt, false)}` : formatDateTime(s.lastAt);
     setTitle(
       btn,
-      [title, shortPath(s.project ?? s.projectDir), `${account?.name ?? s.account} · ${when} · ${formatSize(s.size)}`, live ? 'Ainda aberta: abre o terminal ao vivo do agente' : 'Encerrada: abre a conversa no terminal (somente leitura)'].join('\n'),
+      [title, shortPath(s.project ?? s.projectDir), `${account?.name ?? s.account} · ${when} · ${formatSize(s.size)}`, live ? 'Ainda aberta: abre o terminal ao vivo do agente' : 'Encerrada: abre a conversa no terminal'].join('\n'),
     );
     setAttr(btn, 'aria-label', `${title}, ${project}, ${account?.name ?? s.account}, ${live ? 'aberta' : `última atividade ${dayLabel(s.lastAt, now).toLowerCase()} às ${formatClock(s.lastAt, false)}`}`);
     btn.addEventListener('click', () => {

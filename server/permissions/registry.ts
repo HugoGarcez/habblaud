@@ -6,12 +6,14 @@
 // - só aceita o pedido se alguma página local estiver aberta e a sessão for conhecida (senão o hook sai
 //   na hora e o terminal segue normal);
 // - publica o pedido no agente (AgentInfo.permission, via Office) e avisa no feed;
-// - entrega a decisão ao hook (allow/deny) ou o libera sem decisão ("responder no terminal");
+// - entrega a decisão ao hook (allow/deny, ou as respostas de um AskUserQuestion) ou o libera sem decisão
+//   ("responder no terminal");
 // - descarta pedidos órfãos: tempo limite do hook, hook que morreu (sem ninguém esperando), agente que
 //   saiu e pedido respondido no próprio terminal (o tool_result aparece no transcript).
 import { randomBytes } from 'node:crypto';
 import { describeTool, maskSecrets, truncate } from '../../shared/activity';
-import type { Activity, AgentInfo, PermissionDecision, PermissionRequestInfo, PermissionSuggestionInfo } from '../../shared/types';
+import { ANSWER_OTHER_MAX, answerSummary, ASK_TOOL, checkAnswers } from '../../shared/answers';
+import type { Activity, AgentInfo, PermissionAnswer, PermissionDecision, PermissionRequestInfo, PermissionSuggestionInfo } from '../../shared/types';
 import { errMsg, log } from '../log';
 import { toolView } from '../sources/terminal';
 import { callSignature, scanToolCall } from './transcript';
@@ -33,13 +35,13 @@ export const SCAN_EVERY_MS = 1_000;
 /** Principal que esperava (diálogo aberto) e deixou de esperar há este tempo: respondeu no terminal. */
 export const LEFT_WAITING_MS = 3_000;
 export const MAX_PENDING = 32;
-/** Ferramentas que o hook não manda: a resposta é uma escolha do usuário, não aprovar/recusar. */
-export const UNSUPPORTED_TOOLS = new Set(['AskUserQuestion']);
 
 const DESTINATIONS = new Set(['session', 'localSettings', 'projectSettings', 'userSettings']);
 const MAX_SUGGESTIONS = 4;
 const MAX_MESSAGE = 1_000;
 const RULE_MAX = 160;
+/** Respostas numa decisão `answer` (o AskUserQuestion faz até 4 perguntas). */
+const MAX_ANSWERS = 4;
 
 /** O que o registro usa do Office (interface mínima: facilita os testes). */
 export interface OfficeLike {
@@ -47,8 +49,8 @@ export interface OfficeLike {
   list(): AgentInfo[];
   markDirty(): void;
   addActivity(id: string, activity: Activity, current: boolean, opts?: { feed?: boolean }): void;
-  /** Aviso "pede permissão" (mesmo dedupe do aviso "precisa de você" do status). */
-  noticePermission(id: string, what: string): void;
+  /** Aviso "pede permissão" ou "tem uma pergunta" (mesmo dedupe do aviso "precisa de você" do status). */
+  noticePermission(id: string, what: string, kind?: 'permission' | 'question'): void;
 }
 
 export interface RegistryOptions {
@@ -73,13 +75,21 @@ export type SkipReason = 'no-viewers' | 'unknown-session' | 'unsupported-tool' |
 export type RegisterResult = { id: string; expiresAt: number } | { skip: SkipReason };
 export type ReleaseReason = 'terminal' | 'answered' | 'expired' | 'orphan' | 'gone' | 'shutdown';
 
-/** Resposta de uma espera do hook. */
+/**
+ * Resposta de uma espera do hook. `answer`: as respostas por posição (o hook as troca pelos textos originais
+ * do AskUserQuestion que recebeu do Claude Code).
+ */
 export type WaitResult =
   | { status: 'pending' }
   | { status: 'decided'; behavior: 'allow' | 'deny'; message?: string; interrupt?: boolean; suggestion?: number }
+  | { status: 'decided'; behavior: 'answer'; answers: PermissionAnswer[] }
   | { status: 'released'; reason: ReleaseReason };
 
-export type DecideResult = 'ok' | 'not-found' | 'conflict' | 'invalid';
+/**
+ * invalid = sugestão de regra desconhecida; invalid-answer = decisão que não serve para o tipo de pedido (pergunta
+ * se responde com `answer`, e só ela) ou respostas que não batem com as perguntas.
+ */
+export type DecideResult = 'ok' | 'not-found' | 'conflict' | 'invalid' | 'invalid-answer';
 
 /** Erro de validação do corpo vindo do hook (vira 400). */
 export class InvalidRequest extends Error {}
@@ -89,9 +99,18 @@ interface Waiter {
   timer: ReturnType<typeof setTimeout>;
 }
 
+/** Formato ORIGINAL de uma pergunta do AskUserQuestion: para conferir as respostas, que voltam por posição. */
+interface AskFormat {
+  multiSelect: boolean;
+  /** Quantas opções o original tem (inclusive as que o Habblaud não mostra). */
+  options: number;
+}
+
 interface Pending {
   /** Versão completa (com `input`): GET /api/permissions/:id. */
   info: PermissionRequestInfo;
+  /** Pergunta (AskUserQuestion): o formato de `tool_input.questions`, por posição (undefined = entrada inválida). */
+  askFormat?: Array<AskFormat | undefined>;
   agentId: string;
   sessionId: string;
   /** agent_id do hook (pedido de subagente). */
@@ -118,6 +137,49 @@ function rec(v: unknown): Rec | undefined {
 
 function shortStr(v: unknown, max: number): string | undefined {
   return typeof v === 'string' && v.trim() && v.length <= max ? v.trim() : undefined;
+}
+
+function isIndex(v: unknown): v is number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0;
+}
+
+/** Pedido que se responde com `answer` (as perguntas do AskUserQuestion). */
+function isQuestion(info: { tool: string }): boolean {
+  return info.tool === ASK_TOOL;
+}
+
+/**
+ * A decisão não serve para o tipo de pedido: `answer` só vale para perguntas, e pergunta não se aprova sem as
+ * respostas (recusar e "responder no terminal" valem para os dois).
+ */
+function wrongKind(info: PermissionRequestInfo, d: PermissionDecision): boolean {
+  return d.behavior === 'answer' ? !isQuestion(info) || !info.questions?.length : d.behavior === 'allow' && isQuestion(info);
+}
+
+/** Formato original das perguntas do AskUserQuestion, por posição. */
+function askFormat(raw: unknown): Array<AskFormat | undefined> {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((q) => {
+    const r = rec(q);
+    return r ? { multiSelect: r.multiSelect === true, options: Array.isArray(r.options) ? r.options.length : 0 } : undefined;
+  });
+}
+
+/** Perguntas de verdade (com texto) no original: todas precisam aparecer no escritório para dar para responder por lá. */
+function askCount(raw: unknown): number {
+  if (!Array.isArray(raw)) return 0;
+  return raw.filter((q) => {
+    const text = rec(q)?.question;
+    return typeof text === 'string' && !!text.trim();
+  }).length;
+}
+
+/** A resposta cabe no formato original da pergunta (posições das opções e quantas escolhas). */
+function fitsFormat(f: AskFormat | undefined, a: PermissionAnswer): boolean {
+  if (!f) return false;
+  const options = a.options ?? [];
+  if (options.some((i) => i >= f.options)) return false;
+  return f.multiSelect || options.length + (a.other ? 1 : 0) === 1;
 }
 
 /** Agente que ainda pode receber um pedido (não saiu nem concluiu). */
@@ -164,7 +226,7 @@ export function applyPermission(a: AgentInfo, p: PermissionRequestInfo | undefin
     a.status = 'waiting';
     a.statusSince = p.createdAt;
   }
-  a.waitingFor ??= 'aprovar uma permissão';
+  a.waitingFor ??= isQuestion(p) ? 'responder uma pergunta' : 'aprovar uma permissão';
   return a;
 }
 
@@ -196,9 +258,40 @@ export function parseHookInput(raw: unknown): {
   };
 }
 
+/**
+ * Respostas de uma decisão `answer`: até MAX_ANSWERS, cada uma com a posição da pergunta, as posições das opções
+ * (distintas; ficam em ordem crescente) e/ou o texto livre (aparado, até ANSWER_OTHER_MAX). Se batem com as
+ * perguntas do pedido, quem confere é o registro (decide).
+ */
+function parseAnswers(raw: unknown): PermissionAnswer[] | undefined {
+  if (!Array.isArray(raw) || !raw.length || raw.length > MAX_ANSWERS) return undefined;
+  const out: PermissionAnswer[] = [];
+  for (const item of raw) {
+    const r = rec(item);
+    if (!r || !isIndex(r.question)) return undefined;
+    const a: PermissionAnswer = { question: r.question };
+    if (r.options !== undefined) {
+      if (!Array.isArray(r.options) || !r.options.every(isIndex) || new Set(r.options).size !== r.options.length) return undefined;
+      if (r.options.length) a.options = (r.options as number[]).slice().sort((x, y) => x - y);
+    }
+    if (r.other !== undefined) {
+      if (typeof r.other !== 'string') return undefined;
+      const other = r.other.trim();
+      if (other.length > ANSWER_OTHER_MAX) return undefined;
+      if (other) a.other = other;
+    }
+    out.push(a);
+  }
+  return out;
+}
+
 /** Corpo de uma decisão vinda da página. */
 export function parseDecision(raw: unknown): PermissionDecision | undefined {
   const r = rec(raw);
+  if (r?.behavior === 'answer') {
+    const answers = parseAnswers(r.answers);
+    return answers ? { behavior: 'answer', answers } : undefined;
+  }
   if (!r || (r.behavior !== 'allow' && r.behavior !== 'deny' && r.behavior !== 'terminal')) return undefined;
   const d: PermissionDecision = { behavior: r.behavior };
   if (r.behavior === 'deny') {
@@ -256,12 +349,15 @@ export class PermissionRegistry {
 
   /**
    * Registra um pedido vindo do hook. `{skip}` = não desviar (o hook sai na hora e o terminal segue):
-   * ninguém olhando, sessão desconhecida, ferramenta que não se aprova/recusa ou pedidos demais.
-   * Corpo inválido: lança InvalidRequest.
+   * pergunta que o escritório não consegue mostrar inteira, ninguém olhando, sessão desconhecida ou pedidos
+   * demais. Corpo inválido: lança InvalidRequest.
    */
   register(raw: unknown): RegisterResult {
     const req = parseHookInput(raw);
-    if (UNSUPPORTED_TOOLS.has(req.tool)) return { skip: 'unsupported-tool' };
+    const desc = describeTool(req.tool, req.input);
+    const ask = isQuestion(req);
+    // Pergunta: todas precisam aparecer no escritório (o hook só responde se cada uma tiver resposta).
+    if (ask && (!desc.questions?.length || desc.questions.length !== askCount(req.input.questions))) return { skip: 'unsupported-tool' };
     if (this.opts.viewers() <= 0) return { skip: 'no-viewers' };
     const target = this.resolveAgent(req.sessionId, req.agentId, req.agentType);
     if (!target) return { skip: 'unknown-session' };
@@ -270,13 +366,13 @@ export class PermissionRegistry {
     const now = this.now();
     const id = `p-${now.toString(36)}-${++this.seq}-${randomBytes(9).toString('base64url')}`;
     const view = toolView(req.tool, req.input, req.cwd);
-    const desc = describeTool(req.tool, req.input);
     const info: PermissionRequestInfo = { id, tool: req.tool, title: view.title, text: desc.text, icon: desc.icon, createdAt: now, expiresAt: now + req.timeoutMs };
     if (view.input) info.input = view.input;
     if (view.inputKind) info.inputKind = view.inputKind;
     if (target.subagent) info.subagent = target.subagent;
     const suggestions = pickSuggestions(req.suggestions);
     if (suggestions.length) info.suggestions = suggestions;
+    if (ask) info.questions = desc.questions;
 
     const p: Pending = {
       info,
@@ -288,11 +384,19 @@ export class PermissionRegistry {
       idleSince: now,
     };
     if (req.agentId) p.hookAgentId = req.agentId;
+    if (ask) p.askFormat = askFormat(req.input.questions);
     this.pending.set(id, p);
 
     const by = target.subagent ? ` (subagente ${target.subagent})` : '';
-    this.opts.office.addActivity(target.id, { id: `${target.id}#perm:${id}`, at: now, kind: 'wait', icon: '🔐', text: truncate(`Pede permissão: ${desc.text}`, 46), detail: view.title, tool: 'PermissionRequest' }, false);
-    this.opts.office.noticePermission(target.id, `${desc.text}${by}`);
+    const first = info.questions?.[0]?.question;
+    if (first) {
+      const all = info.questions!.map((q) => q.question).join(' · ');
+      this.opts.office.addActivity(target.id, { id: `${target.id}#perm:${id}`, at: now, kind: 'wait', icon: '❓', text: truncate(`Pergunta: ${first}`, 46), detail: truncate(all, 300), tool: 'PermissionRequest' }, false);
+      this.opts.office.noticePermission(target.id, `${truncate(first, 120)}${by}`, 'question');
+    } else {
+      this.opts.office.addActivity(target.id, { id: `${target.id}#perm:${id}`, at: now, kind: 'wait', icon: '🔐', text: truncate(`Pede permissão: ${desc.text}`, 46), detail: view.title, tool: 'PermissionRequest' }, false);
+      this.opts.office.noticePermission(target.id, `${desc.text}${by}`);
+    }
     this.opts.office.markDirty();
     return { id, expiresAt: info.expiresAt + EXPIRY_GRACE_MS };
   }
@@ -348,16 +452,22 @@ export class PermissionRegistry {
     return { result, cancel: () => waiter && this.dropWaiter(p, waiter) };
   }
 
-  /** Decisão da página. Pedido do demo vai para `demoDecide`. */
+  /** Decisão da página. Pedido do demo vai para `demoDecide` (com as mesmas regras para as perguntas). */
   decide(id: string, d: PermissionDecision): DecideResult {
     const p = this.pending.get(id);
-    if (!p) return this.opts.demoDecide?.(id, d) ? 'ok' : 'not-found';
+    if (!p) {
+      const demo = this.opts.demoDetail?.(id);
+      if (demo && (wrongKind(demo, d) || (d.behavior === 'answer' && !checkAnswers(demo.questions ?? [], d.answers)))) return 'invalid-answer';
+      return this.opts.demoDecide?.(id, d) ? 'ok' : 'not-found';
+    }
     if (p.outcome) return 'conflict';
     if (d.suggestion !== undefined && !p.info.suggestions?.some((s) => s.index === d.suggestion)) return 'invalid';
     if (d.behavior === 'terminal') {
       this.release(p, 'terminal');
       return 'ok';
     }
+    if (wrongKind(p.info, d)) return 'invalid-answer';
+    if (d.behavior === 'answer') return this.answer(p, d.answers);
     const outcome: WaitResult = { status: 'decided', behavior: d.behavior };
     if (d.message) outcome.message = d.message;
     if (d.interrupt) outcome.interrupt = true;
@@ -368,6 +478,20 @@ export class PermissionRegistry {
       d.behavior === 'allow'
         ? { id: `${p.agentId}#perm-ok:${id}`, at: now, kind: 'other', icon: '✅', text: d.suggestion !== undefined ? 'Aprovado no Habblaud (sempre permitir)' : 'Aprovado no Habblaud', detail: p.info.title, tool: 'PermissionRequest' }
         : { id: `${p.agentId}#perm-no:${id}`, at: now, kind: 'wait', icon: '🚫', text: 'Recusado no Habblaud', detail: d.message ? `${p.info.title} — ${d.message}` : p.info.title, tool: 'PermissionRequest' };
+    this.opts.office.addActivity(p.agentId, act, false);
+    return 'ok';
+  }
+
+  /**
+   * Respostas às perguntas de um AskUserQuestion: cada pergunta mostrada respondida exatamente uma vez, com as
+   * opções dela, conferidas também contra o formato ORIGINAL (é por posição que o hook acha os textos).
+   */
+  private answer(p: Pending, raw: PermissionAnswer[] | undefined): DecideResult {
+    const questions = p.info.questions ?? [];
+    const answers = checkAnswers(questions, raw);
+    if (!answers || answers.some((a) => !fitsFormat(p.askFormat?.[a.question], a))) return 'invalid-answer';
+    this.resolve(p, { status: 'decided', behavior: 'answer', answers });
+    const act: Activity = { id: `${p.agentId}#perm-answer:${p.info.id}`, at: this.now(), kind: 'other', icon: '💬', text: 'Respondido no Habblaud', detail: answerSummary(questions, answers), tool: 'PermissionRequest' };
     this.opts.office.addActivity(p.agentId, act, false);
     return 'ok';
   }
