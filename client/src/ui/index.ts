@@ -19,6 +19,7 @@ import { HelpDialog } from './help';
 import { HistoryPopover } from './history';
 import { HoverTip } from './hovertip';
 import { hasRunningShells } from './model';
+import { hasCodexPermission } from './provider';
 import { Notifier } from './notify';
 import { ConnectionBanner, EmptyState, Splash } from './overlays';
 import { focusPermission, nextPermissionAgent } from './permission';
@@ -36,7 +37,7 @@ import { FreeArea } from './viewport';
 
 /** Relógio dos tempos relativos ("há 5 s"). */
 const CLOCK_MS = 5_000;
-/** Relógio do cronômetro dos shells ("12:31"), ligado só enquanto há shells rodando. */
+/** Relógio do cronômetro dos shells ("12:31") e do prazo dos pedidos do Codex, ligado só enquanto há um dos dois. */
 const SHELL_CLOCK_MS = 1_000;
 const NARROW_QUERY = '(max-width: 900px)';
 
@@ -248,7 +249,8 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
     if (!document.hidden) invalidate();
   }, CLOCK_MS);
   setInterval(() => {
-    if (!document.hidden && hasRunningShells(store.snapshot)) invalidate();
+    // Shells rodando (cronômetro) ou pedido do Codex esperando (prazo de segundos).
+    if (!document.hidden && (hasRunningShells(store.snapshot) || hasCodexPermission(store.snapshot))) invalidate();
   }, SHELL_CLOCK_MS);
 
   addEventListener('keydown', (e) => onKey(e));

@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { AgentInfo } from '../../../shared/types';
 import {
   canSend,
+  CODEX_BRIDGE_HINT,
+  CODEX_TIMEOUT_ERROR,
   composerMode,
+  composerTip,
   DELIVERED_SHOW_MS,
   enterSends,
   isSettled,
@@ -10,6 +13,8 @@ import {
   PLUGIN_HINT,
   pollDelay,
   sendStatusText,
+  timeoutError,
+  TIMEOUT_ERROR,
   type ComposerEnv,
 } from './composer-model';
 
@@ -94,6 +99,28 @@ describe('caixa de mensagem (peças puras)', () => {
     expect(sendStatusText({ phase: 'failed', error: 'a sessão não confirmou a entrega', at: 0 }, 99_999)).toBe('Não foi entregue: a sessão não confirmou a entrega');
     expect(['delivered', 'failed', 'rejected'].every((p) => isSettled(p as never))).toBe(true);
     expect(['sending', 'queued', 'sent'].some((p) => isSettled(p as never))).toBe(false);
+  });
+
+  it('Codex: com entregador, igual ao Claude Code; sem ele, a dica do codex:bridge; recurso desligado manda ao Codex', () => {
+    const codex = (over: Partial<AgentInfo> = {}) => agent({ provider: 'codex', ...over });
+    expect(composerMode(codex(), ON)).toEqual({ kind: 'ready' });
+    expect(composerMode(codex({ canMessage: undefined }), ON)).toEqual({ kind: 'hint', text: CODEX_BRIDGE_HINT });
+    expect(CODEX_BRIDGE_HINT).toBe('Para mandar mensagens ao Codex: com o Habblaud no Docker, deixe npm run codex:bridge rodando; no modo Node funciona sozinho');
+    expect(composerMode(codex(), { ...ON, enabled: false })).toEqual({ kind: 'off', text: 'Para responder, use o Codex' });
+    expect(composerMode(codex({ kind: 'sub', parentId: 'acc:1' }), ON).kind).toBe('off');
+    expect(composerMode(codex({ status: 'offline' }), ON)).toEqual({ kind: 'off', text: 'Sessão encerrada' });
+  });
+
+  it('Codex: "Entregue" é a fila da sessão; dica e prazo falam do Codex', () => {
+    expect(sendStatusText({ phase: 'delivered', at: 0 }, 1_000, 'codex')).toBe('Entregue ✓ na fila da sessão: entra quando o Codex terminar o que está fazendo (até ~10 s)');
+    expect(sendStatusText({ phase: 'delivered', at: 0 }, DELIVERED_SHOW_MS, 'codex')).toBe('');
+    expect(sendStatusText({ phase: 'queued', at: 0 }, 0, 'codex')).toBe('Na fila: entregando ao Codex…');
+    // O Claude Code continua como antes.
+    expect(sendStatusText({ phase: 'delivered', at: 0 }, 1_000, 'claude')).toBe(sendStatusText({ phase: 'delivered', at: 0 }, 1_000));
+    expect(composerTip('codex')).toMatch(/^Entra na fila da sessão e vira o próximo prompt quando o Codex terminar/);
+    expect(composerTip()).toBe('Entra na sessão como se você tivesse digitado. Enter manda; Shift+Enter quebra a linha.');
+    expect(timeoutError('codex')).toBe(CODEX_TIMEOUT_ERROR);
+    expect(timeoutError()).toBe(TIMEOUT_ERROR);
   });
 
   it('consulta da entrega: rápida no começo, mais espaçada depois', () => {

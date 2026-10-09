@@ -7,7 +7,8 @@
 // Busca (Ctrl/⌘+F ou a lupa), filtro e o botão de copiar de cada entrada vêm de ui/termtools.ts.
 // O modelo (deduplicação, junção ferramenta -> resultado, limite de entradas, prévias recolhidas e rodapé) é puro e
 // testado em ui/terminal.test.ts; a montagem usa só textContent (o markdown das respostas vem de ui/markdown.ts).
-import type { AgentInfo, RecentSession, TerminalEntry, TerminalInit } from '../../../shared/types';
+// Sessão do Codex: selo "Codex" no cabeçalho e um spinner neutro no rodapé (o ✻ é do Claude Code).
+import type { AgentInfo, Provider, RecentSession, TerminalEntry, TerminalInit } from '../../../shared/types';
 import { MessageComposer } from './composer';
 import type { UiComponent, UiContext } from './context';
 import { copyText, h, iconButton, prefersReducedMotion, setAttr, setHidden, setText, setTitle, setVariant } from './dom';
@@ -15,6 +16,7 @@ import { calendarDayDiff, formatClock, formatDateTime, formatDuration, formatEla
 import { ICONS } from './icons';
 import { renderMarkdown } from './markdown';
 import { roleLabel, shellWaitIn } from './model';
+import { providerOf } from './provider';
 import {
   clearHits,
   copyTextOf,
@@ -29,7 +31,7 @@ import {
   TERMINAL_FILTERS,
   type TerminalFilter,
 } from './termtools';
-import { createAccountChip, updateAccountChip } from './widgets';
+import { createAccountChip, createProviderTag, updateAccountChip, updateProviderTag } from './widgets';
 
 /** Máximo de itens no DOM: os mais antigos saem primeiro. */
 export const TERMINAL_DOM_LIMIT = 1500;
@@ -55,6 +57,8 @@ const STICK_PX = 32;
 const ES_CLOSED = 2;
 /** Quadros do spinner do Claude Code (vai e volta). */
 const SPINNER = ['·', '✢', '✳', '✶', '✻', '✽', '✻', '✶', '✳', '✢'];
+/** Codex: um spinner neutro (pontos girando), com o mesmo número de quadros. */
+const CODEX_SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const SPINNER_MS = 120;
 /** "⏺" com seletor de variação de texto: nunca vira emoji colorido (a cor vem do CSS). */
 const DOT = '⏺︎';
@@ -324,6 +328,17 @@ export function diffLineKind(line: string): DiffLineKind {
 export function entryTimeTitle(at: number, now: number): string {
   if (!Number.isFinite(at) || at <= 0) return '';
   return calendarDayDiff(at, now) === 0 ? formatClock(at) : formatDateTime(at);
+}
+
+/** Quadros do spinner do rodapé de cada ferramenta. */
+export function spinnerFrames(provider: Provider): readonly string[] {
+  return provider === 'codex' ? CODEX_SPINNER : SPINNER;
+}
+
+/** Símbolo parado do rodapé (sem animação, ou fora do "trabalhando"). */
+export function footerGlyph(kind: TerminalFooterKind, provider: Provider): string {
+  if (kind === 'working') return provider === 'codex' ? '•' : '✻';
+  return { waiting: '✋', shell: '⏳', idle: '○', ended: '■' }[kind];
 }
 
 export type TerminalFooterKind = 'working' | 'waiting' | 'shell' | 'idle' | 'ended';
@@ -599,6 +614,10 @@ export class TerminalPanel implements UiComponent, TerminalControl {
   private kindEl: HTMLElement;
   private accEl: HTMLElement;
   private nameEl: HTMLElement;
+  /** Selo "Codex" (sessão do Codex). */
+  private provEl: HTMLElement;
+  /** Quadros do spinner da sessão aberta (Claude Code ou Codex). */
+  private frames: readonly string[] = SPINNER;
   private roleEl: HTMLElement;
   private roomEl: HTMLElement;
   private reconnEl: HTMLElement;
@@ -629,6 +648,7 @@ export class TerminalPanel implements UiComponent, TerminalControl {
     this.accEl = createAccountChip('sm');
     this.accEl.hidden = true;
     this.nameEl = h('strong', { class: 'ui-term__name' });
+    this.provEl = createProviderTag('ui-prov--xs');
     this.roleEl = h('span', { class: 'ui-role' });
     this.roomEl = h('span', { class: 'ui-term__room' });
     this.reconnEl = h('span', { class: 'ui-term__reconn', text: 'reconectando…', hidden: true, role: 'status' });
@@ -640,7 +660,7 @@ export class TerminalPanel implements UiComponent, TerminalControl {
       { class: 'ui-term__bar' },
       icon,
       this.kindEl,
-      h('div', { class: 'ui-term__who' }, this.accEl, this.nameEl, this.roleEl, this.roomEl),
+      h('div', { class: 'ui-term__who' }, this.accEl, this.nameEl, this.provEl, this.roleEl, this.roomEl),
       this.reconnEl,
       this.findBtn,
       close,
@@ -810,6 +830,7 @@ export class TerminalPanel implements UiComponent, TerminalControl {
     setHidden(this.accEl, true);
     setText(this.nameEl, name);
     setTitle(this.nameEl, '');
+    updateProviderTag(this.provEl, providerOf(a));
     setText(this.roleEl, a ? roleLabel(a) : '');
     setHidden(this.roleEl, !a);
     if (a) setVariant(this.roleEl, 'ui-role--', a.kind);
@@ -825,10 +846,11 @@ export class TerminalPanel implements UiComponent, TerminalControl {
   private renderSessionHead(s: RecentSession): void {
     const title = s.title?.trim() || 'Sessão sem título';
     setText(this.kindEl, 'histórico');
-    updateAccountChip(this.accEl, this.ctx.account(s.account), s.account);
+    updateAccountChip(this.accEl, this.ctx.account(s.account), s.account, s.provider);
     setHidden(this.accEl, false);
     setText(this.nameEl, title);
     setTitle(this.nameEl, title);
+    updateProviderTag(this.provEl, providerOf(s));
     setHidden(this.roleEl, true);
     setText(this.roomEl, `${sessionProjectName(s)} · ${formatDateTime(s.firstAt ?? s.lastAt)}`);
     setTitle(this.roomEl, s.project ?? s.projectDir);
@@ -1313,7 +1335,10 @@ export class TerminalPanel implements UiComponent, TerminalControl {
       setText(this.glyph, '■');
       return;
     }
-    const f = terminalFooter(this.ctx.agent(this.id), this.ctx.store.snapshot?.agents ?? [], now);
+    const agent = this.ctx.agent(this.id);
+    const provider = providerOf(agent ?? this.last);
+    this.frames = spinnerFrames(provider);
+    const f = terminalFooter(agent, this.ctx.store.snapshot?.agents ?? [], now);
     setVariant(this.status, 'is-', f.kind);
     setText(this.statusText, f.text);
     setTitle(this.status, f.text);
@@ -1326,20 +1351,19 @@ export class TerminalPanel implements UiComponent, TerminalControl {
     }
     setText(this.statusTime, time);
     setHidden(this.statusTime, !time);
-    const glyphs: Record<typeof f.kind, string> = { working: '✻', waiting: '✋', shell: '⏳', idle: '○', ended: '■' };
     if (f.kind === 'working' && !prefersReducedMotion()) this.startSpinner();
     else {
       this.stopSpinner();
-      setText(this.glyph, glyphs[f.kind]);
+      setText(this.glyph, footerGlyph(f.kind, provider));
     }
   }
 
   private startSpinner(): void {
     if (this.spinTimer) return;
-    setText(this.glyph, SPINNER[this.spinFrame % SPINNER.length]);
+    setText(this.glyph, this.frames[this.spinFrame % this.frames.length]);
     this.spinTimer = setInterval(() => {
-      this.spinFrame = (this.spinFrame + 1) % (SPINNER.length * 8);
-      setText(this.glyph, SPINNER[this.spinFrame % SPINNER.length]);
+      this.spinFrame = (this.spinFrame + 1) % (this.frames.length * 8);
+      setText(this.glyph, this.frames[this.spinFrame % this.frames.length]);
       // O tempo ao lado do texto anda a cada ~1 s, mesmo sem snapshot novo.
       if (this.spinFrame % 8 === 0) this.renderFooter();
     }, SPINNER_MS);

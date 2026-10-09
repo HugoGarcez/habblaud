@@ -1,6 +1,6 @@
 // Simulação do escritório: concilia snapshots do servidor com os personagens e salas do mundo,
 // planeja comportamentos e executa as filas de passos a cada frame.
-import type { AgentInfo, OfficeSnapshot, RoomInfo } from '../../../../shared/types';
+import type { AgentInfo, OfficeSnapshot, Provider, RoomInfo } from '../../../../shared/types';
 import type { ArtModule, Dir, RoomTheme } from '../../art/api';
 import type { WorldOptions } from '../api';
 import { COL_W, COMPACT_DELAY_MS, DISMANTLE_DELAY_MS, FOOT_DX, FOOT_DY, MISSING_DEBOUNCE_MS, RUN_SPEED, TILE, WALK_SPEED } from '../constants';
@@ -98,8 +98,8 @@ export class Sim {
   /** Depuração: agentes forçados a encerrar e salas forçadas a sumir do snapshot. */
   readonly forcedOffline = new Set<string>();
   readonly hiddenRooms = new Set<string>();
-  /** Contas do snapshot (id -> cor/letra) para etiquetas. */
-  accounts = new Map<string, { short: string; color: string; name: string }>();
+  /** Contas do snapshot (id -> cor/letra/ferramenta) para etiquetas: a do Codex ganha chip vazado e o selo. */
+  accounts = new Map<string, { short: string; color: string; name: string; provider?: Provider }>();
   /** Depuração: salas/agentes extras mesclados a cada snapshot (sessões simuladas). */
   injected: { rooms: RoomInfo[]; agents: AgentInfo[] } = { rooms: [], agents: [] };
   /** Depuração: campos sobrepostos a agentes reais do snapshot (ex.: shells forçados). */
@@ -140,7 +140,7 @@ export class Sim {
     this.now = now;
     const first = !this.initialized;
     this.initialized = true;
-    this.accounts = new Map(snap.accounts.map((a) => [a.id, { short: a.short, color: a.color, name: a.name }]));
+    this.accounts = new Map(snap.accounts.map((a) => [a.id, { short: a.short, color: a.color, name: a.name, ...(a.provider === 'codex' ? { provider: a.provider } : {}) }]));
 
     // ---- salas
     let layoutDirty = false;
