@@ -4,8 +4,9 @@
 //   npm start      -> node dist/server/index.js (serve dist/client)
 import http from 'node:http';
 import { join } from 'node:path';
+import { codexDirsRefused } from './accounts/detect';
 import { AccountsService } from './accounts/service';
-import { loadConfig, terminalOffReason } from './config';
+import { loadConfig, messagesOffReason, terminalOffReason } from './config';
 import { createApiHandler, sendJson } from './http/app';
 import { createRequestGuard } from './http/guard';
 import { Hub } from './http/sse';
@@ -19,12 +20,20 @@ import { errMsg, log } from './log';
 import { NameStore } from './model/names';
 import { Office } from './model/office';
 import { openMainAgent, SessionHistory } from './sources/history';
+import { HistorySet, SourceSet } from './sources/source';
 import { createPermissionRoutes } from './permissions/http';
 import { PermissionRegistry } from './permissions/registry';
+import { codexAccountOf } from './codex/http';
+import { createCodexQueueRunner, findCodexBin } from './messages/codex';
+import { createMessageRoutes } from './messages/http';
+import { MessageRegistry } from './messages/registry';
+import type { CodexLive } from './sources/codex/live';
 import { ClaudeWatcher } from './sources/watcher';
 import { findOrcaBin, OrcaWatcher } from './sources/orca';
-import { codexExternalUsage, CodexUsageService } from './sources/codex-usage';
 import { AntigravityUsageService, findAgyBin } from './sources/antigravity-usage';
+import { discoverCodexDirs } from './sources/codex/accounts';
+import { CodexHistory } from './sources/codex/history';
+import { CodexSource } from './sources/codex/source';
 import { createBuildReader } from './build';
 import { UpdateChecker } from './updates/checker';
 
@@ -44,8 +53,8 @@ if (legacyEnv) log.warn(legacyEnv);
 const names = new NameStore(join(config.dataDir, 'names.json'));
 names.load();
 
-// Office, contas e watcher se referenciam (avisos de mudança / fontes): ligação tardia.
-const late: { office?: Office; watcher?: ClaudeWatcher; orca?: OrcaWatcher; permissions?: PermissionRegistry } = {};
+// Office, contas e fontes de agentes se referenciam (avisos de mudança / fontes): ligação tardia.
+const late: { office?: Office; agents?: SourceSet; orca?: OrcaWatcher; permissions?: PermissionRegistry; messages?: MessageRegistry } = {};
 // Versão nova: consulta a release mais recente no GitHub a cada 6 h (HABBLAUD_UPDATE_CHECK=0 desliga).
 const updates = new UpdateChecker({
   current: config.version,
@@ -69,16 +78,26 @@ const office = new Office({
   build: config.dev ? undefined : createBuildReader(config.rootDir),
   startedAt,
   accounts: (sessions) => [...accounts.list(sessions), ...(late.orca?.accounts(sessions) ?? [])],
-  sources: () => [...(late.watcher?.sources() ?? []), ...(late.orca?.sources() ?? [])],
+  sources: () => [...(late.agents?.sources() ?? []), ...(late.orca?.sources() ?? [])],
   accountName: (id) => accounts.find(id)?.detected.name ?? late.orca?.accountName(id),
   terminal: config.terminal,
   permissions: () => late.permissions?.snapshot() ?? new Map(),
+  messages: config.messages ? () => late.messages?.reachable() ?? new Set() : undefined,
   updates: () => updates.status(),
 });
-const watcher = new ClaudeWatcher({ accounts, office, inDocker: config.inDocker });
-// Agentes do Orca (Codex, OpenCode, Antigravity…): lidos pela CLI do Orca, fora do Docker. HABBLAUD_ORCA=0 desliga.
-// Uso de 5 h/semanal das contas do Codex (rollouts em ~/.codex e nas contas do Orca); fora do Docker.
-const codexUsage = new CodexUsageService({ home: config.home, onChange: () => office.markDirty() });
+// Fontes de agentes, uma por ferramenta (sources/source.ts): a do Claude Code e, depois dela, a do Codex (quando há
+// pastas do Codex; HABBLAUD_CODEX=0 desliga), com o histórico dela no HistorySet abaixo e as contas registradas por
+// ela mesma (accounts.setProviderAccounts). `codex` também recebe os eventos dos hooks do Codex (CodexLive).
+const claude = new ClaudeWatcher({ accounts, office, inDocker: config.inDocker });
+const agents = new SourceSet([claude]);
+const codexDirs = config.codex ? discoverCodexDirs(process.env, config.home) : [];
+const codex = codexDirs.length ? new CodexSource({ accounts, office, dirs: codexDirs, env: process.env, home: config.home }) : undefined;
+if (codex) agents.add(codex);
+// Eventos dos hooks do Codex (POST /api/codex/events, mod/habblaud-codex/hook.mjs): vão para a fonte do Codex ao vivo
+// (CodexLive); sem ela (nenhuma pasta do Codex ou HABBLAUD_CODEX=0) a rota responde {ok: false}.
+const codexLive: CodexLive | undefined = codex;
+// Agentes do Orca (OpenCode, Antigravity, Gemini…): lidos pela CLI do Orca, fora do Docker. HABBLAUD_ORCA=0 desliga.
+// O Codex do Orca fica com a fonte do Codex acima (as contas do Orca entram em discoverCodexDirs).
 // Cotas do Antigravity: `agy -p /usage` a cada 5 min (0 tokens); fora do Docker. HABBLAUD_ANTIGRAVITY=0 desliga.
 const agyUsage = new AntigravityUsageService({
   bin: config.inDocker || process.env.HABBLAUD_ANTIGRAVITY === '0' ? undefined : findAgyBin(),
@@ -86,23 +105,28 @@ const agyUsage = new AntigravityUsageService({
 });
 const orca = new OrcaWatcher({
   office,
-  usage: () => (config.inDocker ? [] : [...codexExternalUsage(codexUsage.entries()), ...agyUsage.entries()]),
+  usage: () => (config.inDocker ? [] : agyUsage.entries()),
   bin: config.inDocker || process.env.HABBLAUD_ORCA === '0' ? undefined : findOrcaBin(),
   idleMaxMs: Number(process.env.HABBLAUD_ORCA_IDLE_MIN) > 0 ? Number(process.env.HABBLAUD_ORCA_IDLE_MIN) * 60_000 : undefined,
+  skipTypes: codex ? ['claude', 'codex'] : ['claude'],
 });
 late.office = office;
-late.watcher = watcher;
 late.orca = orca;
+late.agents = agents;
 const hub = new Hub(office);
 // "Meu dia": amostra o escritório a cada segundo e persiste em <dataDir>/stats/ (ver history/daystats.ts).
 const stats = new DayStatsService({ dir: join(config.dataDir, 'stats'), snapshot: () => hub.current() });
 stats.load();
-// Terminal somente leitura: só existe com bind local (ver terminalOffReason em config.ts).
-const terminals = config.terminal ? new TerminalStreams({ office, transcriptPathOf: (id) => watcher.transcriptPathOf(id) }) : undefined;
-// Histórico do terminal (sessões recentes, abertas ou encerradas): mesma trava.
-const history = config.terminal
-  ? new SessionHistory({ accounts: () => accounts.entries(), openAgentOf: (acc, sid) => openMainAgent(office.list(), acc, sid) })
+// Terminal: só existe com bind local (ver terminalOffReason em config.ts).
+// Cada agente com o parser da ferramenta dele (o do Claude Code por padrão).
+const terminals = config.terminal
+  ? new TerminalStreams({ office, transcriptPathOf: (id) => agents.transcriptPathOf(id), parserFor: (id) => agents.parserFor(id) })
   : undefined;
+// Histórico do terminal (sessões recentes, abertas ou encerradas, de todas as ferramentas): mesma trava.
+const history = config.terminal
+  ? new HistorySet([new SessionHistory({ accounts: () => accounts.entries(), openAgentOf: (acc, sid) => openMainAgent(office.list(), acc, sid) })])
+  : undefined;
+if (history && codex) history.add(new CodexHistory({ accounts: () => accounts.entriesOf('codex'), openAgentOf: (acc, sid) => openMainAgent(office.list(), acc, sid) }));
 // Linha do tempo do timelapse: grava cada snapshot novo (com throttle) em <dataDir>/timeline.
 const timelineDir = join(config.dataDir, TIMELINE_DIR);
 const timeline = config.timeline ? new TimelineRecorder({ dir: timelineDir }) : undefined;
@@ -112,17 +136,37 @@ const permissions = config.terminal
   ? new PermissionRegistry({
       office,
       viewers: () => hub.localSize,
-      transcriptPathOf: (id) => watcher.transcriptPathOf(id),
+      // Só o Claude Code: a busca da resposta dada no terminal lê o formato do transcript dele.
+      transcriptPathOf: (id) => claude.transcriptPathOf(id),
+      // Pedidos do hook do Codex: a conta pela pasta CODEX_HOME que ele manda.
+      codexAccount: (account, codexHome) => codexAccountOf(accounts.entriesOf('codex'), account, codexHome),
       demoDecide: (id, d) => office.decideDemoPermission(id, d),
       demoDetail: (id) => office.demoPermission(id),
     })
   : undefined;
 late.permissions = permissions;
+// Mensagens pelo escritório (plugin habblaud-mensagens): entram na sessão como se você as tivesse digitado, então
+// seguem a mesma trava (e HABBLAUD_MENSAGENS=0 desliga só elas). Ao Codex vão por `codex queue` (messages/codex.ts):
+// fora do Docker o próprio servidor roda o comando (HABBLAUD_CODEX_BIN ou `codex` do PATH); no Docker, o auxiliar do
+// host (npm run codex:bridge).
+const codexBin = config.messages && !config.inDocker ? findCodexBin(process.env) : undefined;
+const messages = config.messages
+  ? new MessageRegistry({
+      office,
+      demoAgent: (id) => office.demoAgent(id),
+      demoDeliver: (id, text) => office.deliverDemoMessage(id, text),
+      codex: {
+        run: codexBin ? createCodexQueueRunner(codexBin) : undefined,
+        homeOf: (account) => accounts.entriesOf('codex').find((e) => e.id === account)?.detected.configDir,
+      },
+    })
+  : undefined;
+late.messages = messages;
 
 if (config.demo) office.setDemo(true);
-watcher.start();
+// As fontes síncronas (a do Claude Code) terminam o boot aqui, antes de o hub começar a transmitir.
+void agents.start();
 orca.start();
-if (!config.inDocker) codexUsage.start();
 agyUsage.start();
 accounts.start();
 hub.start();
@@ -131,6 +175,7 @@ if (timeline) {
   timeline.ingest(hub.current());
 }
 permissions?.start();
+messages?.start();
 stats.start();
 updates.start();
 const ticker = setInterval(() => {
@@ -145,7 +190,7 @@ const api = createApiHandler({
   office,
   hub,
   accounts,
-  sources: () => [...watcher.sources(), ...orca.sources()],
+  sources: () => [...agents.sources(), ...orca.sources()],
   version: config.version,
   inDocker: config.inDocker,
   terminal: config.terminal,
@@ -153,6 +198,8 @@ const api = createApiHandler({
   sessions: history,
   timeline: createTimelineHandler({ dir: timelineDir, recording: !!timeline }),
   permissions: permissions ? createPermissionRoutes(permissions) : undefined,
+  messages: messages ? createMessageRoutes(messages) : undefined,
+  codexLive,
   stats,
   updates,
 });
@@ -211,17 +258,44 @@ server.listen(config.port, config.host, () => {
   log.info(`🏢 Habblaud ${config.version}${config.dev ? ' (dev)' : ''}${config.inDocker ? ' (docker)' : ''} em http://${host}:${config.port}`);
   const list = accounts.entries();
   if (!list.length) log.warn('Nenhuma pasta do Claude Code encontrada (defina HABBLAUD_CLAUDE_DIRS).');
+  for (const dir of codexDirsRefused(process.env, config.home)) {
+    log.warn(`${dir} é uma pasta do Codex, não do Claude Code: fica fora das contas do Claude Code.`);
+  }
   for (const a of list) {
-    const src = watcher.sources().find((s) => s.label === a.id);
+    const src = agents.sources().find((s) => s.label === a.id);
     const usage = accounts.usageView(a.id).status;
     log.info(`   Conta ${a.detected.short} (${a.id}): ${src?.sessions ?? 0} sessão(ões) aberta(s) · uso: ${usage} · ${a.dir}`);
   }
-  if (orca.enabled) log.info('   Orca: agentes de outros CLIs (Codex, OpenCode, Antigravity…) pelos terminais do Orca.');
+  if (codex) {
+    const codexAccounts = codex.accountEntries();
+    const open = codex.sources().reduce((n, s) => n + s.sessions, 0);
+    log.info(`   Codex: ${codexAccounts.length} conta(s), ${open} sessão(ões) aberta(s).`);
+    for (const a of codexAccounts) {
+      log.info(`   Conta ${a.detected.short} do Codex (${a.id}): uso: ${accounts.usageView(a.id).status} · ${a.detected.configDir}`);
+    }
+  } else {
+    log.info(`   Codex: ${config.codex ? 'nenhuma pasta do Codex encontrada (defina HABBLAUD_CODEX_DIRS)' : 'desligado (HABBLAUD_CODEX=0)'}.`);
+  }
+  if (orca.enabled) log.info('   Orca: agentes de outros CLIs (OpenCode, Antigravity…) pelos terminais do Orca.');
   if (office.isDemo()) log.info('   Modo demonstração ligado (agentes simulados misturados aos reais).');
-  if (config.terminal) log.info('   Terminal somente leitura: ligado (acesso só local).');
-  else log.info(`   Terminal somente leitura: desligado (${terminalOffReason(process.env, config.host, config.inDocker)}).`);
+  if (config.terminal) log.info('   Terminal: ligado (acesso só local).');
+  else log.info(`   Terminal: desligado (${terminalOffReason(process.env, config.host, config.inDocker)}).`);
   log.info(timeline ? `   Linha do tempo (timelapse): gravando em ${timelineDir}.` : '   Linha do tempo (timelapse): gravação desligada (HABBLAUD_TIMELINE).');
   log.info(`   Responder pelo escritório: ${config.terminal ? 'ligado (precisa do mod: npm run mod:install; ou do hook antigo: npm run hooks:install)' : 'desligado (mesma trava do terminal)'}.`);
+  log.info(
+    config.messages
+      ? '   Mensagens pelo escritório: ligadas (precisa do plugin habblaud-mensagens: npm run mod:install).'
+      : `   Mensagens pelo escritório: desligadas (${messagesOffReason(process.env, config.host, config.inDocker)}).`,
+  );
+  if (config.messages) {
+    log.info(
+      codexBin
+        ? `   Mensagens ao Codex: pelo codex queue (${codexBin}).`
+        : config.inDocker
+          ? '   Mensagens ao Codex: pelo auxiliar do host (deixe npm run codex:bridge rodando no Mac).'
+          : '   Mensagens ao Codex: sem o binário do Codex (codex no PATH ou HABBLAUD_CODEX_BIN); o auxiliar npm run codex:bridge também serve.',
+    );
+  }
   log.info(
     updates.enabled
       ? `   Versão nova: verificando as releases de github.com/${config.repo} a cada 6 h.`
@@ -236,15 +310,15 @@ function shutdown(signal: string): void {
   log.info(`Encerrando (${signal})…`);
   clearInterval(ticker);
   stats.stop();
-  watcher.stop();
+  agents.stop();
   orca.stop();
-  codexUsage.stop();
   agyUsage.stop();
   accounts.stop();
   hub.stop();
   terminals?.stop();
   timeline?.stop();
   permissions?.stop();
+  messages?.stop();
   updates.stop();
   names.flush();
   void closeVite?.();

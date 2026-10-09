@@ -239,7 +239,7 @@ export const ICONS = {
     ],
     { '#': 'currentColor', s: '#f7c76b' },
   ),
-  // Janela de terminal com o prompt ">_" (terminal somente leitura).
+  // Janela de terminal com o prompt ">_".
   terminal: pixelIcon([
     '##########',
     '#........#',

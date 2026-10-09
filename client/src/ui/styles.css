@@ -339,6 +339,59 @@
     inset 0 2px 0 rgba(255, 255, 255, 0.35);
 }
 
+/* Conta do Codex: chip "vazado" (fundo escuro, borda e letra na cor da conta) com cantos em degrau, como um pixel
+   arredondado. Lê-se de longe como "outra ferramenta" sem precisar de logotipo. */
+.ui-acc-chip[data-provider='codex'] {
+  --step: 2px;
+  border-radius: 0;
+  background: #161b26;
+  color: var(--acc);
+  box-shadow:
+    inset 0 0 0 var(--step) var(--acc),
+    inset 0 calc(var(--step) * -2) 0 rgba(0, 0, 0, 0.3);
+  clip-path: polygon(
+    var(--step) 0,
+    calc(100% - var(--step)) 0,
+    100% var(--step),
+    100% calc(100% - var(--step)),
+    calc(100% - var(--step)) 100%,
+    var(--step) 100%,
+    0 calc(100% - var(--step)),
+    0 var(--step)
+  );
+}
+
+.ui-acc-chip--lg[data-provider='codex'] {
+  --step: 3px;
+}
+
+/* Selo de texto "Codex" ao lado do nome da conta (fonte do sistema: na Pixelify o "C" parece "O"). */
+.ui-prov {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  height: 15px;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 0 0 1px var(--ui-line-strong);
+  color: #d9def0;
+  font: 700 9.5px/1 var(--font-ui);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.ui-prov[hidden] {
+  display: none;
+}
+
+.ui-prov--xs {
+  height: 13px;
+  padding: 0 4px;
+  font-size: 8.5px;
+}
+
 .ui-status-dot {
   --st: var(--st-idle);
   display: inline-block;
@@ -970,6 +1023,12 @@
   color: #ffcf8a;
 }
 
+/* Codex com números recentes: a idade fica à mostra, discreta (os números só se renovam com sessão rodando). */
+.ui-usage-card__state.is-fresh {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ui-muted);
+}
+
 .ui-usage-card__state-icon {
   display: inline-grid;
   align-self: center;
@@ -1108,6 +1167,23 @@
   }
 }
 
+/* Cartão minúsculo (4 ou mais contas em telas médias): sem a coluna do reinício (fica na dica). */
+@container usage-card (max-width: 123px) {
+  .ui-usage-card__meters {
+    grid-template-columns: 24px minmax(8px, 1fr) 30px;
+    column-gap: 4px;
+  }
+
+  .ui-meter__reset {
+    display: none;
+  }
+
+  /* A idade vira só o relógio (o texto continua na dica). */
+  .ui-usage-card__state > span:last-child {
+    display: none;
+  }
+}
+
 .ui-usage-card__msg {
   display: flex;
   align-items: center;
@@ -1127,6 +1203,12 @@
 
 .ui-usage-card__msg-short {
   display: none;
+}
+
+/* Codex sem cota nem créditos: aviso (nunca uma barra em 0%). */
+.ui-usage-card__msg.is-noquota {
+  color: #ffb0a0;
+  font-weight: 650;
 }
 
 .ui-usage-card__how {
@@ -2103,6 +2185,59 @@
 
 .ui-alert__text {
   font-size: 12.5px;
+}
+
+/* Perguntas do AskUserQuestion dentro do alerta: só leitura, a resposta é dada no Claude Code. */
+.ui-ask {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.ui-ask__q {
+  padding-top: 9px;
+  border-top: 1px solid rgba(255, 181, 71, 0.25);
+}
+
+.ui-ask__tag {
+  display: inline-block;
+  margin-bottom: 4px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: rgba(255, 181, 71, 0.18);
+  font: 500 11px/1.4 var(--font-px);
+  color: var(--st-waiting);
+}
+
+.ui-ask__question {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #fff3df;
+}
+
+.ui-ask__hint {
+  margin-top: 2px;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.ui-ask__opts {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+}
+
+.ui-ask__opts strong {
+  display: block;
+  font-weight: 600;
+}
+
+.ui-ask__desc {
+  display: block;
+  opacity: 0.8;
+  font-size: 11.5px;
 }
 
 @keyframes ui-alert-in {
@@ -3728,6 +3863,18 @@
   }
 }
 
+/* 4 ou mais contas (ex.: as do Claude Code, a do Codex e as do demo): os cartões podem estreitar até perder a coluna
+   do reinício (ela continua na dica de cada cartão) e o zoom fica na rolagem do mouse e nos atalhos + / −. */
+@media (max-width: 1700px) {
+  .ui-topbar:has(.ui-usage-card:nth-child(4)) .ui-usage-card {
+    min-width: 128px;
+  }
+
+  .ui-topbar:has(.ui-usage-card:nth-child(4)) .ui-topbar__right .ui-btn-group:first-child .ui-icon-btn:not(:first-child) {
+    display: none;
+  }
+}
+
 @media (max-width: 1140px) {
   .ui-topbar:has(.ui-usage-card:nth-child(3)) .ui-brand__name {
     display: none;
@@ -4191,7 +4338,7 @@
   color: #ffe6a3;
 }
 
-/* ---------------------------------------------------------------- terminal somente leitura */
+/* ---------------------------------------------------------------- terminal */
 
 /* Botão na gaveta do agente: uma "linha de terminal" com o prompt em pixels. */
 .ui-term-cta {
@@ -4218,14 +4365,8 @@
   letter-spacing: 0.02em;
 }
 
-.ui-term-cta__ro {
-  margin-left: auto;
-  font-size: 11px;
-  font-weight: 400;
-  color: var(--ui-faint);
-}
-
 .ui-term-cta .ui-kbd {
+  margin-left: auto;
   min-width: 18px;
   height: 18px;
   font-size: 10.5px;
@@ -4378,32 +4519,6 @@
   border-radius: 1px;
   background: var(--st-waiting);
   animation: ui-blink 1s steps(2, jump-none) infinite;
-}
-
-.ui-term__ro {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: none;
-  height: 22px;
-  padding: 0 8px;
-  border-radius: 5px;
-  background: rgba(255, 181, 71, 0.1);
-  border: 1px solid rgba(255, 181, 71, 0.3);
-  font: 500 12px/1 var(--font-px);
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-  color: #ffd9a3;
-  cursor: default;
-}
-
-.ui-term__ro-icon {
-  display: grid;
-}
-
-.ui-term__ro-icon .ui-px-icon {
-  width: 8px;
-  height: 9px;
 }
 
 .ui-term__close {
@@ -4756,7 +4871,7 @@ button.ui-term__think:hover,
   }
 }
 
-/* Rodapé: linha de estado do Claude Code e a caixa de entrada (desabilitada). */
+/* Rodapé: linha de estado do Claude Code e a caixa de mensagem (ui/composer.ts; desabilitada quando não dá). */
 .ui-term__foot {
   flex: none;
   padding: 8px 12px 12px;
@@ -4817,14 +4932,23 @@ button.ui-term__think:hover,
 
 .ui-term__prompt {
   display: grid;
-  grid-template-columns: 2ch minmax(0, 1fr);
+  grid-template-columns: 2ch minmax(0, 1fr) auto;
   column-gap: 1ch;
-  align-items: center;
-  height: 34px;
-  padding: 0 10px;
+  align-items: start;
+  min-height: 34px;
+  padding: 7px 6px 7px 10px;
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.25);
   border: 1px solid var(--ui-line-strong);
+  cursor: text;
+  transition: border-color 0.15s;
+}
+
+.ui-term__prompt:focus-within {
+  border-color: rgba(124, 200, 255, 0.55);
+}
+
+.ui-term__prompt.is-disabled {
   cursor: not-allowed;
 }
 
@@ -4832,23 +4956,136 @@ button.ui-term__think:hover,
   color: var(--term-dim);
 }
 
+.ui-term__prompt:focus-within .ui-term__caret {
+  color: var(--ui-accent);
+}
+
 .ui-term__input {
+  display: block;
   width: 100%;
   min-width: 0;
+  /* ~6 linhas; depois rola (a altura acompanha o texto: ui/composer.ts). */
+  max-height: calc(1.5em * 6);
   margin: 0;
   padding: 0;
   border: 0;
   outline: none;
   background: none;
+  resize: none;
+  overflow-y: auto;
   font: inherit;
-  color: var(--ui-muted);
+  color: var(--ui-text);
+}
+
+.ui-term__input:disabled {
+  overflow: hidden;
+  white-space: nowrap;
   text-overflow: ellipsis;
+  color: var(--ui-muted);
   cursor: not-allowed;
 }
 
 .ui-term__input::placeholder {
   color: var(--ui-faint);
   opacity: 1;
+}
+
+/* Caixa de mensagem (ui/composer.ts): na gaveta do agente e no rodapé do terminal (lá, a linha é o prompt acima). */
+.ui-msg--drawer .ui-msg__row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.ui-msg--drawer .ui-msg__input {
+  flex: 1;
+  min-width: 0;
+  min-height: 32px;
+  max-height: calc(12.5px * 1.4 * 6 + 16px);
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--ui-line-strong);
+  background: rgba(0, 0, 0, 0.32);
+  color: var(--ui-text);
+  font: 12.5px/1.4 var(--font-ui);
+  resize: none;
+  overflow-y: auto;
+}
+
+.ui-msg--drawer .ui-msg__input:focus {
+  outline: none;
+  border-color: rgba(124, 200, 255, 0.6);
+}
+
+.ui-msg--drawer .ui-msg__input::placeholder {
+  color: var(--ui-faint);
+}
+
+.ui-msg--drawer .ui-msg__send {
+  flex: none;
+  height: 32px;
+  background: var(--ui-accent-soft);
+  border-color: rgba(124, 200, 255, 0.5);
+  color: #cfe9ff;
+  font-weight: 600;
+}
+
+.ui-msg--drawer .ui-msg__send:hover:not(:disabled) {
+  background: rgba(124, 200, 255, 0.22);
+}
+
+.ui-msg__send:disabled {
+  opacity: 0.45;
+}
+
+/* No terminal: o botão fica na ponta da linha do prompt, discreto como o resto. */
+.ui-msg--terminal .ui-msg__send {
+  align-self: end;
+  min-width: 26px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 4px;
+  border: 1px solid var(--ui-line-strong);
+  font: 12px/1 var(--font-mono);
+  color: var(--ui-muted);
+}
+
+.ui-msg--terminal .ui-msg__send:hover:not(:disabled) {
+  color: var(--ui-text);
+  border-color: rgba(124, 200, 255, 0.55);
+}
+
+.ui-msg__hint,
+.ui-msg__tip {
+  font-size: 11.5px;
+  color: var(--ui-faint);
+}
+
+.ui-msg__hint {
+  font-family: var(--font-mono);
+}
+
+.ui-msg__tip {
+  margin-top: 6px;
+}
+
+.ui-msg__status {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--ui-muted);
+}
+
+.ui-msg--terminal .ui-msg__status {
+  padding: 0 4px;
+  font: 11.5px/1.4 var(--font-mono);
+}
+
+.ui-msg__status.is-ok {
+  color: #b9f2d2;
+}
+
+.ui-msg__status.is-error {
+  color: #ffb3aa;
 }
 
 /* Markdown das respostas (ui/markdown.ts). */
@@ -4999,14 +5236,8 @@ button.ui-term__think:hover,
   }
 
   .ui-term__kind,
-  .ui-term__room,
-  .ui-term-cta__ro {
+  .ui-term__room {
     display: none;
-  }
-
-  .ui-term__ro {
-    padding: 0 6px;
-    font-size: 11px;
   }
 
   .ui-term__scroll {
@@ -5802,7 +6033,7 @@ html.is-replay #world {
 /* ------------------------------------------------------------------------------------------------
    Responder pelo escritório: cartão "Pede permissão" na gaveta do agente (ui/permission.ts), o atalho
    "Responder" nos avisos e o destaque do contador "precisam de você". A prévia (comando/diff) reaproveita
-   as classes do terminal somente leitura (ui-term__in, ui-term__dl...).
+   as classes do terminal (ui-term__in, ui-term__dl...).
    ------------------------------------------------------------------------------------------------ */
 
 .ui-perm {
@@ -5999,6 +6230,151 @@ html.is-replay #world {
 
 .ui-perm__status.is-error {
   color: #ffb3aa;
+}
+
+/* Perguntas do AskUserQuestion no cartão: rádios (escolha única) ou caixas (várias), com a descrição, e o
+   "Outro" com o campo de texto. Cabeçalho, pergunta, dica e descrição reaproveitam as classes ui-ask__* do
+   alerta "Precisa de você". */
+.ui-perm-ask {
+  display: grid;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.ui-perm-ask__q {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.ui-perm-ask__q + .ui-perm-ask__q {
+  padding-top: 10px;
+  box-shadow: inset 0 1px 0 rgba(255, 181, 71, 0.25);
+}
+
+/* Legenda flutuando: fica no fluxo normal (sem o recorte que o fieldset faz na borda). */
+.ui-perm-ask__legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+}
+
+.ui-perm-ask__legend .ui-ask__question {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.ui-perm-ask__q > .ui-ask__hint {
+  clear: both;
+}
+
+.ui-perm-ask__opt {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 6px 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 181, 71, 0.22);
+  background: rgba(0, 0, 0, 0.18);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ui-perm-ask__opt:hover {
+  border-color: rgba(255, 181, 71, 0.5);
+}
+
+.ui-perm-ask__opt:has(.ui-perm-ask__input:checked) {
+  border-color: rgba(255, 181, 71, 0.75);
+  background: rgba(255, 181, 71, 0.13);
+}
+
+.ui-perm-ask__opt:has(.ui-perm-ask__input:disabled) {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ui-perm-ask__input {
+  flex: none;
+  margin: 2px 0 0;
+  accent-color: var(--st-waiting);
+}
+
+.ui-perm-ask__opt-text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ui-perm-ask__opt-text strong {
+  font-weight: 600;
+  color: #fff3df;
+}
+
+.ui-perm-ask__other {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.ui-perm-ask__other .ui-perm-ask__opt {
+  flex: none;
+  align-items: center;
+  margin-top: 0;
+}
+
+.ui-perm-ask__other .ui-perm-ask__input {
+  margin-top: 0;
+}
+
+.ui-perm-ask__text {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--ui-line-strong);
+  background: rgba(0, 0, 0, 0.32);
+  color: var(--ui-text);
+  font: 12.5px/1.4 var(--font-ui);
+}
+
+.ui-perm-ask__text:focus {
+  outline: none;
+  border-color: rgba(255, 181, 71, 0.7);
+}
+
+.ui-perm-ask__text:disabled {
+  opacity: 0.5;
+}
+
+/* Sem pedido no escritório, a lista do alerta é só leitura: a dica de como responder por aqui. */
+.ui-ask__answer-hint {
+  margin-top: 8px;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+/* Dica dos hooks do Codex no fim da gaveta de um agente do Codex. */
+.ui-codex-hint {
+  margin: 4px 0 2px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--ui-bg-soft);
+  border: 1px dashed var(--ui-line-strong);
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--ui-muted);
+}
+
+.ui-codex-hint[hidden] {
+  display: none;
+}
+
+.ui-codex-hint .ui-usage-setup__inline {
+  white-space: normal;
 }
 
 /* "Responder" no aviso de quem tem pedido para responder pelo escritório. */

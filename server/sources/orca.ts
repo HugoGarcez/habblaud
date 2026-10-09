@@ -203,7 +203,7 @@ export interface OrcaWatcherOptions {
   /** Tipos de agente ignorados (padrão: claude, que vem dos transcripts). */
   skipTypes?: string[];
   /**
-   * Uso de 5 h/semanal das contas de outros agentes (codex-usage.ts, antigravity-usage.ts). Por tipo, a primeira
+   * Uso de 5 h/semanal das contas de outros agentes (antigravity-usage.ts). Por tipo, a primeira
    * entrada vai no cartão dos agentes ("orca:<tipo>"); as outras ganham cartão próprio.
    */
   usage?: () => ExternalUsage[];

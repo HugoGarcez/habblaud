@@ -19,6 +19,7 @@ import { HelpDialog } from './help';
 import { HistoryPopover } from './history';
 import { HoverTip } from './hovertip';
 import { hasRunningShells } from './model';
+import { hasCodexPermission } from './provider';
 import { Notifier } from './notify';
 import { ConnectionBanner, EmptyState, Splash } from './overlays';
 import { focusPermission, nextPermissionAgent } from './permission';
@@ -36,7 +37,7 @@ import { FreeArea } from './viewport';
 
 /** Relógio dos tempos relativos ("há 5 s"). */
 const CLOCK_MS = 5_000;
-/** Relógio do cronômetro dos shells ("12:31"), ligado só enquanto há shells rodando. */
+/** Relógio do cronômetro dos shells ("12:31") e do prazo dos pedidos do Codex, ligado só enquanto há um dos dois. */
 const SHELL_CLOCK_MS = 1_000;
 const NARROW_QUERY = '(max-width: 900px)';
 
@@ -148,7 +149,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
   topbar = new TopBar(ctx);
   sidebar = new Sidebar(ctx);
   const terminal = new TerminalPanel(ctx);
-  // Histórico de sessões (terminal somente leitura): botão no grupo dos painéis da barra superior.
+  // Histórico de sessões (terminal): botão no grupo dos painéis da barra superior.
   const history = new HistoryPopover(ctx, terminal);
   topbar.panelGroup.prepend(history.button);
   drawer = new Drawer(ctx, terminal);
@@ -248,7 +249,8 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
     if (!document.hidden) invalidate();
   }, CLOCK_MS);
   setInterval(() => {
-    if (!document.hidden && hasRunningShells(store.snapshot)) invalidate();
+    // Shells rodando (cronômetro) ou pedido do Codex esperando (prazo de segundos).
+    if (!document.hidden && (hasRunningShells(store.snapshot) || hasCodexPermission(store.snapshot))) invalidate();
   }, SHELL_CLOCK_MS);
 
   addEventListener('keydown', (e) => onKey(e));
@@ -299,11 +301,11 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
         break;
       case 'p':
       case 'P': {
-        // Próximo pedido de permissão para responder pelo escritório (só leva até ele: nunca aprova).
+        // Próximo pedido de permissão ou pergunta para responder pelo escritório (só leva até ele: nunca aprova).
         e.preventDefault();
         const next = nextPermissionAgent(store.snapshot?.agents ?? [], selection?.type === 'agent' ? selection.id : undefined);
         if (next) focusPermission(ctx, next.id);
-        else ctx.announce('Nenhum pedido de permissão para responder agora.');
+        else ctx.announce('Nenhum pedido de permissão ou pergunta para responder agora.');
         break;
       }
       case 'o':
@@ -327,7 +329,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
     }
   }
 
-  /** Atalho T: abre o terminal somente leitura do agente selecionado (ou fecha o que estiver aberto). */
+  /** Atalho T: abre o terminal do agente selecionado (ou fecha o que estiver aberto). */
   function toggleTerminal(): void {
     const id = selection?.type === 'agent' ? selection.id : null;
     if (terminal.isOpen && (id === null || terminal.agentId === id)) terminal.close();

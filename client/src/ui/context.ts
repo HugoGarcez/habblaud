@@ -11,7 +11,7 @@ export interface UiComponent {
 
 export type PanelName = 'sidebar' | 'feed';
 
-export type HelpSection = 'usage';
+export type HelpSection = 'usage' | 'codex';
 
 export interface UiContext {
   readonly store: OfficeStore;

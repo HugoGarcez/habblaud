@@ -164,7 +164,7 @@ describe('API HTTP', () => {
     }
   });
 
-  it('terminal somente leitura desligado: 403 JSON e meta.terminal false', async () => {
+  it('terminal desligado: 403 JSON e meta.terminal false', async () => {
     const res = await fetch(`${env.base}/api/agents/${encodeURIComponent('.claude:1')}/terminal`);
     expect(res.status).toBe(403);
     expect(((await res.json()) as { error: string }).error).toMatch(/desligado/);
@@ -337,7 +337,7 @@ describe('guarda de Host/Origin', () => {
     for (const h of ['attacker.example:4747', 'localhost.attacker.example', '127.0.0.1.nip.io', '', 'x y']) expect(hostAllowed(h, allowed)).toBe(false);
   });
 
-  it('isLoopbackHost: só localhost, *.localhost, 127.x e ::1 (terminal somente leitura)', () => {
+  it('isLoopbackHost: só localhost, *.localhost, 127.x e ::1 (terminal)', () => {
     for (const h of ['localhost:4747', 'LOCALHOST', 'app.localhost:1', '127.0.0.1:4747', '127.8.9.10', '[::1]:4747']) expect(isLoopbackHost(h)).toBe(true);
     for (const h of [undefined, '', '10.0.0.5:4747', '192.168.0.10', '0.0.0.0:4747', 'habblaud.lan', 'meu-mac.local:4747', '[::]:4747', 'localhost.attacker.example', '127.0.0.1.nip.io', 'x y']) {
       expect(isLoopbackHost(h)).toBe(false);

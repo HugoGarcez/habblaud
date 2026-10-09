@@ -150,6 +150,53 @@ describe('Office', () => {
     expect(office.get('acc:1')!.activity?.id).toBe('w1');
   });
 
+  it('boot contado: várias fontes bootando, o escritório só fica pronto quando a última termina', () => {
+    const { office, advance, now } = makeOffice();
+    expect(office.isBooting()).toBe(false);
+    office.beginBoot(); // fonte A (ex.: Claude Code)
+    office.beginBoot(); // fonte B (ex.: Codex, assíncrona)
+    office.addMain({ id: 'acc:1', account: 'acc', sessionId: 's1', cwd: '/p/a', role: 'x', startedAt: now(), status: 'working' });
+    office.addActivity('acc:1', act('a-late', now() - 1_000), true);
+    office.endBoot(); // A terminou, B ainda não
+    expect(office.isBooting()).toBe(true);
+    // Ainda bootando: nada de avisos nem de feed ao vivo; o que chega entra no feed do boot.
+    office.addMain({ id: '.codex:t1', provider: 'codex', account: '.codex', sessionId: 't1', cwd: '/p/a', role: 'x', startedAt: now(), status: 'waiting', waitingFor: 'aprovar um comando' });
+    office.addActivity('.codex:t1', act('b-early', now() - 5_000), true);
+    let r = office.commit();
+    expect(r.notices).toEqual([]);
+    expect(r.feed).toEqual([]);
+    expect(office.recentFeed(10)).toEqual([]);
+    office.endBoot(); // B terminou: pronto
+    expect(office.isBooting()).toBe(false);
+    // O feed das duas fontes sai em ordem cronológica; quem espera ganha o balão (sem aviso).
+    expect(office.recentFeed(10).map((f) => f.id)).toEqual(['b-early', 'a-late']);
+    r = office.commit();
+    expect(r.notices).toEqual([]);
+    expect(r.snapshot.agents.find((a) => a.id === '.codex:t1')?.activity).toMatchObject({ kind: 'wait' });
+    expect(r.snapshot.agents.find((a) => a.id === '.codex:t1')?.provider).toBe('codex');
+    expect(r.snapshot.agents.find((a) => a.id === 'acc:1')).not.toHaveProperty('provider');
+    // endBoot a mais é ignorado (não deixa o contador negativo).
+    office.endBoot();
+    office.beginBoot();
+    expect(office.isBooting()).toBe(true);
+    office.endBoot();
+    expect(office.isBooting()).toBe(false);
+    // Depois do boot, avisos voltam.
+    advance(1_000);
+    office.setStatus('acc:1', 'waiting', 'aprovar uma permissão');
+    expect(office.commit().notices.length).toBeGreaterThan(0);
+  });
+
+  it('subagente herda a ferramenta do principal', () => {
+    const { office, now } = makeOffice();
+    office.addMain({ id: '.codex:t1', provider: 'codex', account: '.codex', sessionId: 't1', cwd: '/p/a', role: 'x', startedAt: now(), status: 'working' });
+    expect(office.addSub({ id: '.codex:t2', parentId: '.codex:t1', sessionId: 't2', role: 'worker', background: false, startedAt: now() })).toBe(true);
+    expect(office.get('.codex:t2')).toMatchObject({ provider: 'codex', account: '.codex', parentId: '.codex:t1' });
+    // 'claude' explícito fica ausente (ausente = 'claude').
+    office.addMain({ id: 'acc:9', provider: 'claude', account: 'acc', sessionId: 's9', cwd: '/p/a', role: 'x', startedAt: now(), status: 'working' });
+    expect(office.get('acc:9')).not.toHaveProperty('provider');
+  });
+
   it('rev só muda quando algo mudou', () => {
     const { office } = makeOffice();
     const r1 = office.commit();
@@ -282,7 +329,7 @@ describe('Office', () => {
     expect(new Set(slots).size).toBe(slots.length);
     expect(snap.rooms.find((r) => r.id === '/p/real')!.slot).toBe(0);
     expect(snap.agents.some((a) => a.id.startsWith('demo:'))).toBe(true);
-    expect(snap.accounts.map((a) => a.short)).toEqual(['C', 'X', 'Y']);
+    expect(snap.accounts.map((a) => a.short)).toEqual(['C', 'X', 'Y', 'Z']);
     const demoAgent = snap.agents.find((a) => a.id.startsWith('demo:'))!;
     expect(office.detail(demoAgent.id)?.agent.id).toBe(demoAgent.id);
     office.setDemo(false);
@@ -291,10 +338,37 @@ describe('Office', () => {
     expect(off.agents.map((a) => a.id)).toEqual(['acc:1']);
   });
 
-  it('meta.terminal: só com o terminal somente leitura ligado', () => {
+  it('meta.terminal: só com o terminal ligado', () => {
     expect(makeOffice().office.commit().snapshot.meta.terminal).toBe(false);
     const deps = { names: new NameStore(null), version: 't', startedAt: 0, accounts: () => [], sources: () => [], accountName: () => undefined };
     expect(new Office({ ...deps, terminal: true }).commit().snapshot.meta.terminal).toBe(true);
     expect(new Office({ ...deps, terminal: false }).commit().snapshot.meta.terminal).toBe(false);
+  });
+
+  it('canMessage: só principais presentes que o registro de mensagens vê conectados; meta.messages com o recurso ligado', () => {
+    const reach = new Set<string>();
+    const deps = { names: new NameStore(null), version: 't', startedAt: 0, accounts: () => [], sources: () => [], accountName: () => undefined };
+    const office = new Office({ ...deps, messages: () => reach });
+    office.addMain({ id: 'acc:1', account: 'acc', sessionId: 's1', cwd: '/p/a', role: 'Agente principal', startedAt: 0, status: 'idle' });
+    office.addMain({ id: 'acc:2', account: 'acc', sessionId: 's2', cwd: '/p/a', role: 'Agente principal', startedAt: 0, status: 'working' });
+    office.addSub({ id: 's1:sub', parentId: 'acc:1', sessionId: 's1', role: 'Explore', background: false, startedAt: 0 });
+    reach.add('acc:1').add('s1:sub');
+    office.markDirty();
+    const snap = office.commit().snapshot;
+    expect(snap.meta.messages).toBe(true);
+    expect(snap.agents.filter((a) => a.canMessage).map((a) => a.id)).toEqual(['acc:1']);
+    // Quem encerrou a sessão não recebe, mesmo que o registro ainda não tenha notado.
+    office.closeMain('acc:1');
+    expect(office.commit().snapshot.agents.filter((a) => a.canMessage)).toEqual([]);
+    // Sem o registro (recurso desligado): meta.messages falso e os principais do demo também não recebem.
+    const off = new Office(deps);
+    off.setDemo(true);
+    const offSnap = off.commit().snapshot;
+    expect(offSnap.meta.messages).toBe(false);
+    expect(offSnap.agents.some((a) => a.canMessage)).toBe(false);
+    const on = new Office({ ...deps, messages: () => new Set() });
+    on.setDemo(true);
+    expect(on.commit().snapshot.agents.filter((a) => a.canMessage).every((a) => a.kind === 'main' && a.id.startsWith('demo:'))).toBe(true);
+    expect(on.commit().snapshot.agents.some((a) => a.canMessage)).toBe(true);
   });
 });
