@@ -4,7 +4,7 @@ import type { AgentInfo, ModSummary, OfficeSnapshot, SourceInfo, UpdateStatus } 
 import type { AccountsService } from '../accounts/service';
 import type { DayStatsService } from '../history/daystats';
 import type { Office } from '../model/office';
-import type { SessionHistory } from '../sources/history';
+import type { SessionLookup } from '../sources/source';
 import { isJsonContentType, isLoopbackHost } from './guard';
 import { handleSessionsRoute } from './sessions';
 import type { Hub } from './sse';
@@ -22,8 +22,11 @@ export interface ApiDeps {
   terminal?: boolean;
   /** Streams do terminal; sem eles o recurso fica desligado mesmo com `terminal`. */
   terminals?: TerminalStreams;
-  /** Histórico de sessões do terminal (GET /api/sessions/*, http/sessions.ts); mesma trava do terminal. */
-  sessions?: SessionHistory;
+  /**
+   * Histórico de sessões do terminal (GET /api/sessions/*, http/sessions.ts): o HistorySet de todas as ferramentas
+   * (ou um provedor sozinho); mesma trava do terminal.
+   */
+  sessions?: SessionLookup;
   /** Rotas do timelapse (/api/timeline/*, ver http/timeline.ts); devolve false para o resto. */
   timeline?: (req: IncomingMessage, res: ServerResponse, url: URL) => boolean;
   /**
@@ -207,7 +210,11 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
           messages: !!deps.messages,
           updates: updatesSummary(deps.updates?.status()),
           sources: deps.sources(),
-          accounts: accounts.entries().map((a) => ({ id: a.id, usageStatus: accounts.usageView(a.id).status })),
+          accounts: accounts.allEntries().map((a) =>
+            a.provider === 'claude'
+              ? { id: a.id, usageStatus: accounts.usageView(a.id).status }
+              : { id: a.id, provider: a.provider, usageStatus: accounts.usageView(a.id).status },
+          ),
         });
       }
       return true;

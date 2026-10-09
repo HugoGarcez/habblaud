@@ -31,7 +31,7 @@ import { homedir } from 'node:os';
 import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { AccountInfo, SourceInfo } from '../shared/types';
-import { detectAccounts, discoverClaudeDirs, type DetectedAccount } from '../server/accounts/detect';
+import { codexDirsRefused, detectAccounts, discoverClaudeDirs, type DetectedAccount } from '../server/accounts/detect';
 import { describeStateMigration, LEGACY_NAME, legacyEnvWarning, migrateLegacyStateDir } from '../server/legacy';
 import { makeClaudeRunner, MIN_CLAUDE_VERSION, readPackageVersion, updateInstalledMods, type ModUpdateResult } from './mod-install';
 
@@ -594,6 +594,8 @@ async function up(opts: Options, port: number): Promise<void> {
   for (const dir of dirs) {
     if (!mounts.some((m) => m.hostDir === dir)) warn(`${tildify(dir)} não tem projects/ nem sessions/; conta ignorada.`);
   }
+  // Pasta do Codex (CODEX_HOME) listada ou achada como se fosse do Claude Code: não é montada como conta do Claude.
+  for (const dir of codexDirsRefused(process.env, HOME)) warn(`${tildify(dir)} é uma pasta do Codex, não do Claude Code; conta ignorada.`);
 
   migrateStateDir();
   const usageDir = ensureUsageDir();

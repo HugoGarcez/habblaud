@@ -1,5 +1,7 @@
 // Detecção das contas do Claude Code (um config dir por conta) e dos seus metadados.
 // Node puro e sem dependências: também é importado por scripts/docker-up.ts (via tsx) no host.
+// Uma pasta do Codex (CODEX_HOME, ex.: ~/.codex) também tem `sessions/` e fica de fora (isCodexHome): as contas
+// do Codex são descobertas pela fonte do Codex e entram no AccountsService com `provider: 'codex'`.
 //
 // Privacidade: do .claude.json lemos SOMENTE o e-mail e a organização do perfil da conta
 // (oauthAccount.{emailAddress, organizationName}) e o cache de uso (cachedUsageUtilization);
@@ -8,9 +10,12 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
+import type { Provider } from '../../shared/types';
 
 export interface DetectedAccount {
   id: string;
+  /** Ferramenta da conta; ausente = 'claude' (detectAccounts só devolve contas do Claude Code). */
+  provider?: Provider;
   configDir: string;
   short: string;
   name: string;
@@ -72,8 +77,46 @@ function isDir(p: string): boolean {
   }
 }
 
-function isClaudeDir(p: string): boolean {
+function isFile(p: string): boolean {
+  try {
+    return statSync(p).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/** Pasta de ano (AAAA) dentro de sessions/: o Codex guarda os rollouts em sessions/AAAA/MM/DD/. */
+const YEAR_DIR = /^\d{4}$/;
+
+/**
+ * A pasta é do Codex (um CODEX_HOME, ex.: ~/.codex)? Ela também tem `sessions/`; sem esta checagem viraria uma
+ * conta do Claude Code vazia e o watcher leria `sessions/` como o registro de sessões. Só marcas que o Claude Code
+ * nunca grava, conferidas pela EXISTÊNCIA (nada é aberto, nem `auth.json` nem `config.toml`):
+ * - `sessions/AAAA/` (rollouts por data; o Claude Code guarda `sessions/<pid>.json` direto ali);
+ * - `thread-writer-locks/` ou `archived_sessions/`;
+ * - `config.toml` ou `auth.json`.
+ * Com `projects/` (que o Codex não cria) é sempre do Claude Code: nenhuma conta que já funcionava deixa de valer.
+ * Pasta inexistente ou vazia não é do Codex.
+ */
+export function isCodexHome(p: string): boolean {
+  if (isDir(join(p, 'projects'))) return false;
+  if (isDir(join(p, 'thread-writer-locks')) || isDir(join(p, 'archived_sessions'))) return true;
+  if (isFile(join(p, 'config.toml')) || isFile(join(p, 'auth.json'))) return true;
+  try {
+    return readdirSync(join(p, 'sessions'), { withFileTypes: true }).some((e) => e.isDirectory() && YEAR_DIR.test(e.name));
+  } catch {
+    return false;
+  }
+}
+
+/** Tem a cara de um config dir do Claude Code (`projects/` ou `sessions/`), sem olhar se é do Codex. */
+function hasClaudeLayout(p: string): boolean {
   return isDir(join(p, 'projects')) || isDir(join(p, 'sessions'));
+}
+
+/** Config dir do Claude Code: `projects/` ou `sessions/`, e não é uma pasta do Codex. */
+export function isClaudeDir(p: string): boolean {
+  return hasClaudeLayout(p) && !isCodexHome(p);
 }
 
 export function isDefaultDir(dir: string, home: string): boolean {
@@ -95,11 +138,36 @@ export function parseAccountOverrides(raw: string | undefined): AccountOverride[
  * Config dirs observados. HABBLAUD_CLAUDE_DIRS (lista separada por vírgula) substitui tudo;
  * senão: diretórios `$HOME/.claude*` com `projects/` ou `sessions/`, mais CLAUDE_CONFIG_DIR
  * (também aceita lista) e os `mountDir` de HABBLAUD_ACCOUNTS que existirem.
+ * Em todos os caminhos, pastas do Codex ficam de fora (isCodexHome; ver codexDirsRefused).
  * Ordem estável: a conta padrão primeiro, depois alfabética.
  */
 export function discoverClaudeDirs(env: NodeJS.ProcessEnv = process.env, home: string = env.HOME || homedir()): string[] {
+  return scanClaudeDirs(env, home).dirs;
+}
+
+/**
+ * Pastas que a descoberta das contas do Claude Code encontrou (ou recebeu de HABBLAUD_CLAUDE_DIRS,
+ * CLAUDE_CONFIG_DIR ou HABBLAUD_ACCOUNTS) e recusou por serem do Codex: para avisar quem as listou.
+ */
+export function codexDirsRefused(env: NodeJS.ProcessEnv = process.env, home: string = env.HOME || homedir()): string[] {
+  return scanClaudeDirs(env, home).codex;
+}
+
+function scanClaudeDirs(env: NodeJS.ProcessEnv, home: string): { dirs: string[]; codex: string[] } {
+  const codex: string[] = [];
+  /** Fora se for do Codex (anotado em `codex`). */
+  const notCodex = (p: string) => {
+    if (!isCodexHome(p)) return true;
+    codex.push(p);
+    return false;
+  };
+  const unique = (list: string[]) => [...new Set(list)];
+
   const override = splitList(env.HABBLAUD_CLAUDE_DIRS);
-  if (override.length) return [...new Set(override.map((p) => expandHome(p, home)))];
+  if (override.length) {
+    const dirs = unique(override.map((p) => expandHome(p, home)));
+    return { dirs: dirs.filter(notCodex), codex };
+  }
 
   const found: string[] = [];
   try {
@@ -107,24 +175,26 @@ export function discoverClaudeDirs(env: NodeJS.ProcessEnv = process.env, home: s
       if (!ent.name.startsWith('.claude')) continue;
       if (!ent.isDirectory() && !ent.isSymbolicLink()) continue;
       const p = join(home, ent.name);
-      if (isClaudeDir(p)) found.push(p);
+      if (hasClaudeLayout(p) && notCodex(p)) found.push(p);
     }
   } catch {
     // $HOME ilegível (ex.: container sem home): segue com as outras fontes
   }
   for (const p of splitList(env.CLAUDE_CONFIG_DIR)) {
     const abs = expandHome(p, home);
-    if (isDir(abs)) found.push(abs);
+    if (isDir(abs) && notCodex(abs)) found.push(abs);
   }
   for (const o of parseAccountOverrides(env.HABBLAUD_ACCOUNTS)) {
-    if (typeof o.mountDir === 'string' && isClaudeDir(o.mountDir)) found.push(expandHome(o.mountDir, home));
+    if (typeof o.mountDir !== 'string') continue;
+    if (hasClaudeLayout(o.mountDir) && notCodex(o.mountDir)) found.push(expandHome(o.mountDir, home));
   }
-  const unique = [...new Set(found.map((p) => expandHome(p, home)))];
-  return unique.sort((a, b) => {
+  const dirs = unique(found.map((p) => expandHome(p, home)));
+  dirs.sort((a, b) => {
     const da = isDefaultDir(a, home) ? 0 : 1;
     const db = isDefaultDir(b, home) ? 0 : 1;
     return da - db || a.localeCompare(b);
   });
+  return { dirs, codex: unique(codex.map((p) => expandHome(p, home))) };
 }
 
 const ALIAS_RE = /^\s*alias\s+([A-Za-z0-9_][A-Za-z0-9_.-]*)=(?:'([^']*)'|"((?:[^"\\]|\\.)*)")\s*(?:#.*)?$/;

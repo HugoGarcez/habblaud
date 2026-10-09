@@ -4,6 +4,7 @@
 //   npm start      -> node dist/server/index.js (serve dist/client)
 import http from 'node:http';
 import { join } from 'node:path';
+import { codexDirsRefused } from './accounts/detect';
 import { AccountsService } from './accounts/service';
 import { loadConfig, messagesOffReason, terminalOffReason } from './config';
 import { createApiHandler, sendJson } from './http/app';
@@ -19,6 +20,7 @@ import { errMsg, log } from './log';
 import { NameStore } from './model/names';
 import { Office } from './model/office';
 import { openMainAgent, SessionHistory } from './sources/history';
+import { HistorySet, SourceSet } from './sources/source';
 import { createPermissionRoutes } from './permissions/http';
 import { PermissionRegistry } from './permissions/registry';
 import { createMessageRoutes } from './messages/http';
@@ -43,8 +45,8 @@ if (legacyEnv) log.warn(legacyEnv);
 const names = new NameStore(join(config.dataDir, 'names.json'));
 names.load();
 
-// Office, contas e watcher se referenciam (avisos de mudança / fontes): ligação tardia.
-const late: { office?: Office; watcher?: ClaudeWatcher; permissions?: PermissionRegistry; messages?: MessageRegistry } = {};
+// Office, contas e fontes de agentes se referenciam (avisos de mudança / fontes): ligação tardia.
+const late: { office?: Office; agents?: SourceSet; permissions?: PermissionRegistry; messages?: MessageRegistry } = {};
 // Versão nova: consulta a release mais recente no GitHub a cada 6 h (HABBLAUD_UPDATE_CHECK=0 desliga).
 const updates = new UpdateChecker({
   current: config.version,
@@ -68,25 +70,31 @@ const office = new Office({
   build: config.dev ? undefined : createBuildReader(config.rootDir),
   startedAt,
   accounts: (sessions) => accounts.list(sessions),
-  sources: () => late.watcher?.sources() ?? [],
+  sources: () => late.agents?.sources() ?? [],
   accountName: (id) => accounts.find(id)?.detected.name,
   terminal: config.terminal,
   permissions: () => late.permissions?.snapshot() ?? new Map(),
   messages: config.messages ? () => late.messages?.reachable() ?? new Set() : undefined,
   updates: () => updates.status(),
 });
-const watcher = new ClaudeWatcher({ accounts, office, inDocker: config.inDocker });
+// Fontes de agentes, uma por ferramenta (sources/source.ts). Hoje só a do Claude Code; a do Codex entra aqui, depois
+// dela (agents.add(codex)), com o histórico dela no HistorySet abaixo e as contas em accounts.setProviderAccounts.
+const claude = new ClaudeWatcher({ accounts, office, inDocker: config.inDocker });
+const agents = new SourceSet([claude]);
 late.office = office;
-late.watcher = watcher;
+late.agents = agents;
 const hub = new Hub(office);
 // "Meu dia": amostra o escritório a cada segundo e persiste em <dataDir>/stats/ (ver history/daystats.ts).
 const stats = new DayStatsService({ dir: join(config.dataDir, 'stats'), snapshot: () => hub.current() });
 stats.load();
 // Terminal: só existe com bind local (ver terminalOffReason em config.ts).
-const terminals = config.terminal ? new TerminalStreams({ office, transcriptPathOf: (id) => watcher.transcriptPathOf(id) }) : undefined;
-// Histórico do terminal (sessões recentes, abertas ou encerradas): mesma trava.
+// Cada agente com o parser da ferramenta dele (o do Claude Code por padrão).
+const terminals = config.terminal
+  ? new TerminalStreams({ office, transcriptPathOf: (id) => agents.transcriptPathOf(id), parserFor: (id) => agents.parserFor(id) })
+  : undefined;
+// Histórico do terminal (sessões recentes, abertas ou encerradas, de todas as ferramentas): mesma trava.
 const history = config.terminal
-  ? new SessionHistory({ accounts: () => accounts.entries(), openAgentOf: (acc, sid) => openMainAgent(office.list(), acc, sid) })
+  ? new HistorySet([new SessionHistory({ accounts: () => accounts.entries(), openAgentOf: (acc, sid) => openMainAgent(office.list(), acc, sid) })])
   : undefined;
 // Linha do tempo do timelapse: grava cada snapshot novo (com throttle) em <dataDir>/timeline.
 const timelineDir = join(config.dataDir, TIMELINE_DIR);
@@ -97,7 +105,8 @@ const permissions = config.terminal
   ? new PermissionRegistry({
       office,
       viewers: () => hub.localSize,
-      transcriptPathOf: (id) => watcher.transcriptPathOf(id),
+      // Só o Claude Code: a busca da resposta dada no terminal lê o formato do transcript dele.
+      transcriptPathOf: (id) => claude.transcriptPathOf(id),
       demoDecide: (id, d) => office.decideDemoPermission(id, d),
       demoDetail: (id) => office.demoPermission(id),
     })
@@ -115,7 +124,8 @@ const messages = config.messages
 late.messages = messages;
 
 if (config.demo) office.setDemo(true);
-watcher.start();
+// As fontes síncronas (a do Claude Code) terminam o boot aqui, antes de o hub começar a transmitir.
+void agents.start();
 accounts.start();
 hub.start();
 if (timeline) {
@@ -138,7 +148,7 @@ const api = createApiHandler({
   office,
   hub,
   accounts,
-  sources: () => watcher.sources(),
+  sources: () => agents.sources(),
   version: config.version,
   inDocker: config.inDocker,
   terminal: config.terminal,
@@ -205,8 +215,11 @@ server.listen(config.port, config.host, () => {
   log.info(`🏢 Habblaud ${config.version}${config.dev ? ' (dev)' : ''}${config.inDocker ? ' (docker)' : ''} em http://${host}:${config.port}`);
   const list = accounts.entries();
   if (!list.length) log.warn('Nenhuma pasta do Claude Code encontrada (defina HABBLAUD_CLAUDE_DIRS).');
+  for (const dir of codexDirsRefused(process.env, config.home)) {
+    log.warn(`${dir} é uma pasta do Codex, não do Claude Code: fica fora das contas do Claude Code.`);
+  }
   for (const a of list) {
-    const src = watcher.sources().find((s) => s.label === a.id);
+    const src = agents.sources().find((s) => s.label === a.id);
     const usage = accounts.usageView(a.id).status;
     log.info(`   Conta ${a.detected.short} (${a.id}): ${src?.sessions ?? 0} sessão(ões) aberta(s) · uso: ${usage} · ${a.dir}`);
   }
@@ -234,7 +247,7 @@ function shutdown(signal: string): void {
   log.info(`Encerrando (${signal})…`);
   clearInterval(ticker);
   stats.stop();
-  watcher.stop();
+  agents.stop();
   accounts.stop();
   hub.stop();
   terminals?.stop();

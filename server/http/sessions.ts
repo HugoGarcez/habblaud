@@ -3,18 +3,20 @@
 //   GET /api/sessions/:conta/:sessionId/terminal   -> SSE com o mesmo protocolo do terminal do agente
 // Mesma trava do terminal (ServerConfig.terminal + Host local), porque expõem títulos e conversas. A conta
 // precisa ser uma das conhecidas, o id precisa ter formato de UUID e o transcript precisa ficar dentro da
-// pasta projects/ da conta (sources/history.ts): nada de path traversal.
+// pasta da conta (cada ferramenta valida o seu: sources/history.ts para o Claude Code): nada de path traversal.
+// Quem lista e resolve é o HistorySet (sources/source.ts), que junta o histórico de todas as ferramentas.
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { RecentSessionsResponse } from '../../shared/types';
 import { errMsg, log } from '../log';
-import { HISTORY_DAYS, HISTORY_LIMIT, type SessionHistory } from '../sources/history';
+import { HISTORY_DAYS, HISTORY_LIMIT } from '../sources/history';
+import type { SessionLookup } from '../sources/source';
 import { sendJson } from './app';
 import { isLoopbackHost } from './guard';
 import type { TerminalStreams } from './terminal';
 
 export interface SessionRoutesDeps {
   /** Ausente = recurso desligado (sem bind local). */
-  history?: SessionHistory;
+  history?: SessionLookup;
   /** Ausente = terminal desligado. */
   terminals?: TerminalStreams;
 }
@@ -71,5 +73,5 @@ export function handleSessionsRoute(req: IncomingMessage, res: ServerResponse, p
   if (account === undefined || sessionId === undefined) return sendJson(res, 400, { error: 'endereço inválido' });
   const found = history.resolve(account, sessionId);
   if ('error' in found) return sendJson(res, found.status, { error: found.error });
-  terminals.attachSession(req, res, `session:${account}:${sessionId}`, found.path);
+  terminals.attachSession(req, res, `session:${account}:${sessionId}`, found.path, found.createParser);
 }
