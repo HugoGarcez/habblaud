@@ -1,4 +1,5 @@
-// Pedidos de permissão (e perguntas) fictícios do modo demonstração (responder pelo escritório sem sessões reais).
+// Pedidos de permissão (e perguntas) fictícios do modo demonstração (responder pelo escritório sem sessões reais),
+// do Claude Code e do Codex (só aprovação, sem "sempre permitir").
 // Puro: usado pelo simulador no servidor (HABBLAUD_DEMO=1) e no navegador (?mock=1).
 import type { PermissionRequestInfo } from '../types';
 import { describeTool } from '../activity';
@@ -123,4 +124,45 @@ export function demoPermission(id: string, src: DemoPermissionSource, rng: () =>
     inputKind: 'text',
     suggestions: [{ index: 0, rules: ['WebFetch(domain:developer.mozilla.org)'], destination: 'localSettings' }],
   };
+}
+
+/**
+ * Quanto o "hook" do Codex espera pela decisão do escritório (HABBLAUD_CODEX_PERMISSION_TIMEOUT, padrão 25 s). Depois
+ * disso o Codex segue o fluxo normal e a aprovação aparece no terminal.
+ */
+export const DEMO_CODEX_PERMISSION_MS = 25_000;
+
+/** Destinos de rede fictícios (o Codex pede acesso à rede como um Bash com a descrição "network-access <alvo>"). */
+const DEMO_NETWORK: ReadonlyArray<[host: string, command: string]> = [
+  ['registry.npmjs.org', 'npm install'],
+  ['pypi.org', 'pip install -r requirements.txt'],
+  ['api.github.com', 'gh pr view --json title'],
+];
+
+/** O diff de um apply_patch no formato do Codex (Begin/End Patch, linhas "-antiga" e "+nova"). */
+export function demoPatchText(file: string, lines: readonly string[], add = false): string {
+  const body = lines.map((l) => (l.startsWith('- ') ? `-${l.slice(2)}` : l.startsWith('+ ') ? `+${l.slice(2)}` : add ? `+${l}` : ` ${l}`));
+  return ['*** Begin Patch', `*** ${add ? 'Add' : 'Update'} File: ${file}`, ...(add ? [] : ['@@']), ...body, '*** End Patch'].join('\n');
+}
+
+/**
+ * Um pedido de aprovação fictício do Codex (hook PermissionRequest): comando no terminal, apply_patch ou acesso à
+ * rede. Sem sugestões de "sempre permitir" (o Codex não as aceita pelo hook) e nunca uma pergunta; o prazo é curto.
+ */
+export function demoCodexPermission(id: string, src: DemoPermissionSource, rng: () => number, now: number): PermissionRequestInfo {
+  const pick = <T>(arr: readonly T[]): T => arr[Math.floor(rng() * arr.length)];
+  const roll = rng();
+  const base = { id, provider: 'codex' as const, createdAt: now, expiresAt: now + DEMO_CODEX_PERMISSION_MS };
+  if (roll < 0.3 && src.files.length) {
+    const file = pick(src.files);
+    const d = describeTool('Edit', { file_path: file });
+    return { ...base, tool: 'apply_patch', title: `apply_patch(${file})`, text: d.text, icon: d.icon, input: demoPatchText(file, pick(DEMO_DIFFS)), inputKind: 'diff' };
+  }
+  if (roll < 0.45) {
+    const [host, command] = pick(DEMO_NETWORK);
+    return { ...base, tool: 'Bash', title: `Bash(${command})`, text: `Acesso à rede: ${host}`, icon: '🌐', input: command, inputKind: 'command' };
+  }
+  const command = src.commands.length ? pick(src.commands) : 'npm test';
+  const d = describeTool('Bash', { command });
+  return { ...base, tool: 'Bash', title: `Bash(${command})`, text: d.text, icon: d.icon, input: command, inputKind: 'command' };
 }

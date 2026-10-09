@@ -1,13 +1,15 @@
 // Caixa de mensagem: manda um texto ao agente principal pelo Habblaud (POST /api/messages) e o plugin
-// habblaud-mensagens o entrega à sessão como se você o tivesse digitado. Fica na gaveta do agente e no rodapé do
+// habblaud-mensagens o entrega à sessão como se você o tivesse digitado (no Codex, `codex queue` a põe na fila da
+// sessão, que a usa quando fica ociosa). Fica na gaveta do agente e no rodapé do
 // terminal (só a sessão ao vivo). Enter manda, Shift+Enter quebra a linha; a linha de situação acompanha a entrega
 // (GET /api/messages/:id) até ela se resolver. As teclas digitadas aqui não disparam os atalhos globais. O rascunho de
 // cada agente fica guardado (só na memória) ao trocar de agente. A lógica pura está em ui/composer-model.ts.
 import { MESSAGE_MAX } from '../../../shared/messages';
-import type { AgentInfo, OutboxMessage } from '../../../shared/types';
+import type { AgentInfo, OutboxMessage, Provider } from '../../../shared/types';
 import {
   canSend,
   composerMode,
+  composerTip,
   enterSends,
   isSettled,
   LOST_ERROR,
@@ -16,7 +18,7 @@ import {
   POLL_LIMIT_MS,
   pollDelay,
   sendStatusText,
-  TIMEOUT_ERROR,
+  timeoutError,
   type ComposerMode,
   type SendState,
 } from './composer-model';
@@ -40,6 +42,10 @@ export class MessageComposer {
   private drafts = new Map<string, string>();
   /** Último envio de cada agente (a linha de situação). */
   private states = new Map<string, SendState>();
+  /** Ferramenta de cada agente que recebeu mensagem (o texto da entrega e do prazo muda no Codex). */
+  private providers = new Map<string, Provider>();
+  /** Ferramenta do agente da caixa. */
+  private provider: Provider = 'claude';
   /** O que a caixa mostra agora ("<agente>|<pronta>"): ao mudar, o conteúdo vem do rascunho. */
   private shown = '';
 
@@ -90,7 +96,7 @@ export class MessageComposer {
     });
     this.hint = h('p', { class: 'ui-msg__hint', hidden: true });
     this.status = h('p', { class: 'ui-msg__status', role: 'status', hidden: true, attrs: { 'aria-live': 'polite' } });
-    this.tip = term ? null : h('p', { class: 'ui-msg__tip', text: 'Entra na sessão como se você tivesse digitado. Enter manda; Shift+Enter quebra a linha.' });
+    this.tip = term ? null : h('p', { class: 'ui-msg__tip', text: composerTip() });
     this.el = h('div', { class: `ui-msg ui-msg--${variant}` }, this.hint, this.row, this.status, this.tip);
   }
 
@@ -108,6 +114,7 @@ export class MessageComposer {
     this.mode = mode;
     const ready = mode.kind === 'ready';
     const term = this.variant === 'terminal';
+    this.provider = agent?.provider === 'codex' ? 'codex' : 'claude';
 
     // Troca de agente (ou a caixa passou a valer/deixou de valer): o conteúdo vem do rascunho guardado.
     const shown = `${key}|${ready}`;
@@ -128,13 +135,16 @@ export class MessageComposer {
     setHidden(this.sendBtn, !ready);
     // Na gaveta, a dica do plugin entra no lugar da caixa; no terminal ela já está no lugar do texto.
     setHidden(this.row, !term && !ready);
-    if (this.tip) setHidden(this.tip, !ready);
+    if (this.tip) {
+      setHidden(this.tip, !ready);
+      setText(this.tip, composerTip(this.provider));
+    }
     setHidden(this.hint, term || mode.kind !== 'hint');
     setText(this.hint, mode.kind === 'hint' ? mode.text : '');
     this.syncButton();
 
     const state = this.states.get(key);
-    const text = sendStatusText(state, Date.now());
+    const text = sendStatusText(state, Date.now(), this.providers.get(key) ?? this.provider);
     setText(this.status, text);
     setHidden(this.status, !text);
     this.status.classList.toggle('is-error', state?.phase === 'failed' || state?.phase === 'rejected');
@@ -184,6 +194,7 @@ export class MessageComposer {
     const agentId = this.agentId;
     const raw = this.box.value;
     if (this.mode.kind !== 'ready' || !canSend(raw) || this.states.get(agentId)?.phase === 'sending') return;
+    this.providers.set(agentId, this.provider);
     this.setState(agentId, { phase: 'sending', at: Date.now() });
     let r: { message: OutboxMessage } | { error: string };
     try {
@@ -226,7 +237,7 @@ export class MessageComposer {
       if (m && (m.status !== cur.phase || m.error !== cur.error)) this.setState(agentId, { phase: m.status, id, error: m.error, at: now });
       if (m && isSettled(m.status)) return;
       const elapsed = now - since;
-      if (elapsed >= POLL_LIMIT_MS) return this.setState(agentId, { phase: 'failed', id, error: TIMEOUT_ERROR, at: now });
+      if (elapsed >= POLL_LIMIT_MS) return this.setState(agentId, { phase: 'failed', id, error: timeoutError(this.providers.get(agentId)), at: now });
       setTimeout(() => void step(), pollDelay(elapsed));
     };
     setTimeout(() => void step(), pollDelay(0));

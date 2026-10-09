@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentInfo, AskQuestion, PermissionRequestInfo } from '../../../shared/types';
-import { answerFor, buildAnswers, destinationLabel, expiryText, isLocalHostname, isQuestionRequest, nextPermissionAgent, permissionAgents, type AskChoice } from './permission';
+import {
+  answerFor,
+  buildAnswers,
+  CODEX_PERMISSION_NOTE,
+  destinationLabel,
+  expiryText,
+  isLocalHostname,
+  isQuestionRequest,
+  nextPermissionAgent,
+  permissionAgents,
+  permissionOptions,
+  type AskChoice,
+} from './permission';
 
 function agent(id: string, permission?: Partial<PermissionRequestInfo>, status: AgentInfo['status'] = 'waiting'): AgentInfo {
   const a: AgentInfo = {
@@ -30,6 +42,29 @@ describe('responder pelo escritório (peças puras)', () => {
     expect(expiryText(10 * 60_000, 0)).toBe('volta ao terminal em 10 min');
     expect(expiryText(30_000, 0)).toBe('volta ao terminal em menos de 1 min');
     expect(expiryText(0, 5)).toBe('voltando ao terminal…');
+  });
+
+  it('expiryText com segundos (prazo curto do Codex)', () => {
+    expect(expiryText(25_000, 0, true)).toBe('volta ao terminal em 25 s');
+    expect(expiryText(25_000, 24_200, true)).toBe('volta ao terminal em 1 s');
+    expect(expiryText(25_000, 25_000, true)).toBe('voltando ao terminal…');
+    expect(expiryText(5 * 60_000, 0, true)).toBe('volta ao terminal em 5 min');
+  });
+
+  it('cartão do Codex: sem "sempre permitir" nem "interromper", recusa com motivo e o aviso do terminal', () => {
+    const suggestions = [{ index: 0, rules: ['Bash(npm test:*)'], destination: 'localSettings' }];
+    expect(permissionOptions({ provider: 'codex', suggestions }, { kind: 'main' })).toEqual({
+      always: false,
+      interrupt: false,
+      reasonRequired: true,
+      seconds: true,
+      note: CODEX_PERMISSION_NOTE,
+    });
+    expect(CODEX_PERMISSION_NOTE).toBe('No Codex, a aprovação só aparece no terminal depois que você responder aqui ou o prazo acabar.');
+    // Claude Code: como antes.
+    expect(permissionOptions({ suggestions }, { kind: 'main' })).toEqual({ always: true, interrupt: true, reasonRequired: false, seconds: false, note: '' });
+    expect(permissionOptions({}, { kind: 'main' }).always).toBe(false);
+    expect(permissionOptions({}, { kind: 'sub', background: true }).note).toMatch(/^Este subagente roda em segundo plano/);
   });
 
   it('destinationLabel', () => {
@@ -67,6 +102,8 @@ describe('cartão de pergunta (AskUserQuestion)', () => {
     expect(isQuestionRequest({ tool: 'AskUserQuestion', questions: [] })).toBe(false);
     expect(isQuestionRequest({ tool: 'Bash' })).toBe(false);
     expect(isQuestionRequest(undefined)).toBe(false);
+    // O Codex não pergunta pelo escritório: nunca vira cartão de pergunta.
+    expect(isQuestionRequest({ tool: 'AskUserQuestion', questions: [single], provider: 'codex' })).toBe(false);
   });
 
   it('answerFor: escolha única = a opção OU o "Outro"; várias = tudo junto; "Outro" sem texto = sem resposta', () => {

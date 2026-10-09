@@ -10,12 +10,18 @@
 //   ("responder no terminal");
 // - descarta pedidos órfãos: tempo limite do hook, hook que morreu (sem ninguém esperando), agente que
 //   saiu e pedido respondido no próprio terminal (o tool_result aparece no transcript).
+//
+// O Codex usa as mesmas rotas (hook PermissionRequest de mod/habblaud-codex/hook.mjs, com `provider: "codex"` e a
+// conta no corpo). Diferenças: o agente casa pelo thread (agent_id ?? session_id) entre os agentes do Codex; sem
+// sugestões nem perguntas; recusar só com motivo (sem interromper); sem a busca da resposta no transcript (no Codex o
+// terminal só pede a aprovação depois que o hook termina, então ela nunca é respondida lá enquanto ele espera).
 import { randomBytes } from 'node:crypto';
 import { describeTool, maskSecrets, truncate } from '../../shared/activity';
 import { ANSWER_OTHER_MAX, answerSummary, ASK_TOOL, checkAnswers } from '../../shared/answers';
 import type { Activity, AgentInfo, PermissionAnswer, PermissionDecision, PermissionRequestInfo, PermissionSuggestionInfo } from '../../shared/types';
 import { errMsg, log } from '../log';
 import { toolView } from '../sources/terminal';
+import { codexToolView } from './codex';
 import { callSignature, scanToolCall } from './transcript';
 
 /** Tempo que o hook espera por padrão (ele manda o próprio em `timeout_ms`). */
@@ -59,6 +65,11 @@ export interface RegistryOptions {
   viewers: () => number;
   /** Transcript de um agente presente (ClaudeWatcher.transcriptPathOf). */
   transcriptPathOf?: (agentId: string) => string | undefined;
+  /**
+   * Conta do Codex (AgentInfo.account) de um pedido do hook do Codex, pela pasta CODEX_HOME que ele manda (o basename
+   * que o hook calcula não sabe dos ids desambiguados, ex. ".codex~2"). undefined = vale a conta do hook.
+   */
+  codexAccount?: (account: string | undefined, codexHome: string | undefined) => string | undefined;
   /** Decisão para um pedido fictício do demo (Office.decideDemoPermission); true = era do demo. */
   demoDecide?: (id: string, d: PermissionDecision) => boolean;
   /** Detalhe de um pedido fictício do demo (o snapshot já o traz). */
@@ -87,9 +98,10 @@ export type WaitResult =
 
 /**
  * invalid = sugestão de regra desconhecida; invalid-answer = decisão que não serve para o tipo de pedido (pergunta
- * se responde com `answer`, e só ela) ou respostas que não batem com as perguntas.
+ * se responde com `answer`, e só ela) ou respostas que não batem com as perguntas; unsupported = o Codex não aceita
+ * (interromper ou "sempre permitir").
  */
-export type DecideResult = 'ok' | 'not-found' | 'conflict' | 'invalid' | 'invalid-answer';
+export type DecideResult = 'ok' | 'not-found' | 'conflict' | 'invalid' | 'invalid-answer' | 'unsupported';
 
 /** Erro de validação do corpo vindo do hook (vira 400). */
 export class InvalidRequest extends Error {}
@@ -109,6 +121,8 @@ interface AskFormat {
 interface Pending {
   /** Versão completa (com `input`): GET /api/permissions/:id. */
   info: PermissionRequestInfo;
+  /** Pedido do Codex (sem a busca da resposta no transcript). */
+  codex?: boolean;
   /** Pergunta (AskUserQuestion): o formato de `tool_input.questions`, por posição (undefined = entrada inválida). */
   askFormat?: Array<AskFormat | undefined>;
   agentId: string;
@@ -143,9 +157,14 @@ function isIndex(v: unknown): v is number {
   return typeof v === 'number' && Number.isInteger(v) && v >= 0;
 }
 
-/** Pedido que se responde com `answer` (as perguntas do AskUserQuestion). */
-function isQuestion(info: { tool: string }): boolean {
-  return info.tool === ASK_TOOL;
+/** Pedido que se responde com `answer` (as perguntas do AskUserQuestion; o Codex não as manda pelo hook). */
+function isQuestion(info: { tool: string; provider?: string }): boolean {
+  return info.tool === ASK_TOOL && info.provider !== 'codex';
+}
+
+/** O Codex não aceita interromper nem "sempre permitir" (o hook dele só aprova ou recusa com motivo). */
+function unsupportedByCodex(info: PermissionRequestInfo, d: PermissionDecision): boolean {
+  return info.provider === 'codex' && (d.interrupt === true || d.suggestion !== undefined);
 }
 
 /**
@@ -226,12 +245,19 @@ export function applyPermission(a: AgentInfo, p: PermissionRequestInfo | undefin
     a.status = 'waiting';
     a.statusSince = p.createdAt;
   }
-  a.waitingFor ??= isQuestion(p) ? 'responder uma pergunta' : 'aprovar uma permissão';
+  a.waitingFor ??= isQuestion(p) ? 'responder uma pergunta' : p.provider === 'codex' ? 'aprovar um comando' : 'aprovar uma permissão';
   return a;
 }
 
-/** Valida o JSON do hook (o mesmo que o Claude Code entrega no stdin, com `timeout_ms` do hook). */
+/**
+ * Valida o JSON do hook (o mesmo que o Claude Code entrega no stdin, com `timeout_ms` do hook). O hook do Codex manda
+ * também `provider: "codex"`, a conta (`account`, o basename do CODEX_HOME) e o caminho dela (`codexHome`); nele,
+ * `agent_id` é o thread do subagente (e `session_id`, o thread raiz).
+ */
 export function parseHookInput(raw: unknown): {
+  provider?: 'codex';
+  account?: string;
+  codexHome?: string;
   sessionId: string;
   agentId?: string;
   agentType?: string;
@@ -246,14 +272,16 @@ export function parseHookInput(raw: unknown): {
   const tool = shortStr(r?.tool_name, 200);
   if (!r || !sessionId || !tool) throw new InvalidRequest('esperado o JSON do hook PermissionRequest (session_id e tool_name)');
   const t = typeof r.timeout_ms === 'number' && Number.isFinite(r.timeout_ms) ? r.timeout_ms : DEFAULT_TIMEOUT_MS;
+  const codex = r.provider === 'codex';
   return {
+    ...(codex ? { provider: 'codex' as const, account: shortStr(r.account, 200), codexHome: shortStr(r.codexHome, 4_096) } : {}),
     sessionId,
     agentId: shortStr(r.agent_id, 200),
     agentType: shortStr(r.agent_type, 120),
     cwd: shortStr(r.cwd, 4_096),
     tool,
     input: rec(r.tool_input) ?? {},
-    suggestions: r.permission_suggestions,
+    suggestions: codex ? undefined : r.permission_suggestions,
     timeoutMs: Math.min(MAX_TIMEOUT_MS, Math.max(MIN_TIMEOUT_MS, t)),
   };
 }
@@ -354,35 +382,42 @@ export class PermissionRegistry {
    */
   register(raw: unknown): RegisterResult {
     const req = parseHookInput(raw);
-    const desc = describeTool(req.tool, req.input);
+    const codex = req.provider === 'codex';
+    const desc = codex ? codexToolView(req.tool, req.input, req.cwd) : describeTool(req.tool, req.input);
+    const questions = 'questions' in desc ? desc.questions : undefined;
     const ask = isQuestion(req);
     // Pergunta: todas precisam aparecer no escritório (o hook só responde se cada uma tiver resposta).
-    if (ask && (!desc.questions?.length || desc.questions.length !== askCount(req.input.questions))) return { skip: 'unsupported-tool' };
+    if (ask && (!questions?.length || questions.length !== askCount(req.input.questions))) return { skip: 'unsupported-tool' };
     if (this.opts.viewers() <= 0) return { skip: 'no-viewers' };
-    const target = this.resolveAgent(req.sessionId, req.agentId, req.agentType);
+    const target = codex
+      ? this.resolveCodexAgent(req.sessionId, req.agentId, req.agentType, this.opts.codexAccount?.(req.account, req.codexHome) ?? req.account)
+      : this.resolveAgent(req.sessionId, req.agentId, req.agentType);
     if (!target) return { skip: 'unknown-session' };
     if (this.size >= this.maxPending) return { skip: 'too-many' };
 
     const now = this.now();
     const id = `p-${now.toString(36)}-${++this.seq}-${randomBytes(9).toString('base64url')}`;
-    const view = toolView(req.tool, req.input, req.cwd);
+    // Codex: título, resumo e argumentos pelos nomes de ferramenta dele (permissions/codex.ts).
+    const view = 'title' in desc ? desc : toolView(req.tool, req.input, req.cwd);
     const info: PermissionRequestInfo = { id, tool: req.tool, title: view.title, text: desc.text, icon: desc.icon, createdAt: now, expiresAt: now + req.timeoutMs };
+    if (codex) info.provider = 'codex';
     if (view.input) info.input = view.input;
     if (view.inputKind) info.inputKind = view.inputKind;
     if (target.subagent) info.subagent = target.subagent;
     const suggestions = pickSuggestions(req.suggestions);
     if (suggestions.length) info.suggestions = suggestions;
-    if (ask) info.questions = desc.questions;
+    if (ask) info.questions = questions;
 
     const p: Pending = {
       info,
       agentId: target.id,
       sessionId: req.sessionId,
-      signature: callSignature(req.tool, req.input),
+      signature: codex ? '' : callSignature(req.tool, req.input),
       lastScanAt: 0,
       waiters: new Set(),
       idleSince: now,
     };
+    if (codex) p.codex = true;
     if (req.agentId) p.hookAgentId = req.agentId;
     if (ask) p.askFormat = askFormat(req.input.questions);
     this.pending.set(id, p);
@@ -457,10 +492,12 @@ export class PermissionRegistry {
     const p = this.pending.get(id);
     if (!p) {
       const demo = this.opts.demoDetail?.(id);
+      if (demo && unsupportedByCodex(demo, d)) return 'unsupported';
       if (demo && (wrongKind(demo, d) || (d.behavior === 'answer' && !checkAnswers(demo.questions ?? [], d.answers)))) return 'invalid-answer';
       return this.opts.demoDecide?.(id, d) ? 'ok' : 'not-found';
     }
     if (p.outcome) return 'conflict';
+    if (unsupportedByCodex(p.info, d)) return 'unsupported';
     if (d.suggestion !== undefined && !p.info.suggestions?.some((s) => s.index === d.suggestion)) return 'invalid';
     if (d.behavior === 'terminal') {
       this.release(p, 'terminal');
@@ -507,6 +544,8 @@ export class PermissionRegistry {
       if (now >= p.info.expiresAt + EXPIRY_GRACE_MS) this.release(p, 'expired');
       else if (!p.waiters.size && now - p.idleSince >= this.orphanMs) this.release(p, 'orphan');
       else if (!present(this.opts.office.get(p.agentId))) this.release(p, 'gone');
+      // No Codex o terminal só pede a aprovação depois que o hook termina: não há resposta dada lá para procurar.
+      else if (p.codex) continue;
       else if (now - p.lastScanAt >= SCAN_EVERY_MS && this.answeredInTerminal(p, now)) this.release(p, 'answered');
       else if (this.leftWaiting(p, now)) this.release(p, 'answered');
     }
@@ -518,11 +557,30 @@ export class PermissionRegistry {
     const office = this.opts.office;
     if (agentId) {
       const subId = `${sessionId}:${agentId}`;
-      if (present(office.get(subId))) return { id: subId };
+      const sub = office.get(subId);
+      if (present(sub) && sub.provider !== 'codex') return { id: subId };
     }
-    const main = office.list().find((a) => a.kind === 'main' && a.sessionId === sessionId && a.status !== 'offline');
+    const main = office.list().find((a) => a.kind === 'main' && a.provider !== 'codex' && a.sessionId === sessionId && a.status !== 'offline');
     if (!main) return undefined;
     return agentId ? { id: main.id, subagent: agentType ?? 'subagente' } : { id: main.id };
+  }
+
+  /**
+   * Agente do Codex de um pedido: o do thread `agent_id ?? session_id` (o subagente tem thread próprio; o principal é o
+   * thread raiz). A conta só desempata (ids de thread são UUIDs). Subagente que o Habblaud não mostra: o pedido vai
+   * para o principal, com o tipo dele.
+   */
+  private resolveCodexAgent(sessionId: string, agentId: string | undefined, agentType: string | undefined, account: string | undefined): { id: string; subagent?: string } | undefined {
+    const find = (thread: string): AgentInfo | undefined => {
+      const found = this.opts.office.list().filter((a) => a.provider === 'codex' && a.sessionId === thread && present(a));
+      return found.find((a) => a.account === account) ?? found[0];
+    };
+    const sub = agentId && agentId !== sessionId ? agentId : undefined;
+    const own = sub ? find(sub) : undefined;
+    if (own) return { id: own.id };
+    const main = find(sessionId);
+    if (!main) return undefined;
+    return sub ? { id: main.id, subagent: agentType ?? 'subagente' } : { id: main.id };
   }
 
   private queueOf(p: Pending): { queued?: number } {

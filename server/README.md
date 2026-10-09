@@ -282,6 +282,47 @@ snapshot e em `messages` no `/api/health`.
 Qualquer processo local consegue chamar essas rotas (como as de permissão): ligar as mensagens é aceitar que um
 programa da própria máquina possa digitar nas sessões que têm o plugin.
 
+## Codex
+
+Fontes de agentes (`sources/source.ts`): `SourceSet` junta a do Claude Code (`ClaudeWatcher`) e, quando há pastas do
+Codex, a do Codex (`sources/codex/`); o histórico idem (`HistorySet`). Agentes, contas, fontes e sessões do histórico
+do Codex levam `provider: 'codex'` (ausente = Claude Code). Ids: `<conta>:<threadId>`, `sessionId` = threadId.
+
+- **Contas** (`sources/codex/accounts.ts`): `HABBLAUD_CODEX_DIRS` (substitui) ou `CODEX_HOME` e `~/.codex*` com cara
+  de Codex (`isCodexHome`: `thread-writer-locks/`, `archived_sessions/`, `config.toml`, `auth.json` ou
+  `sessions/AAAA/`, sem `projects/`, que só o Claude Code cria). Uma pasta do Codex nunca vira conta do Claude Code.
+  `auth.json` e `config.toml` nunca são lidos; o plano vem de `rate_limits.plan_type`.
+- **Sessões abertas** (`sources/codex/files.ts`, `source.ts`): `thread-writer-locks/<threadId>.lock` existindo há 3 s
+  (os locks rápidos de manutenção ficam de fora; o lock nunca é aberto). Lock sem rollout = sessão aberta e vazia: o
+  lock não diz a pasta, então o principal só entra quando o rollout (criado no 1º prompt) ou um hook disser o cwd.
+  Lock e rollout parados há 12 h, sem evento de hook = lock de crash. Sem a
+  pasta de locks: rollout modificado nos últimos 30 min. Evento de hook segura a presença por 60 s.
+- **Rollout** (`sources/codex/rollout.ts`): `sessions/AAAA/MM/DD/rollout-*-<threadId>.jsonl` (a pasta é a data de
+  criação; sessão retomada continua no arquivo antigo) e `archived_sessions/`, lidos com `FileTail`. Formatos
+  "paginated" (padrão) e "legacy"; `.zst` é ignorado com aviso. Status por `task_started`/`task_complete`/
+  `turn_aborted`; atividades por `item_completed` (`CommandExecution` como o Bash, `FileChange`, `McpToolCall`,
+  mensagens e raciocínio); tokens sem somar o cache de novo (no Codex ele já está dentro da entrada); sem custo; uso do
+  plano por `token_count.rate_limits` (janela de 300 min = 5 h, 10080 = semana; `primary` nulo com
+  `rate_limit_reached_type` = `noQuota`), empurrado com `accounts.setUsage`. Subagentes = threads com
+  `source.subagent.thread_spawn.parent_thread_id`; threads internos (guardian, review, compact, memory) ficam de fora.
+- **Terminal e histórico** (`sources/codex/terminal.ts`, `history.ts`): o parser do terminal é escolhido por agente
+  (`SourceSet.parserFor`).
+- **Eventos dos hooks** (`POST /api/codex/events`, `codex/http.ts`; o hook é `mod/habblaud-codex/hook.mjs`): só com
+  `Host` local e conexão pelo loopback (fora do Docker). Vão para `CodexLive.applyHookEvent` da fonte: casam por conta
+  (pela pasta `codexHome`) e `agent_id ?? session_id` (no Codex, `session_id` é o thread RAIZ). SessionStart faz o
+  agente aparecer, UserPromptSubmit/PreToolUse = trabalhando (com a atividade de agora), PermissionRequest = esperando
+  ("aprovar um comando"), Stop = ocioso, SessionEnd fecha.
+- **Aprovar pelo escritório** (`permissions/*`, `permissions/codex.ts`): o mesmo `POST /api/permissions` com
+  `provider: 'codex'`, `account` e `codexHome`; sem sugestões, sem perguntas, sem a busca no transcript; `interrupt` ou
+  `suggestion` num pedido do Codex = 400. O hook espera até `permissionTimeoutS` de `~/.habblaud/codex-hook.json`
+  (padrão 25 s) e imprime só `allow` ou `deny` (+`message`). O Codex só mostra a aprovação no terminal depois que o hook
+  termina.
+- **Mensagens** (`messages/*`, `messages/codex.ts`): para agentes do Codex, `codex queue --thread=<id> --message=<texto>`
+  com `CODEX_HOME` = pasta da conta (no host). Fora do Docker o servidor roda o comando (`HABBLAUD_CODEX_BIN` ou `codex`
+  do PATH); no Docker, o auxiliar do host (`npm run codex:bridge`) busca em `POST /api/codex/bridge/poll` e confirma em
+  `/ack` (mesma trava das mensagens). `canMessage` = há entregador (binário achado, ou auxiliar visto há até 10 s).
+  Retorno 0 = entrou na fila da sessão (`delivered`); o Codex consome a fila a cada ~10 s, quando a sessão fica ociosa.
+
 ## Variáveis de ambiente
 
 | Variável | Padrão | Uso |
@@ -290,6 +331,9 @@ programa da própria máquina possa digitar nas sessões que têm o plugin.
 | `HABBLAUD_HOST` | `127.0.0.1` | interface (o Docker usa `0.0.0.0`); fora do loopback, o terminal (e as permissões e mensagens) fica desligado |
 | `HABBLAUD_BIND` | — (Compose: `127.0.0.1`) | só Docker: interface do host onde a porta é publicada, repassada ao container; só loopback liga o terminal |
 | `HABBLAUD_TERMINAL` | — | `0` desliga o terminal, as permissões e as mensagens pelo escritório (não liga com a porta exposta) |
+| `HABBLAUD_CODEX` | ligado | `0` desliga a fonte do Codex |
+| `HABBLAUD_CODEX_DIRS` | — | pastas do Codex separadas por vírgula; substitui a detecção (`CODEX_HOME` e `~/.codex*`) |
+| `HABBLAUD_CODEX_BIN` | `codex` do PATH | binário do Codex para o `codex queue` (modo Node e `npm run codex:bridge`) |
 | `HABBLAUD_MENSAGENS` | ligado (com o terminal) | `0`, `false`, `off` ou `no` desligam só as mensagens pelo escritório |
 | `HABBLAUD_CLAUDE_DIRS` | — | config dirs separados por vírgula; substitui a detecção (`~/.claude*` com `projects/` ou `sessions/` + `CLAUDE_CONFIG_DIR`) |
 | `HABBLAUD_DATA_DIR` | `~/.habblaud` (Docker: `/data`) | estado do Habblaud (nomes persistidos em `names.json`, linha do tempo em `timeline/`, estatísticas do Meu dia em `stats/`, última verificação de versão em `updates.json`) |

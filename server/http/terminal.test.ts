@@ -444,6 +444,48 @@ describe('terminal: transporte', () => {
       await env.close();
     }
   });
+
+  it('parser por agente (parserFor, o da ferramenta dele); sem parser próprio, o padrão; um novo a cada init', async () => {
+    const OTHER = '.codex:019a0000-0000-7000-8000-000000000001';
+    let codexParsers = 0;
+    /** Parser "de outra ferramenta": as mesmas linhas viram entradas com o prefixo "cx-". */
+    const codexParser = (): TerminalParser => {
+      codexParsers++;
+      const base = fakeParser();
+      return { push: (raw) => base.push(raw).map((e) => ({ ...e, id: `cx-${e.id}` })) };
+    };
+    const asked: string[] = [];
+    const parserFor = (id: string) => (asked.push(id), id === OTHER ? codexParser() : undefined);
+    const env = await serve({ streams: { parserFor } });
+    try {
+      env.office.addMain({ id: OTHER, provider: 'codex', account: '.codex', sessionId: 'thr', cwd: '/p/loja', role: 'Agente principal', startedAt: Date.now(), status: 'working' });
+      const a = join(env.dir, 'a.jsonl');
+      const b = join(env.dir, 'b.jsonl');
+      writeLines(a, [line('a1')]);
+      writeLines(b, [line('b1')]);
+      env.paths.set(MAIN, a);
+      env.paths.set(OTHER, b);
+      const sa = await open(env.base, route(MAIN));
+      const sb = await open(env.base, route(OTHER));
+      await waitFor(() => expect(view(sa)).toEqual(['a1']));
+      await waitFor(() => expect(view(sb)).toEqual(['cx-b1']));
+      appendLines(b, [line('b2')]);
+      await waitFor(() => expect(view(sb)).toEqual(['cx-b1', 'cx-b2']));
+      expect(codexParsers).toBe(1);
+      // Truncado: parser novo, de novo o da ferramenta.
+      truncateSync(b, 0);
+      appendLines(b, [line('b3')]);
+      await waitFor(() => expect(view(sb)).toEqual(['cx-b3']));
+      expect(codexParsers).toBe(inits(sb).length);
+      expect(asked).toContain(MAIN);
+      expect(env.office.get(OTHER)?.provider).toBe('codex');
+      expect(env.office.get(MAIN)?.provider).toBeUndefined();
+      sa.close();
+      sb.close();
+    } finally {
+      await env.close();
+    }
+  });
 });
 
 // ------------------------------------------------------------------ demo

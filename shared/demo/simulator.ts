@@ -6,7 +6,14 @@
 // -> (comando longo em primeiro plano) -> fim de turno -> (esperando shell em segundo plano) ->
 // pausa -> ... e encerra sessões de tempos em tempos para exercitar as animações de chegada,
 // saída, "apagar a luz" e sumiço de salas.
-import type { AccountInfo, Activity, AgentInfo, FeedItem, Notice, OfficeSnapshot, PermissionDecision, RoomInfo, ShellJob, TaskItem } from '../types';
+//
+// Parte das sessões é do Codex (conta própria, modelos gpt-*-codex, uso lido "dos arquivos do Codex", pedidos de
+// aprovação sem "sempre permitir" e mensagens que entram na fila da sessão). A abertura sempre tem uma sala com
+// Claude Code e Codex juntos. Quem é do Codex e o uso dele saem de um sorteio à parte (hash do id da sessão e
+// `codexRng`), sem chamadas a mais no sorteio principal; ainda assim o escritório de cada semente mudou em relação
+// às versões sem o Codex (a 2ª sessão muda de sala, e os agentes do Codex não sorteiam custo). Vale sempre: a mesma
+// semente gera o mesmo escritório.
+import type { AccountInfo, AccountUsage, Activity, AgentInfo, FeedItem, Notice, OfficeSnapshot, PermissionDecision, RoomInfo, ShellJob, TaskItem } from '../types';
 import { describePrompt, describeShellJob, describeTool, SHELL_DONE_TOOL, SHELL_WAIT_TOOL, SPECIAL, type ActivityDescription, type ShellOutcome } from '../activity';
 import { answerSummary, ASK_TOOL, checkAnswers } from '../answers';
 import { describeGitHubEvent, GITHUB_TOOL, RoomEffects } from '../github';
@@ -14,7 +21,7 @@ import { hash32, mulberry32 } from '../hash';
 import { describeMessage, MESSAGE_TOOL } from '../messages';
 import { pickName } from '../names';
 import { demoGitHubEvent } from './github';
-import { demoPermission, type DemoPermissionKind } from './permission';
+import { demoCodexPermission, demoPermission, type DemoPermissionKind } from './permission';
 
 interface DemoProject {
   name: string;
@@ -100,6 +107,12 @@ const SUB_TASKS = [
   'Analisar logs de erro',
 ];
 const MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1'];
+/** Modelos das sessões do Codex. */
+const CODEX_MODELS = ['gpt-5.3-codex', 'gpt-5.2-codex', 'gpt-5.1-codex-mini'];
+/** Papéis dos subagentes do Codex (o `agent_role` de quem o Codex dispara). */
+const CODEX_SUB_ROLES = ['explorer', 'worker', 'reviewer'];
+/** Parte das sessões novas que abre no Codex (decidida pelo hash do id da sessão). */
+const CODEX_SHARE = 30;
 
 /** Comandos que os agentes deixam rodando em segundo plano (e encerram o turno esperando). */
 const BACKGROUND_JOBS: Array<{ description: string; command: string }> = [
@@ -128,17 +141,26 @@ const SHELL_FAIL_CHANCE = 0.15;
 
 type DemoAccount = Omit<AccountInfo, 'sessions' | 'usage' | 'usageStatus'>;
 
-// No ?mock=1 as contas imitam o cenário real (C e D). Misturado aos dados reais no servidor
-// (idPrefix), o demo usa contas próprias, inconfundíveis com as de verdade.
+// No ?mock=1 as contas imitam o cenário real (C e D no Claude Code, mais uma do Codex). Misturado aos dados reais
+// no servidor (idPrefix), o demo usa contas próprias, inconfundíveis com as de verdade.
 const DEMO_ACCOUNTS: DemoAccount[] = [
   { id: '.claude', short: 'C', name: 'Conta C', email: 'dev@empresa.example', organization: 'Empresa', plan: 'Max', color: '#f08a3c', configDir: '~/.claude' },
   { id: '.claude-conta2', short: 'D', name: 'Conta D', email: 'dev@pessoal.example', plan: 'Max', color: '#4aa8e8', configDir: '~/.claude-conta2' },
 ];
+/** Conta do Codex (um CODEX_HOME): sem e-mail (o Habblaud não lê credenciais), com o plano dos `rate_limits`. */
+const DEMO_CODEX_ACCOUNT: DemoAccount = { id: '.codex', provider: 'codex', short: 'X', name: 'Codex', plan: 'Team', color: '#a77bf3', configDir: '~/.codex' };
 const MERGED_ACCOUNTS: Array<Pick<DemoAccount, 'short' | 'name' | 'color'>> = [
   { short: 'X', name: 'Demo X', color: '#5cc97b' },
   { short: 'Y', name: 'Demo Y', color: '#a77bf3' },
 ];
+const MERGED_CODEX_ACCOUNT: Pick<DemoAccount, 'short' | 'name' | 'color'> = { short: 'Z', name: 'Demo Codex', color: '#f06fa0' };
 const HOUR = 3_600_000;
+const MINUTE = 60_000;
+/** Uso do Codex com mais de 30 min (sem sessão rodando) aparece como antigo, como no servidor. */
+const CODEX_STALE_MS = 30 * MINUTE;
+/** Mensagem para uma sessão ociosa do Codex: o dono consulta a fila a cada ~10 s (entra entre 2 e 8 s, no demo). */
+const CODEX_QUEUE_MIN_MS = 2_000;
+const CODEX_QUEUE_SPREAD_MS = 6_000;
 
 type Phase = 'working' | 'waiting' | 'idle' | 'delegating' | 'shell' | 'leaving';
 
@@ -161,6 +183,9 @@ interface SimAgent {
   /** Já disparou shell (segundo plano) ou comando longo (primeiro plano) neste turno. */
   shelledThisTurn: boolean;
   foregroundThisTurn: boolean;
+  /** Codex: mensagens na fila da sessão (entram quando ela fica ociosa) e a partir de quando entram. */
+  inbox?: string[];
+  inboxAt?: number;
 }
 
 export interface DemoTickResult {
@@ -177,6 +202,8 @@ export interface DemoOptions {
   sessions?: number;
   /** Prefixo de ids (o servidor usa "demo:" para não colidir com dados reais). */
   idPrefix?: string;
+  /** Conta do Codex sempre "sem cota" (capturas de tela e testes); sem isso, ela fica sem cota só de vez em quando. */
+  codexNoQuota?: boolean;
 }
 
 const SLOT_COOLDOWN_MS = 30_000;
@@ -207,6 +234,20 @@ export class DemoSimulator {
   private effects = new RoomEffects();
   private nextGitHubAt: number;
   private prSeq: number;
+  /** Conta do Codex (fica depois das do Claude Code no snapshot). */
+  private codexAccount: DemoAccount;
+  /** Sorteio próprio do Codex (uso, "sem cota"): não mexe na sequência do resto. */
+  private codexRng: () => number;
+  /** Quando os números de uso do Codex foram "lidos" pela última vez: a última atividade de uma sessão do Codex. */
+  private codexFetchedAt: number;
+  /** "Sem cota" do Codex: sempre (opção) ou em janelas de alguns minutos, de tempos em tempos. */
+  private codexNoQuotaAlways: boolean;
+  private noQuotaFrom: number;
+  private noQuotaUntil: number;
+  /** A última leitura do uso do Codex veio "sem cota". */
+  private codexReadNoQuota: boolean;
+  /** Sessões principais abertas até agora (a 2ª da abertura é a do Codex dividindo a sala da 1ª). */
+  private mainsSpawned = 0;
 
   constructor(opts: DemoOptions = {}, now = Date.now()) {
     this.rng = mulberry32(opts.seed ?? hash32(String(now)));
@@ -215,12 +256,16 @@ export class DemoSimulator {
     this.ghRng = mulberry32(((opts.seed ?? hash32(String(now))) ^ 0x6a09e667) >>> 0);
     this.nextGitHubAt = now + (10_000 + this.ghRng() * 10_000) / this.speed;
     this.prSeq = 12 + Math.floor(this.ghRng() * 80);
+    this.codexRng = mulberry32(((opts.seed ?? hash32(String(now))) ^ 0x3c6ef372) >>> 0);
     this.target = opts.sessions ?? 4;
     this.prefix = opts.idPrefix ?? '';
     this.tag = now.toString(36);
     this.accounts = this.prefix
       ? DEMO_ACCOUNTS.map((acc, i) => ({ ...acc, ...MERGED_ACCOUNTS[i], id: `${this.prefix}${acc.id}`, configDir: '(demonstração)' }))
       : DEMO_ACCOUNTS;
+    this.codexAccount = this.prefix
+      ? { ...DEMO_CODEX_ACCOUNT, ...MERGED_CODEX_ACCOUNT, id: `${this.prefix}${DEMO_CODEX_ACCOUNT.id}`, configDir: '(demonstração)' }
+      : DEMO_CODEX_ACCOUNT;
     this.startedAt = now;
     this.accounts.forEach((acc, i) =>
       this.usage.set(acc.id, {
@@ -230,6 +275,18 @@ export class DemoSimulator {
         weekReset: now + (2 + i * 2.5) * 24 * HOUR,
       }),
     );
+    // Codex: números de antes de o escritório abrir (a última sessão rodou há alguns minutos).
+    this.usage.set(this.codexAccount.id, {
+      five: 30 + this.codexRng() * 40,
+      week: 25 + this.codexRng() * 45,
+      fiveReset: now + (0.8 + this.codexRng() * 3) * HOUR,
+      weekReset: now + (1 + this.codexRng() * 5) * 24 * HOUR,
+    });
+    this.codexFetchedAt = now - (4 + this.codexRng() * 20) * MINUTE;
+    this.codexNoQuotaAlways = !!opts.codexNoQuota;
+    this.noQuotaFrom = now + (6 + this.codexRng() * 6) * MINUTE / this.speed;
+    this.noQuotaUntil = this.noQuotaFrom + (2 + this.codexRng() * 2) * MINUTE / this.speed;
+    this.codexReadNoQuota = this.codexNoQuotaAlways;
     // Começa com o escritório já movimentado — e com alguém esperando um shell (a espera leva minutos;
     // sem isso, a primeira só apareceria depois do primeiro turno completo).
     for (let i = 0; i < this.target - 1; i++) this.spawnSession(now, true);
@@ -254,6 +311,12 @@ export class DemoSimulator {
   receiveMessage(agentId: string, text: string, now = Date.now()): boolean {
     const a = this.agents.get(agentId);
     if (!a || a.info.kind !== 'main' || a.removeAt !== undefined || a.phase === 'leaving') return false;
+    if (a.info.provider === 'codex') {
+      // Codex (`codex queue`): a mensagem entra na fila da sessão e só vira prompt quando ela fica ociosa.
+      (a.inbox ??= []).push(text);
+      a.inboxAt = Math.max(a.inboxAt ?? 0, now + (CODEX_QUEUE_MIN_MS + (hash32(`${agentId}:${text}:${now}`) % CODEX_QUEUE_SPREAD_MS)) / this.speed);
+      return true;
+    }
     this.activity(a, now, describeMessage(text));
     if (a.phase === 'idle') a.phaseUntil = Math.min(a.phaseUntil, now + this.ms(1_500, 3_000));
     return true;
@@ -292,22 +355,57 @@ export class DemoSimulator {
         return effect ? { ...r, effect: { ...effect } } : { ...r };
       }),
       agents: [...this.agents.values()].map((a) => structuredCloneAgent(a.info)),
-      accounts: this.accounts.map((acc) => {
-        const u = this.usage.get(acc.id)!;
-        return {
-          ...acc,
-          sessions: [...this.agents.values()].filter((a) => a.info.kind === 'main' && a.info.account === acc.id && a.info.status !== 'offline').length,
-          usage: {
-            fiveHour: { utilization: Math.round(u.five), resetsAt: u.fiveReset },
-            sevenDay: { utilization: Math.round(u.week), resetsAt: u.weekReset },
-            source: 'statusline' as const,
-            fetchedAt: now,
-          },
-          usageStatus: 'ok' as const,
-        };
-      }),
+      accounts: [
+        ...this.accounts.map((acc) => {
+          const u = this.usage.get(acc.id)!;
+          return {
+            ...acc,
+            sessions: this.sessionsOf(acc.id),
+            usage: {
+              fiveHour: { utilization: Math.round(u.five), resetsAt: u.fiveReset },
+              sevenDay: { utilization: Math.round(u.week), resetsAt: u.weekReset },
+              source: 'statusline' as const,
+              fetchedAt: now,
+            },
+            usageStatus: 'ok' as const,
+          };
+        }),
+        this.codexAccountInfo(now),
+      ],
       meta: { demo: true, sources: [], startedAt: this.startedAt, version: 'demo' },
     };
+  }
+
+  private sessionsOf(accountId: string): number {
+    return [...this.agents.values()].filter((a) => a.info.kind === 'main' && a.info.account === accountId && a.info.status !== 'offline').length;
+  }
+
+  /**
+   * Conta do Codex: o uso vem "dos arquivos do Codex", lido na última atividade de uma sessão dele (sem sessão
+   * rodando, os números envelhecem); "sem cota" = sem janelas, nunca 0%.
+   */
+  private codexAccountInfo(now: number): AccountInfo {
+    const acc = this.codexAccount;
+    const u = this.usage.get(acc.id)!;
+    const fetchedAt = this.codexFetchedAt;
+    const usage: AccountUsage = this.codexReadNoQuota
+      ? { source: 'codex', noQuota: true, fetchedAt }
+      : {
+          fiveHour: { utilization: Math.round(u.five), resetsAt: u.fiveReset },
+          sevenDay: { utilization: Math.round(u.week), resetsAt: u.weekReset },
+          source: 'codex',
+          fetchedAt,
+        };
+    return { ...acc, sessions: this.sessionsOf(acc.id), usage, usageStatus: now - fetchedAt > CODEX_STALE_MS ? 'stale' : 'ok' };
+  }
+
+  /** Sem cota agora: sempre (opção) ou numa janela de alguns minutos que se repete. */
+  private codexNoQuota(now: number): boolean {
+    if (now >= this.noQuotaUntil) {
+      this.noQuotaFrom = now + ((12 + this.codexRng() * 8) * MINUTE) / this.speed;
+      this.noQuotaUntil = this.noQuotaFrom + ((2 + this.codexRng() * 2) * MINUTE) / this.speed;
+    }
+    return this.codexNoQuotaAlways || now >= this.noQuotaFrom;
   }
 
   // ---------------------------------------------------------------- pedidos de permissão (fictícios)
@@ -322,6 +420,8 @@ export class DemoSimulator {
     const a = [...this.agents.values()].find((x) => x.info.permission?.id === requestId);
     if (!a || a.phase !== 'waiting') return false;
     const p = a.info.permission!;
+    // Codex (como no servidor): sem respostas, sem "sempre permitir" nem interromper, e recusa só com motivo.
+    if (p.provider === 'codex' && (d.behavior === 'answer' || d.suggestion !== undefined || d.interrupt || (d.behavior === 'deny' && !d.message?.trim()))) return false;
     const ask = p.tool === ASK_TOOL;
     const answers = d.behavior === 'answer' && ask ? checkAnswers(p.questions ?? [], d.answers) : undefined;
     if ((d.behavior === 'answer' && !answers) || (d.behavior === 'allow' && ask)) return false;
@@ -344,15 +444,16 @@ export class DemoSimulator {
   }
 
   /**
-   * Faz um agente principal que está trabalhando (ou, sem nenhum, qualquer um ocioso) pedir permissão
+   * Faz um agente principal que está trabalhando (ou, sem nenhum, um ocioso ou esperando um shell) pedir permissão
    * agora (`kind` força uma permissão ou uma pergunta do AskUserQuestion; sem ele, é sorteado). Para testes
-   * e capturas de tela; devolve o id do agente.
+   * e capturas de tela; devolve o id do agente. `provider` escolhe a ferramenta do agente (padrão: Claude Code);
+   * no Codex o pedido é sempre de aprovação (ele não pergunta pelo escritório).
    */
-  forcePermission(now = Date.now(), kind?: DemoPermissionKind): string | undefined {
-    const mains = [...this.agents.values()].filter((a) => a.info.kind === 'main' && a.removeAt === undefined);
-    const a = mains.find((x) => x.phase === 'working') ?? mains.find((x) => x.phase === 'idle');
+  forcePermission(now = Date.now(), kind?: DemoPermissionKind, provider: 'claude' | 'codex' = 'claude'): string | undefined {
+    const mains = [...this.agents.values()].filter((a) => a.info.kind === 'main' && a.removeAt === undefined && (a.info.provider ?? 'claude') === provider);
+    const a = mains.find((x) => x.phase === 'working') ?? mains.find((x) => x.phase === 'idle') ?? mains.find((x) => x.phase === 'shell');
     if (!a) return undefined;
-    if (a.phase === 'idle') {
+    if (a.phase !== 'working') {
       a.phase = 'working';
       a.actionsLeft = 3;
       this.setStatus(a, 'working', now);
@@ -366,8 +467,10 @@ export class DemoSimulator {
     a.phase = 'waiting';
     // Com o cartão para responder, a espera é mais longa (dá tempo de clicar).
     a.phaseUntil = now + this.ms(25_000, 50_000);
-    a.info.permission = demoPermission(`${this.prefix}perm-${this.tag}-${++this.seq}`, a.project, a.rng, now, kind);
-    const reason = a.info.permission.tool === ASK_TOOL ? 'responder uma pergunta' : 'aprovar uma permissão';
+    const id = `${this.prefix}perm-${this.tag}-${++this.seq}`;
+    const codex = a.info.provider === 'codex';
+    a.info.permission = codex ? demoCodexPermission(id, a.project, a.rng, now) : demoPermission(id, a.project, a.rng, now, kind);
+    const reason = codex ? 'aprovar um comando' : a.info.permission.tool === ASK_TOOL ? 'responder uma pergunta' : 'aprovar uma permissão';
     a.info.waitingFor = reason;
     this.setStatus(a, 'waiting', now);
     this.activity(a, now, SPECIAL.waiting(reason));
@@ -412,20 +515,28 @@ export class DemoSimulator {
   }
 
   private spawnSession(now: number, warm: boolean): void {
+    const k = this.mainsSpawned++;
     const activeRooms = new Set([...this.rooms.values()].map((r) => r.name));
     // 35% de chance de reaproveitar uma sala existente (2 sessões no mesmo projeto).
     const reuse = activeRooms.size > 0 && this.rng() < 0.35;
     const candidates = PROJECTS.filter((p) => (reuse ? activeRooms.has(p.name) : !activeRooms.has(p.name)));
-    const project = this.pick(candidates.length ? candidates : PROJECTS);
+    let project = this.pick(candidates.length ? candidates : PROJECTS);
+    // Abertura: a 2ª sessão é do Codex e entra na sala da 1ª (Claude Code e Codex dividindo a sala). O sorteio da
+    // sala acontece igual (a sequência das outras sessões não muda); só o resultado é trocado.
+    const host = warm && k === 1 ? [...this.agents.values()].find((x) => x.info.kind === 'main') : undefined;
+    if (host) project = host.project;
     const room = this.ensureRoom(project, now);
     const n = ++this.seq;
     const sessionId = `${this.prefix}sess-${this.tag}-${n}-${Math.floor(this.rng() * 1e9).toString(36)}`;
     const id = `${this.prefix || 'demo:'}${this.tag}-${n}`;
+    // Codex: na abertura, só a 2ª; depois, ~30% das sessões novas (pelo hash do id, sem gastar o sorteio).
+    const codex = !!host || (!warm && hash32(`codex:${sessionId}`) % 100 < CODEX_SHARE);
     const person = pickName(sessionId, this.usedNames());
     const rng = mulberry32(hash32(sessionId));
     const tasks: TaskItem[] = project.tasks
       .slice(0, 3 + Math.floor(rng() * 2))
       .map((title, i) => ({ id: String(i + 1), title, status: 'pending' }));
+    const claudeAccount = this.rng() < 0.6 ? this.accounts[0].id : this.accounts[1].id;
     const info: AgentInfo = {
       id,
       kind: 'main',
@@ -435,21 +546,27 @@ export class DemoSimulator {
       role: 'Agente principal',
       title: this.pick(project.prompts, rng),
       sessionId,
-      account: this.rng() < 0.6 ? this.accounts[0].id : this.accounts[1].id,
+      account: codex ? this.codexAccount.id : claudeAccount,
       status: 'idle',
       recent: [],
       tasks,
-      model: this.pick(MODELS, rng),
+      model: this.pick(codex ? CODEX_MODELS : MODELS, rng),
       gitBranch: this.pick(['main', 'develop', 'feat/checkout', 'fix/webhooks'], rng),
-      permissionMode: 'default',
+      // Codex: a política de aprovação (approval_policy) no lugar do modo de permissão do Claude Code.
+      permissionMode: codex ? 'on-request' : 'default',
       startedAt: now,
       lastEventAt: now,
       statusSince: now,
-      stats: { toolCalls: 0, tokensIn: 0, tokensOut: 0, costUSD: 0, linesAdded: 0, linesRemoved: 0, subagents: 0 },
+      // O Codex não grava custo: só tokens.
+      stats: codex
+        ? { toolCalls: 0, tokensIn: 0, tokensOut: 0, linesAdded: 0, linesRemoved: 0, subagents: 0 }
+        : { toolCalls: 0, tokensIn: 0, tokensOut: 0, costUSD: 0, linesAdded: 0, linesRemoved: 0, subagents: 0 },
       seed: hash32(id),
-      // Sessão fictícia "com o plugin de mensagens": dá para mandar mensagem pelo escritório (receiveMessage).
+      // Sessão fictícia "com o plugin de mensagens" (no Codex, "com o entregador"): dá para mandar mensagem pelo
+      // escritório (receiveMessage).
       canMessage: true,
     };
+    if (codex) info.provider = 'codex';
     const a: SimAgent = {
       info,
       project,
@@ -485,7 +602,7 @@ export class DemoSimulator {
       roomId: parent.info.roomId,
       name: person.name,
       look: person.look,
-      role: this.pick(SUB_TYPES, rng),
+      role: this.pick(parent.info.provider === 'codex' ? CODEX_SUB_ROLES : SUB_TYPES, rng),
       title: desc,
       sessionId: parent.info.sessionId,
       account: parent.info.account,
@@ -501,6 +618,7 @@ export class DemoSimulator {
       seed: hash32(id),
       background: rng() < 0.3,
     };
+    if (parent.info.provider === 'codex') info.provider = 'codex';
     const sub: SimAgent = {
       info,
       project: parent.project,
@@ -526,6 +644,12 @@ export class DemoSimulator {
   private step(a: SimAgent, now: number): void {
     if (a.removeAt !== undefined) return;
     if (a.info.kind === 'sub') return this.stepSub(a, now);
+    // Codex: as mensagens da fila entram quando a sessão fica ociosa (e ela começa um turno logo depois).
+    if (a.inbox?.length && a.phase === 'idle' && now >= (a.inboxAt ?? 0)) {
+      for (const text of a.inbox.splice(0)) this.activity(a, now, describeMessage(text));
+      a.phaseUntil = Math.min(a.phaseUntil, now + 1_500 / this.speed);
+      a.closeAt = Math.max(a.closeAt, now + 30_000 / this.speed);
+    }
 
     // Encerramento da sessão (só quando ocioso, como um usuário fechando o terminal).
     if (now >= a.closeAt && a.phase === 'idle') {
@@ -553,6 +677,11 @@ export class DemoSimulator {
         }
         break;
       case 'waiting':
+        // O "hook" desistiu de esperar (no Codex, em segundos): o pedido sai do escritório e vale o terminal.
+        if (a.info.permission && now >= a.info.permission.expiresAt) {
+          delete a.info.permission;
+          this.dirty = true;
+        }
         if (now >= a.phaseUntil) {
           // Respondido "no terminal": o pedido some do escritório.
           this.resumeFromWaiting(a, now);
@@ -790,6 +919,11 @@ export class DemoSimulator {
     const synthetic = d.tool === SHELL_DONE_TOOL || d.tool === SHELL_WAIT_TOOL || d.tool === GITHUB_TOOL || d.tool === MESSAGE_TOOL;
     if (!synthetic && d.kind !== 'prompt' && d.kind !== 'done' && d.kind !== 'wait' && d.kind !== 'think') {
       a.info.stats.toolCalls++;
+    }
+    // Codex: cada atividade de uma sessão dele renova a leitura do uso (é quando os arquivos ganham rate_limits).
+    if (a.info.provider === 'codex') {
+      this.codexFetchedAt = now;
+      this.codexReadNoQuota = this.codexNoQuota(now);
     }
     const u = this.usage.get(a.info.account);
     if (u) {

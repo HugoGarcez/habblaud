@@ -48,6 +48,8 @@ export interface ServerConfig {
   repo?: string;
   /** Consulta o GitHub atrás de versão nova (server/updates/checker.ts); HABBLAUD_UPDATE_CHECK=0 desliga. */
   updateCheck: boolean;
+  /** Observa as sessões do Codex (sources/codex/); HABBLAUD_CODEX=0 desliga. */
+  codex: boolean;
 }
 
 export function isTruthy(v: string | undefined): boolean {
@@ -166,5 +168,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
     version: pkg.version,
     repo: pkg.repo,
     updateCheck: !env.HABBLAUD_UPDATE_CHECK?.trim() || isTruthy(env.HABBLAUD_UPDATE_CHECK),
+    codex: !env.HABBLAUD_CODEX?.trim() || isTruthy(env.HABBLAUD_CODEX),
   };
 }

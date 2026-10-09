@@ -7,6 +7,14 @@
 export type AgentKind = 'main' | 'sub';
 
 /**
+ * De qual ferramenta vem o agente (ou a conta, a fonte, a sessão, o pedido). Nos tipos do protocolo o campo
+ * `provider` é opcional e AUSENTE quer dizer 'claude' (tudo o que existia antes do Codex continua igual).
+ * - claude: Claude Code;
+ * - codex: OpenAI Codex (CLI `codex` e o app desktop, que gravam no mesmo CODEX_HOME).
+ */
+export type Provider = 'claude' | 'codex';
+
+/**
  * Estado de alto nível de um agente — é o que dirige o comportamento do personagem.
  * - working: processando um turno (ocupado). Fica na mesa digitando.
  * - waiting: precisa do usuário (permissão, pergunta, diálogo). Fica na mesa com a mão levantada.
@@ -117,9 +125,14 @@ export interface AgentStats {
 }
 
 export interface AgentInfo {
-  /** Estável enquanto o agente existir. Principal: "<conta>:<pid>". Sub: "<sessionId>:<agentId>". */
+  /**
+   * Estável enquanto o agente existir. Claude Code: principal "<conta>:<pid>", sub "<sessionId>:<agentId>".
+   * Codex: principal e sub "<conta>:<threadId>" (o sub com `parentId`).
+   */
   id: string;
   kind: AgentKind;
+  /** Ferramenta do agente; ausente = 'claude'. */
+  provider?: Provider;
   /** Para subagentes: id do agente que o disparou. */
   parentId?: string;
   roomId: string;
@@ -237,6 +250,8 @@ export interface UpdateStatus {
 export interface SourceInfo {
   /** Rótulo da conta (basename do config dir). */
   label: string;
+  /** Ferramenta da fonte; ausente = 'claude'. */
+  provider?: Provider;
   path: string;
   /** Sessões abertas detectadas nesta fonte. */
   sessions: number;
@@ -260,22 +275,30 @@ export interface AccountUsage {
   sevenDayOpus?: UsageWindow;
   sevenDaySonnet?: UsageWindow;
   /**
-   * Origem dos números (as duas são arquivos locais gravados a partir do próprio Claude Code):
+   * Origem dos números (todas são arquivos locais gravados pela própria ferramenta):
    * - 'statusline': capturado ao vivo e gravado em ~/.habblaud/usage/<conta>.json pelo mod do Habblaud
    *   (mod/habblaud, recomendado) ou pelo scripts/statusline-tap.mjs (campo rate_limits do statusline);
-   * - 'cache': `cachedUsageUtilization` gravado pelo próprio Claude Code (atualiza quando alguém roda /usage).
+   * - 'cache': `cachedUsageUtilization` gravado pelo próprio Claude Code (atualiza quando alguém roda /usage);
+   * - 'codex': `rate_limits` dos arquivos de sessão do Codex (só se renovam enquanto alguma sessão roda).
    */
-  source: 'cache' | 'statusline';
+  source: 'cache' | 'statusline' | 'codex';
   /** Quem gravou o arquivo ao vivo ('statusline'): o mod do Habblaud no Claude Code ou o tap de statusline. */
   via?: 'mod' | 'tap';
+  /**
+   * Conta sem cota nem créditos para usar agora (Codex: `rate_limits.primary` nulo, ex.: créditos do workspace
+   * esgotados). Não é "0% usado": as janelas ficam ausentes.
+   */
+  noQuota?: boolean;
   /** Quando os números foram obtidos na origem (epoch ms). */
   fetchedAt: number;
 }
 
-/** Uma conta do Claude (um config dir: ~/.claude, ~/.claude-conta2, ...). */
+/** Uma conta do Claude (um config dir: ~/.claude, ~/.claude-conta2, ...) ou do Codex (um CODEX_HOME: ~/.codex). */
 export interface AccountInfo {
-  /** = AgentInfo.account (basename do config dir, ex.: ".claude"). */
+  /** = AgentInfo.account (basename do config dir, ex.: ".claude"); único entre as contas de todas as ferramentas. */
   id: string;
+  /** Ferramenta da conta; ausente = 'claude'. */
+  provider?: Provider;
   /** Rótulo curtíssimo (1–3 caracteres), ex.: "C" e "D" — atalhos detectados no shell — ou derivado. */
   short: string;
   /** Nome amigável. Ex.: "Conta C". */
@@ -461,6 +484,8 @@ export type TerminalMessage = { type: 'init'; data: TerminalInit } | { type: 'ap
 export interface RecentSession {
   /** = AccountInfo.id. */
   account: string;
+  /** Ferramenta da sessão; ausente = 'claude'. */
+  provider?: Provider;
   sessionId: string;
   /** Caminho do projeto (o `cwd` das primeiras linhas do transcript); ausente se não deu para descobrir. */
   project?: string;
@@ -507,6 +532,8 @@ export interface PermissionSuggestionInfo {
  */
 export interface PermissionRequestInfo {
   id: string;
+  /** Ferramenta de quem pediu; ausente = 'claude'. */
+  provider?: Provider;
   /** Nome bruto da ferramenta (ex.: "Bash", "Edit", "mcp__github__create_issue"). */
   tool: string;
   /** Título no estilo do Claude Code: "Bash(npm test)", "Edit(src/app.ts)". Mascarado e cortado. */
