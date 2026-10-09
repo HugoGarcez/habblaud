@@ -76,6 +76,16 @@ export interface Activity {
   at: number;
   durationMs?: number;
   error?: boolean;
+  /** Perguntas completas de um AskUserQuestion (kind 'ask'), para o escritório mostrar as opções. */
+  questions?: AskQuestion[];
+}
+
+/** Uma pergunta do AskUserQuestion, já mascarada e cortada. Só leitura: a resposta é dada no Claude Code. */
+export interface AskQuestion {
+  question: string;
+  header?: string;
+  multiSelect?: boolean;
+  options: Array<{ label: string; description?: string }>;
 }
 
 export type TaskStatus = 'pending' | 'in_progress' | 'completed';

@@ -155,3 +155,44 @@ describe('shells', () => {
     expect(SPECIAL.shellDone('Migração', 'killed')).toMatchObject({ icon: '🛑', text: 'Shell interrompido: Migração', error: true });
   });
 });
+
+describe('AskUserQuestion no escritório', () => {
+  it('leva as perguntas completas, com opções, para o cartão "Precisa de você"', () => {
+    const d = describeTool('AskUserQuestion', {
+      questions: [
+        {
+          question: 'Qual banco usar?',
+          header: 'Banco',
+          multiSelect: false,
+          options: [
+            { label: 'Postgres', description: 'Relacional, já usado no projeto' },
+            { label: 'SQLite' },
+          ],
+        },
+        { question: 'Quais testes rodar?', multiSelect: true, options: [{ label: 'Unidade' }, { label: 'E2E' }] },
+      ],
+    });
+    expect(d).toMatchObject({ kind: 'ask', text: 'Fazendo uma pergunta a você', detail: 'Qual banco usar?' });
+    expect(d.questions).toEqual([
+      {
+        question: 'Qual banco usar?',
+        header: 'Banco',
+        options: [{ label: 'Postgres', description: 'Relacional, já usado no projeto' }, { label: 'SQLite' }],
+      },
+      { question: 'Quais testes rodar?', multiSelect: true, options: [{ label: 'Unidade' }, { label: 'E2E' }] },
+    ]);
+  });
+
+  it('mascara segredos e ignora entradas inválidas', () => {
+    const d = describeTool('AskUserQuestion', {
+      questions: [null, { question: '' }, { question: 'Usar a chave sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789?', options: [{ label: '' }, { label: 'Sim' }] }],
+    });
+    expect(d.questions).toHaveLength(1);
+    expect(d.questions![0]!.question).not.toContain('abcdefghijklmnop');
+    expect(d.questions![0]!.options).toEqual([{ label: 'Sim' }]);
+  });
+
+  it('sem perguntas válidas, não cria o campo', () => {
+    expect(describeTool('AskUserQuestion', {}).questions).toBeUndefined();
+  });
+});
