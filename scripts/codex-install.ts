@@ -529,6 +529,18 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
     }
     out('Confiança: o Codex só roda um hook novo ou alterado depois que você o aprova; confira em /hooks dentro do Codex.');
   }
+  if (opts.command === 'install' && opts.account && !opts.dryRun) {
+    // A espera fica num arquivo só, mas o timeout do PermissionRequest fica em cada hooks.json: as outras pastas com o
+    // Habblaud e outra espera cortariam o hook antes da hora.
+    const behind = found.dirs.filter((d) => {
+      if (dirs.includes(d)) return false;
+      const r = readSettings(join(d, 'hooks.json'));
+      return !('error' in r) && installState(r.settings, command, opts.waitS).outdated.includes('PermissionRequest');
+    });
+    if (behind.length) {
+      out(`! ${behind.map((d) => basename(d)).join(', ')}: o Habblaud está lá com outra espera; rode npm run codex:install sem --conta para alinhar.`);
+    }
+  }
   if (opts.command === 'install' && approve.size && !opts.dryRun) {
     out('');
     out('Pronto. Falta um passo: abra o Codex e aprove os hooks do Habblaud em /hooks (o Codex só roda hook novo');

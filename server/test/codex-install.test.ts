@@ -217,6 +217,16 @@ describe('codex-install.ts (arquivos, HOME falso)', () => {
     expect(await exec('install', { account: '.nada' })).toBe(1);
   });
 
+  it('--conta com outra espera: avisa das outras pastas que ficaram com a espera antiga (o arquivo de configuração é um só)', async () => {
+    expect(await exec('install')).toBe(0);
+    out = [];
+    expect(await exec('install', { account: '.codex', waitS: 60 })).toBe(0);
+    expect(out.join('\n')).toContain('! .codex-trabalho: o Habblaud está lá com outra espera; rode npm run codex:install sem --conta para alinhar.');
+    out = [];
+    expect(await exec('install', { waitS: 60 })).toBe(0);
+    expect(out.join('\n')).not.toContain('outra espera');
+  });
+
   it('JSON inválido nunca é sobrescrito', async () => {
     writeFileSync(join(home, '.codex-trabalho', 'hooks.json'), '{ quebrado');
     expect(await exec('install')).toBe(1);
