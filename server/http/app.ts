@@ -2,8 +2,10 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AgentInfo, ModSummary, OfficeSnapshot, SourceInfo, UpdateStatus } from '../../shared/types';
 import type { AccountsService } from '../accounts/service';
+import { handleCodexEvent } from '../codex/http';
 import type { DayStatsService } from '../history/daystats';
 import type { Office } from '../model/office';
+import type { CodexLive } from '../sources/codex/live';
 import type { SessionLookup } from '../sources/source';
 import { isJsonContentType, isLoopbackHost } from './guard';
 import { handleSessionsRoute } from './sessions';
@@ -35,11 +37,17 @@ export interface ApiDeps {
    */
   permissions?: (req: IncomingMessage, res: ServerResponse, path: string) => void;
   /**
-   * Rotas das mensagens pelo escritório (/api/messages e a caixa de entrada do plugin em /api/mod/inbox,
-   * server/messages/http.ts). Só existem com ServerConfig.messages (a trava do terminal e HABBLAUD_MENSAGENS); a
-   * trava do Host local é conferida aqui antes de chamá-las.
+   * Rotas das mensagens pelo escritório (/api/messages, a caixa de entrada do plugin em /api/mod/inbox e a do auxiliar
+   * do Codex em /api/codex/bridge/*, server/messages/http.ts). Só existem com ServerConfig.messages (a trava do
+   * terminal e HABBLAUD_MENSAGENS); a trava do Host local é conferida aqui antes de chamá-las.
    */
   messages?: (req: IncomingMessage, res: ServerResponse, path: string) => void;
+  /**
+   * Fonte do Codex ao vivo: recebe os eventos dos hooks do Codex (POST /api/codex/events, server/codex/http.ts). Sem
+   * ela a rota responde {ok: false}. Só com Host local e, fora do Docker, conexão pelo loopback (os eventos só observam:
+   * não dependem da trava do terminal).
+   */
+  codexLive?: CodexLive;
   /** Estatísticas do "Meu dia" (GET /api/stats, http/stats.ts). */
   stats?: DayStatsService;
   /** Verificação de versão nova no GitHub (GET /api/updates, POST /api/updates/check; updates/checker.ts). */
@@ -52,9 +60,23 @@ export interface ApiDeps {
 /** GET /api/agents/:id/terminal (ids nunca contêm '/'). */
 const TERMINAL_ROUTE = /^\/api\/agents\/([^/]+)\/terminal$/;
 
+/** Conexão vinda do próprio computador (127.x, ::1 ou ::ffff:127.x). */
+function isLoopbackAddress(addr: string | undefined): boolean {
+  if (!addr) return false;
+  const a = addr.replace(/^::ffff:/i, '');
+  return a === '::1' || /^127\./.test(a);
+}
+
 /** Rotas das mensagens pelo escritório (server/messages/http.ts); /api/mod/summary fica de fora (sem trava). */
 function isMessagesPath(path: string): boolean {
-  return path === '/api/messages' || path.startsWith('/api/messages/') || path === '/api/mod/inbox' || path === '/api/mod/inbox/ack';
+  return (
+    path === '/api/messages' ||
+    path.startsWith('/api/messages/') ||
+    path === '/api/mod/inbox' ||
+    path === '/api/mod/inbox/ack' ||
+    path === '/api/codex/bridge/poll' ||
+    path === '/api/codex/bridge/ack'
+  );
 }
 
 const MAX_BODY = 256 * 1024;
@@ -208,6 +230,7 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
           terminal: !!terminals,
           permissions: !!deps.permissions,
           messages: !!deps.messages,
+          codexEvents: !!deps.codexLive,
           updates: updatesSummary(deps.updates?.status()),
           sources: deps.sources(),
           accounts: accounts.allEntries().map((a) =>
@@ -260,6 +283,16 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       } else {
         deps.permissions(req, res, path);
       }
+      return true;
+    }
+    if (path === '/api/codex/events') {
+      // Eventos dos hooks do Codex: só observam, mas só valem vindos do próprio computador. Fora do Docker o hook
+      // sempre conecta pelo loopback (o Host sozinho um cliente da rede consegue imitar); no Docker ele chega pela porta
+      // publicada, com o endereço do gateway.
+      if (method !== 'POST') methodNotAllowed(res, 'POST');
+      else if (!isLoopbackHost(req.headers.host) || (!deps.inDocker && !isLoopbackAddress(req.socket.remoteAddress))) {
+        sendJson(res, 403, { error: 'eventos do Codex só são aceitos pelo próprio computador (http://localhost ou http://127.0.0.1)' });
+      } else handleCodexEvent(req, res, { live: deps.codexLive, entries: () => accounts.entriesOf('codex') }).catch((err) => fail(res, err));
       return true;
     }
     if (isMessagesPath(path)) {
