@@ -71,6 +71,8 @@ export const UNKNOWN_CWD = 'Codex (sem projeto)';
 const PREFIX_HISTORY = 120;
 /** Resultados guardados ao ler um rollout antes de o agente entrar no escritório. */
 const BACKLOG_MAX = 400;
+/** Conta sem sessão aberta ao subir: quantos rollouts recentes tentar até achar um com o uso do plano. */
+const SEED_USAGE_FILES = 8;
 const MAIN_ROLE = 'Agente principal (Codex)';
 const SUB_ROLE = 'Subagente (Codex)';
 
@@ -752,13 +754,14 @@ export class CodexSource implements AgentSource, CodexLive {
   }
 
   /**
-   * Conta sem sessão aberta ao subir: o uso do rollout modificado por último (fica "desatualizado" com a idade: os
-   * números do Codex só se renovam com alguma sessão rodando).
+   * Conta sem sessão aberta ao subir: o uso do rollout mais recente que tenha números (fica "desatualizado" com a
+   * idade: os números do Codex só se renovam com alguma sessão rodando). Por mtime em TODAS as pastas de data (uma
+   * sessão retomada continua no arquivo da pasta antiga), tentando os SEED_USAGE_FILES mais recentes: o último pode não
+   * ter `token_count` nenhum (sessão sem resposta, ou arquivada logo).
    */
   private seedUsage(acc: CodexAccount): void {
-    let best: { path: string; mtimeMs: number } | undefined;
-    const dirs = rolloutDirs(acc.dir);
-    for (const dir of new Set([...dirs.slice(0, 3), dirs[dirs.length - 1]])) {
+    const files: Array<{ path: string; mtimeMs: number }> = [];
+    for (const dir of rolloutDirs(acc.dir)) {
       let names: string[];
       try {
         names = readdirSync(dir);
@@ -769,28 +772,31 @@ export class CodexSource implements AgentSource, CodexLive {
         const r = parseRolloutName(name);
         if (!r || r.compressed) continue;
         try {
-          const mtimeMs = statSync(join(dir, name)).mtimeMs;
-          if (!best || mtimeMs > best.mtimeMs) best = { path: join(dir, name), mtimeMs };
+          files.push({ path: join(dir, name), mtimeMs: statSync(join(dir, name)).mtimeMs });
         } catch {
           // sumiu
         }
       }
     }
-    if (!best) return;
-    try {
-      const tail = new FileTail(best.path);
-      tail.seekTail(256 * 1024);
-      const state = createCodexState();
-      for (let i = 0; i < 4; i++) {
-        const r = tail.read();
-        for (const line of r.lines) parseRolloutLine(state, line, { idPrefix: '', now: this.now(), activities: false });
-        if (!r.more) break;
+    files.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    let plan: string | undefined;
+    for (const f of files.slice(0, SEED_USAGE_FILES)) {
+      try {
+        const tail = new FileTail(f.path);
+        tail.seekTail(256 * 1024);
+        const state = createCodexState();
+        for (let i = 0; i < 4; i++) {
+          const r = tail.read();
+          for (const line of r.lines) parseRolloutLine(state, line, { idPrefix: '', now: this.now(), activities: false });
+          if (!r.more) break;
+        }
+        plan ??= state.planType;
+        if (state.usage) return this.pushUsage(acc, state.usage, state.planType ?? plan);
+      } catch {
+        // ilegível agora: tenta o seguinte
       }
-      if (state.usage) this.pushUsage(acc, state.usage, state.planType);
-      else if (!acc.plan) this.pushPlan(acc, state.planType);
-    } catch {
-      // ilegível agora: o uso chega com a próxima sessão
     }
+    if (!acc.plan) this.pushPlan(acc, plan);
   }
 
   // ---------------------------------------------------------------- hooks (CodexLive)

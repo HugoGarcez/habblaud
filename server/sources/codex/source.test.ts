@@ -299,6 +299,18 @@ describe('fonte do Codex: uso do plano', () => {
     expect(ctx.agents()).toEqual([]);
     expect(ctx.accounts.list(new Map())[0]).toMatchObject({ plan: 'Plus', usageStatus: 'stale', usage: { fetchedAt: at } });
   });
+
+  it('conta sem sessão aberta: pula o rollout mais recente sem números e acha o uso numa pasta de data antiga', () => {
+    const ctx = setup();
+    const at = ctx.now() - 5 * 3600_000;
+    // Sessão retomada: o arquivo fica na pasta da criação (antiga), mas foi mexido há pouco.
+    ctx.home.rollout(T, [R.meta(T, { at }), R.tokens({ input: 1, output: 1, at, rateLimits: { plan: 'team' } })], { date: '2026/01/02', mtime: at });
+    // Arquivada depois, sem nenhum token_count: é a mais recente, mas não diz nada do uso.
+    const T3 = threadId(3);
+    ctx.home.rollout(T3, [R.meta(T3, { at: at + 60_000 })], { archived: true, mtime: at + 60_000 });
+    ctx.source.boot();
+    expect(ctx.accounts.list(new Map())[0]).toMatchObject({ plan: 'Team', usageStatus: 'stale', usage: { source: 'codex', fetchedAt: at } });
+  });
 });
 
 describe('fonte do Codex: eventos de hook', () => {
