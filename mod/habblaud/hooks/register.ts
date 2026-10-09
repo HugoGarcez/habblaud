@@ -88,12 +88,15 @@ interface ModEnv {
 
 /**
  * Normaliza um caminho (barras repetidas, `.`, `..` e a barra do fim): o ambiente do mod não tem node:path.
- * Caminhos do Windows saem com `/` (que o Windows também aceita) e a letra do drive (`C:`) conta como raiz: assim o
- * servidor no Docker, que é Linux, ainda acha o nome da pasta da conta no configDir gravado.
+ * Caminhos do Windows (com drive ou UNC) saem com `/`, que o Windows também aceita, e a letra do drive (`C:`) conta
+ * como raiz: assim o servidor no Docker, que é Linux, ainda acha o nome da pasta da conta no configDir gravado. Nos
+ * outros, `\` é parte do nome (Linux e macOS) e fica como está.
  */
 export function normalizePath(p: string): string {
-  const slashed = p.replace(/\\/g, '/')
-  const drive = /^[A-Za-z]:(?=\/|$)/.exec(slashed)?.[0] ?? ''
+  const win = /^(?:[A-Za-z]:|\\\\)/.test(p)
+  const slashed = win ? p.replace(/\\/g, '/') : p
+  // Raiz: o drive, ou uma das duas barras do UNC (`\\nas\share` vira `//nas/share`, que precisa das duas).
+  const drive = /^[A-Za-z]:(?=\/|$)/.exec(slashed)?.[0] ?? (win && slashed.startsWith('//') ? '/' : '')
   const rest = slashed.slice(drive.length)
   const abs = rest.startsWith('/')
   const out: string[] = []
