@@ -19,7 +19,8 @@
 // 4. Roda `docker compose up -d --build`, espera o /api/health e mostra a URL.
 // 5. Atualiza o mod do Habblaud nas contas onde ele JÁ está instalado com outra versão (depois de
 //    atualizar o Habblaud): relê o marketplace desta pasta e roda `claude plugin update` com o
-//    CLAUDE_CONFIG_DIR de cada conta. Nunca instala sozinho; se o `claude` faltar ou falhar, é só um aviso.
+//    CLAUDE_CONFIG_DIR de cada conta. Nunca instala sozinho; se o `claude` faltar ou falhar, é só um aviso. Numa
+//    conta com o mod e sem o plugin de mensagens (que veio depois), só dá a dica de rodar o npm run mod:install.
 //
 // Uso de 5h/semanal ao vivo: o mod do Habblaud (npm run mod:install; Claude Code 2.1.287+) ou, em
 // versões anteriores, o tap de statusline (npm run usage:install). Os dois gravam os números na pasta
@@ -297,7 +298,7 @@ export function renderOverride(mounts: AccountMount[], generatedAt: Date = new D
 export function modHint(mod: Pick<ModUpdateResult, 'installed' | 'unavailable'>): string[] {
   if (mod.installed || mod.unavailable) return [];
   return [
-    `  Uso de 5h/semanal ao vivo e responder pelo escritório: npm run mod:install (uma vez; Claude Code ${MIN_CLAUDE_VERSION}+).`,
+    `  Uso de 5h/semanal ao vivo, responder e mandar mensagens pelo escritório: npm run mod:install (uma vez; Claude Code ${MIN_CLAUDE_VERSION}+).`,
     '  Em versões anteriores do Claude Code: npm run usage:install e npm run hooks:install. Sem eles, vale o cache do /usage.',
   ];
 }

@@ -15,6 +15,12 @@
       "source": "./mod/habblaud-permissoes",
       "description": "Aprovar ou recusar pelo Habblaud os pedidos de permissão do Claude Code (hook PermissionRequest).",
       "category": "productivity"
+    },
+    {
+      "name": "habblaud-mensagens",
+      "source": "./mod/habblaud-mensagens",
+      "description": "Mandar mensagens pelo Habblaud: o que você digita no escritório entra na sessão como se você tivesse digitado no terminal.",
+      "category": "productivity"
     }
   ]
 }
