@@ -1,12 +1,14 @@
-// Terminal somente leitura: janela flutuante sobre o escritório com a conversa de uma sessão (prompts, respostas,
-// ferramentas e resultados) no formato em que o Claude Code a mostra, ao vivo pelo stream SSE
-// GET /api/agents/:id/terminal (`init` substitui tudo; `append` acrescenta). Nada volta ao agente.
+// Terminal: janela flutuante sobre o escritório com a conversa de uma sessão (prompts, respostas, ferramentas e
+// resultados) no formato em que o Claude Code a mostra, ao vivo pelo stream SSE GET /api/agents/:id/terminal (`init`
+// substitui tudo; `append` acrescenta). O rodapé tem a caixa de mensagem (ui/composer.ts): com o plugin
+// habblaud-mensagens, o que você digita ali entra na sessão do agente principal como se fosse digitado no terminal.
 // Também mostra as sessões do histórico (ui/history.ts), pelo mesmo protocolo em
 // GET /api/sessions/:conta/:sessionId/terminal: o cabeçalho traz projeto, título e data, e o rodapé, "Sessão encerrada às …".
 // Busca (Ctrl/⌘+F ou a lupa), filtro e o botão de copiar de cada entrada vêm de ui/termtools.ts.
 // O modelo (deduplicação, junção ferramenta -> resultado, limite de entradas, prévias recolhidas e rodapé) é puro e
 // testado em ui/terminal.test.ts; a montagem usa só textContent (o markdown das respostas vem de ui/markdown.ts).
 import type { AgentInfo, RecentSession, TerminalEntry, TerminalInit } from '../../../shared/types';
+import { MessageComposer } from './composer';
 import type { UiComponent, UiContext } from './context';
 import { copyText, h, iconButton, prefersReducedMotion, setAttr, setHidden, setText, setTitle, setVariant } from './dom';
 import { calendarDayDiff, formatClock, formatDateTime, formatDuration, formatElapsed, relativeTime } from './format';
@@ -41,7 +43,6 @@ export const PROMPT_PREVIEW_LINES = 24;
 export const TERMINAL_UNAVAILABLE_HINT = 'O terminal só fica disponível quando o Habblaud roda com acesso local (bind 127.0.0.1)';
 const OPEN_ERROR = 'Não foi possível abrir o terminal. O recurso só funciona no acesso local, com o agente ainda aberto.';
 const SESSION_OPEN_ERROR = 'Não foi possível abrir a sessão. O histórico só funciona no acesso local, com o transcript ainda no disco.';
-const INPUT_PLACEHOLDER = 'Somente leitura — responda no terminal do Claude Code';
 /** Espera depois da última tecla antes de buscar (a busca percorre toda a conversa na tela). */
 const SEARCH_DEBOUNCE_MS = 120;
 /** "Copiado" fica à mostra por este tempo. */
@@ -616,6 +617,8 @@ export class TerminalPanel implements UiComponent, TerminalControl {
   private glyph: HTMLElement;
   private statusText: HTMLElement;
   private statusTime: HTMLElement;
+  /** Caixa de mensagem do rodapé (só a sessão ao vivo de um agente principal). */
+  private composer: MessageComposer;
 
   constructor(private ctx: UiContext) {
     const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
@@ -631,9 +634,6 @@ export class TerminalPanel implements UiComponent, TerminalControl {
     this.reconnEl = h('span', { class: 'ui-term__reconn', text: 'reconectando…', hidden: true, role: 'status' });
     this.findBtn = iconButton(ICONS.search, `Buscar na conversa (${findKey})`, () => this.toggleSearch(), 'ui-icon-btn--sm ui-term__find');
     setAttr(this.findBtn, 'aria-expanded', 'false');
-    const lock = h('span', { class: 'ui-term__ro-icon', attrs: { 'aria-hidden': 'true' } });
-    lock.innerHTML = ICONS.lock;
-    const ro = h('span', { class: 'ui-term__ro', title: 'Só para ler: para responder, use o terminal do Claude Code' }, lock, h('span', { text: 'somente leitura' }));
     const close = iconButton(ICONS.close, 'Fechar terminal (Esc)', () => this.close(), 'ui-icon-btn--sm ui-term__close');
     const bar = h(
       'div',
@@ -643,7 +643,6 @@ export class TerminalPanel implements UiComponent, TerminalControl {
       h('div', { class: 'ui-term__who' }, this.accEl, this.nameEl, this.roleEl, this.roomEl),
       this.reconnEl,
       this.findBtn,
-      ro,
       close,
     );
 
@@ -701,15 +700,16 @@ export class TerminalPanel implements UiComponent, TerminalControl {
     this.statusText = h('span', { class: 'ui-term__status-text' });
     this.statusTime = h('span', { class: 'ui-term__status-time' });
     this.status = h('p', { class: 'ui-term__status' }, this.glyph, this.statusText, this.statusTime);
-    const input = h('input', { class: 'ui-term__input', type: 'text', attrs: { disabled: true, placeholder: INPUT_PLACEHOLDER, 'aria-label': INPUT_PLACEHOLDER } });
+    // Esc na caixa devolve o foco à conversa (o próximo fecha o terminal).
+    this.composer = new MessageComposer(ctx, 'terminal', { onEscape: () => this.focusLog() });
 
     this.el = h(
       'section',
-      { class: 'ui-term', role: 'dialog', hidden: true, tabIndex: -1, attrs: { 'aria-label': 'Terminal somente leitura' } },
+      { class: 'ui-term', role: 'dialog', hidden: true, tabIndex: -1, attrs: { 'aria-label': 'Terminal' } },
       bar,
       tools,
       h('div', { class: 'ui-term__body' }, this.alertEl, this.scroll, this.newBtn),
-      h('div', { class: 'ui-term__foot' }, this.status, h('label', { class: 'ui-term__prompt' }, h('span', { class: 'ui-term__caret', text: '>', attrs: { 'aria-hidden': 'true' } }), input)),
+      h('div', { class: 'ui-term__foot' }, this.status, this.composer.el),
     );
     this.el.addEventListener('keydown', (e) => this.onKey(e));
     this.renderFilter();
@@ -771,6 +771,8 @@ export class TerminalPanel implements UiComponent, TerminalControl {
     else this.renderAgentHead();
     this.renderFooter();
     this.renderState();
+    // Mensagens só para a sessão ao vivo (no histórico, a caixa diz que a sessão foi encerrada).
+    this.composer.render(this.session ? undefined : this.ctx.agent(this.id), this.id);
   }
 
   /** Abre o painel numa conversa nova (agente ou sessão do histórico); a mesma conversa só recebe o foco. */
@@ -815,7 +817,7 @@ export class TerminalPanel implements UiComponent, TerminalControl {
     setText(this.roomEl, room ? `sala ${room.name}` : '');
     setTitle(this.roomEl, room?.path ?? '');
     setHidden(this.roomEl, !room);
-    setAttr(this.el, 'aria-label', `Terminal somente leitura de ${name}`);
+    setAttr(this.el, 'aria-label', `Terminal de ${name}`);
     this.el.classList.toggle('is-gone', !live);
   }
 
@@ -831,7 +833,7 @@ export class TerminalPanel implements UiComponent, TerminalControl {
     setText(this.roomEl, `${sessionProjectName(s)} · ${formatDateTime(s.firstAt ?? s.lastAt)}`);
     setTitle(this.roomEl, s.project ?? s.projectDir);
     setHidden(this.roomEl, false);
-    setAttr(this.el, 'aria-label', `Terminal somente leitura da sessão ${title}`);
+    setAttr(this.el, 'aria-label', `Terminal da sessão ${title}`);
     this.el.classList.remove('is-gone');
   }
 

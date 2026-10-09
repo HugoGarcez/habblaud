@@ -9,6 +9,7 @@
 import type { Activity, AgentInfo, TerminalEntry } from '../types';
 import { SHELL_DONE_TOOL, SHELL_WAIT_TOOL } from '../activity';
 import { hash32 } from '../hash';
+import { MESSAGE_TOOL } from '../messages';
 
 type ToolEntry = Extract<TerminalEntry, { kind: 'tool' }>;
 
@@ -225,6 +226,11 @@ function entriesFor(a: Activity, i: number, ctx: Ctx, out: TerminalEntry[]): voi
   if (a.tool === SHELL_WAIT_TOOL) {
     const what = detail ? `\`${detail.split('\n')[0]}\`` : `**${afterColon(a.text)}**`;
     out.push({ kind: 'assistant', id: `${a.id}:a`, at: a.at, text: `Deixei rodando em segundo plano: ${what}. Volto assim que terminar.` });
+    return;
+  }
+  // Mensagem mandada pelo escritório: entra na conversa como um prompt seu.
+  if (a.tool === MESSAGE_TOOL) {
+    out.push({ kind: 'user', id: `${a.id}:u`, at: a.at, text: detail ?? a.text });
     return;
   }
   switch (a.kind) {

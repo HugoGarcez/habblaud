@@ -291,10 +291,37 @@ describe('Office', () => {
     expect(off.agents.map((a) => a.id)).toEqual(['acc:1']);
   });
 
-  it('meta.terminal: só com o terminal somente leitura ligado', () => {
+  it('meta.terminal: só com o terminal ligado', () => {
     expect(makeOffice().office.commit().snapshot.meta.terminal).toBe(false);
     const deps = { names: new NameStore(null), version: 't', startedAt: 0, accounts: () => [], sources: () => [], accountName: () => undefined };
     expect(new Office({ ...deps, terminal: true }).commit().snapshot.meta.terminal).toBe(true);
     expect(new Office({ ...deps, terminal: false }).commit().snapshot.meta.terminal).toBe(false);
+  });
+
+  it('canMessage: só principais presentes que o registro de mensagens vê conectados; meta.messages com o recurso ligado', () => {
+    const reach = new Set<string>();
+    const deps = { names: new NameStore(null), version: 't', startedAt: 0, accounts: () => [], sources: () => [], accountName: () => undefined };
+    const office = new Office({ ...deps, messages: () => reach });
+    office.addMain({ id: 'acc:1', account: 'acc', sessionId: 's1', cwd: '/p/a', role: 'Agente principal', startedAt: 0, status: 'idle' });
+    office.addMain({ id: 'acc:2', account: 'acc', sessionId: 's2', cwd: '/p/a', role: 'Agente principal', startedAt: 0, status: 'working' });
+    office.addSub({ id: 's1:sub', parentId: 'acc:1', sessionId: 's1', role: 'Explore', background: false, startedAt: 0 });
+    reach.add('acc:1').add('s1:sub');
+    office.markDirty();
+    const snap = office.commit().snapshot;
+    expect(snap.meta.messages).toBe(true);
+    expect(snap.agents.filter((a) => a.canMessage).map((a) => a.id)).toEqual(['acc:1']);
+    // Quem encerrou a sessão não recebe, mesmo que o registro ainda não tenha notado.
+    office.closeMain('acc:1');
+    expect(office.commit().snapshot.agents.filter((a) => a.canMessage)).toEqual([]);
+    // Sem o registro (recurso desligado): meta.messages falso e os principais do demo também não recebem.
+    const off = new Office(deps);
+    off.setDemo(true);
+    const offSnap = off.commit().snapshot;
+    expect(offSnap.meta.messages).toBe(false);
+    expect(offSnap.agents.some((a) => a.canMessage)).toBe(false);
+    const on = new Office({ ...deps, messages: () => new Set() });
+    on.setDemo(true);
+    expect(on.commit().snapshot.agents.filter((a) => a.canMessage).every((a) => a.kind === 'main' && a.id.startsWith('demo:'))).toBe(true);
+    expect(on.commit().snapshot.agents.some((a) => a.canMessage)).toBe(true);
   });
 });
