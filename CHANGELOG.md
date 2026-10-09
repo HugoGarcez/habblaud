@@ -21,6 +21,10 @@ do meio (0.**3**.0).
   troca: alguns sistemas de arquivos reaproveitam o número (inode) do arquivo apagado, e só o inode era comparado.
   Agora, quando o sistema informa o momento de criação do arquivo, ele também entra na comparação, e a leitura
   recomeça do início do arquivo novo.
+- No Windows, com o Node 23 até o 24.19, o hook do plugin `habblaud-permissoes` caía ao sair (código 0xC0000409,
+  um bug do Node: nodejs/node#56645) logo depois de receber a resposta do escritório. A decisão chegava antes da
+  queda, mas sem decisão (como em "Responder no terminal") a sessão podia registrar um erro do hook. Agora o hook
+  sai sem cair.
 
 ## [0.4.0] - 2026-10-08
 
