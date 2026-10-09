@@ -2,6 +2,7 @@
 import type { Activity, AgentInfo, FeedItem, RoomInfo, ShellJob, TaskItem } from '../../../shared/types';
 import { roomTheme } from '../art';
 import { createAvatarPlaceholder, updateAvatar } from './avatar';
+import { MessageComposer } from './composer';
 import type { UiComponent, UiContext } from './context';
 import { copyText, h, iconButton, KeyedList, setAttr, setHidden, setStyleVar, setText, setTitle, setVariant } from './dom';
 import {
@@ -209,6 +210,9 @@ class AgentView {
   private actTime: HTMLElement;
   private actDetails: HTMLDetailsElement;
   private actDetail: HTMLElement;
+  /** Mandar mensagem ao agente principal pelo Habblaud (plugin habblaud-mensagens). */
+  private composer: MessageComposer;
+  private msgSec: ReturnType<typeof section>;
   private tasksSec: ReturnType<typeof section>;
   private tasksBar: HTMLElement;
   private tasks: KeyedList<TaskItem>;
@@ -261,7 +265,7 @@ class AgentView {
       h('span', { class: 'ui-status__actions' }, this.followBtn, centerBtn),
     );
 
-    // Terminal somente leitura: a conversa da sessão como o Claude Code mostra (só com acesso local).
+    // Terminal: a conversa da sessão como o Claude Code mostra, ao vivo (só com acesso local).
     this.termLabel = h('span', { class: 'ui-term-cta__label', text: 'Abrir terminal' });
     const termIcon = h('span', { class: 'ui-term-cta__icon', attrs: { 'aria-hidden': 'true' } });
     termIcon.innerHTML = ICONS.terminal;
@@ -270,7 +274,6 @@ class AgentView {
       { class: 'ui-btn ui-term-cta', type: 'button', attrs: { 'aria-pressed': 'false' }, on: { click: () => this.toggleTerminal() } },
       termIcon,
       this.termLabel,
-      h('span', { class: 'ui-term-cta__ro', text: 'somente leitura' }),
       h('kbd', { class: 'ui-kbd', text: 'T', attrs: { 'aria-hidden': 'true' } }),
     );
 
@@ -308,6 +311,8 @@ class AgentView {
     this.actDetail = h('pre', { class: 'ui-mono' });
     this.actDetails = h('details', { class: 'ui-now__details' }, h('summary', { text: 'Detalhes' }), this.actDetail);
     const nowSec = section('Agora', h('div', { class: 'ui-now' }, this.actIcon, h('div', { class: 'ui-now__body' }, this.actText, this.actTime)), this.actDetails);
+    this.composer = new MessageComposer(ctx, 'drawer');
+    this.msgSec = section('Mandar mensagem', this.composer.el);
     this.social = new SocialSection(ctx);
     this.perm = new PermissionCard(ctx);
 
@@ -362,6 +367,7 @@ class AgentView {
       this.shellBox,
       this.shellsSec.el,
       nowSec.el,
+      this.msgSec.el,
       this.social.el,
       this.tasksSec.el,
       this.teamSec.el,
@@ -397,7 +403,7 @@ class AgentView {
       });
   }
 
-  /** Abre (ou fecha) o terminal somente leitura deste agente; desligado sem acesso local ou depois que ele saiu. */
+  /** Abre (ou fecha) o terminal deste agente; desligado sem acesso local ou depois que ele saiu. */
   toggleTerminal(): void {
     if (!this.id || this.termBtn.getAttribute('aria-disabled') === 'true') return;
     this.terminal.toggle(this.id, this.termBtn);
@@ -496,6 +502,9 @@ class AgentView {
     setHidden(this.actDetails, !detail);
     setText(this.actDetail, detail);
 
+    // Mandar mensagem: só para principais presentes (com o recurso ligado e a página local; sem o plugin, a dica).
+    setHidden(this.msgSec.el, this.composer.render(live, this.id) === 'off');
+
     // Vida social (personalidade, carteira, rodas): só de quem está no escritório.
     if (live) this.social.render(a.id, now);
     else setHidden(this.social.el, true);
@@ -573,14 +582,14 @@ class AgentView {
     setTitle(
       this.termBtn,
       open
-        ? 'Fechar o terminal somente leitura (T)'
+        ? 'Fechar o terminal (T)'
         : !available
           ? this.ctx.store.replaying
             ? 'Sem terminal no timelapse: a conversa é a de agora, não a do momento reproduzido.'
             : TERMINAL_UNAVAILABLE_HINT
           : !live
             ? 'O agente já saiu do escritório.'
-            : 'Ver a conversa desta sessão como no terminal do Claude Code, só para leitura (T)',
+            : 'Ver a conversa desta sessão como no terminal do Claude Code, ao vivo (T)',
     );
   }
 

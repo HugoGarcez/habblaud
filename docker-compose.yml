@@ -25,9 +25,11 @@ services:
     environment:
       HABBLAUD_ALLOWED_HOSTS: ${HABBLAUD_ALLOWED_HOSTS:-}
       HABBLAUD_DEMO: ${HABBLAUD_DEMO:-}
-      # O mesmo valor da porta publicada acima: o terminal somente leitura só liga com bind local.
+      # O mesmo valor da porta publicada acima: o terminal (e o que age sobre as sessões) só liga com bind local.
       HABBLAUD_BIND: ${HABBLAUD_BIND:-127.0.0.1}
       HABBLAUD_TERMINAL: ${HABBLAUD_TERMINAL:-}
+      # 0 desliga as mensagens pelo escritório (mandar mensagens aos agentes pela página e pelo terminal).
+      HABBLAUD_MENSAGENS: ${HABBLAUD_MENSAGENS:-}
       # 0 desliga a verificação de versão nova (consulta às releases no GitHub a cada 6 h).
       HABBLAUD_UPDATE_CHECK: ${HABBLAUD_UPDATE_CHECK:-}
     # Endurecimento: sistema de arquivos só leitura (exceto /data e /tmp), sem capabilities extras.

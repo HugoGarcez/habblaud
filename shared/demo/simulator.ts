@@ -11,6 +11,7 @@ import { describePrompt, describeShellJob, describeTool, SHELL_DONE_TOOL, SHELL_
 import { answerSummary, ASK_TOOL, checkAnswers } from '../answers';
 import { describeGitHubEvent, GITHUB_TOOL, RoomEffects } from '../github';
 import { hash32, mulberry32 } from '../hash';
+import { describeMessage, MESSAGE_TOOL } from '../messages';
 import { pickName } from '../names';
 import { demoGitHubEvent } from './github';
 import { demoPermission, type DemoPermissionKind } from './permission';
@@ -245,6 +246,19 @@ export class DemoSimulator {
     this.target = Math.max(0, Math.floor(n));
   }
 
+  /**
+   * Mensagem mandada pelo escritório a um agente principal (fictícia: nada vai a uma sessão de verdade): a
+   * atividade "Mensagem pelo Habblaud" e, se ele estava à toa, o próximo turno começa logo, como se respondesse.
+   * false = agente desconhecido, subagente ou que já saiu.
+   */
+  receiveMessage(agentId: string, text: string, now = Date.now()): boolean {
+    const a = this.agents.get(agentId);
+    if (!a || a.info.kind !== 'main' || a.removeAt !== undefined || a.phase === 'leaving') return false;
+    this.activity(a, now, describeMessage(text));
+    if (a.phase === 'idle') a.phaseUntil = Math.min(a.phaseUntil, now + this.ms(1_500, 3_000));
+    return true;
+  }
+
   /** Avança a simulação até `now`. */
   tick(now: number): DemoTickResult {
     if (now >= this.nextSpawnAt) {
@@ -433,6 +447,8 @@ export class DemoSimulator {
       statusSince: now,
       stats: { toolCalls: 0, tokensIn: 0, tokensOut: 0, costUSD: 0, linesAdded: 0, linesRemoved: 0, subagents: 0 },
       seed: hash32(id),
+      // Sessão fictícia "com o plugin de mensagens": dá para mandar mensagem pelo escritório (receiveMessage).
+      canMessage: true,
     };
     const a: SimAgent = {
       info,
@@ -515,6 +531,7 @@ export class DemoSimulator {
     if (now >= a.closeAt && a.phase === 'idle') {
       a.phase = 'leaving';
       this.setStatus(a, 'offline', now);
+      delete a.info.canMessage;
       a.removeAt = now + OFFLINE_GRACE_MS;
       this.notice(now, 'info', `🚪 ${a.info.name} encerrou a sessão`, a.info.id, a.info.roomId);
       return;
@@ -770,7 +787,7 @@ export class DemoSimulator {
     a.info.activity = act;
     a.info.recent = [...a.info.recent, act].slice(-30);
     a.info.lastEventAt = now;
-    const synthetic = d.tool === SHELL_DONE_TOOL || d.tool === SHELL_WAIT_TOOL || d.tool === GITHUB_TOOL;
+    const synthetic = d.tool === SHELL_DONE_TOOL || d.tool === SHELL_WAIT_TOOL || d.tool === GITHUB_TOOL || d.tool === MESSAGE_TOOL;
     if (!synthetic && d.kind !== 'prompt' && d.kind !== 'done' && d.kind !== 'wait' && d.kind !== 'think') {
       a.info.stats.toolCalls++;
     }

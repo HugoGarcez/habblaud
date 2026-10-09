@@ -321,6 +321,11 @@ export interface OfficeSnapshot {
      * exposto além do próprio computador (bind local). Ausente/false = recurso desligado.
      */
     terminal?: boolean;
+    /**
+     * Mensagens pelo escritório ligadas (POST /api/messages): a mesma trava do terminal e HABBLAUD_MENSAGENS sem
+     * desligar. Quem recebe agora diz AgentInfo.canMessage. Ausente/false = recurso desligado.
+     */
+    messages?: boolean;
     /** Verificação de versão nova no GitHub (ausente nos testes e no timelapse). */
     updates?: UpdateStatus;
   };
