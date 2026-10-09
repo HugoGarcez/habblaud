@@ -10,6 +10,13 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Corrigido
+
+- O `npm install` alterava o `package-lock.json` (o do repositório estava desatualizado em relação ao
+  `package.json`), e por isso o `git pull` da versão seguinte parava com "Your local changes … would be
+  overwritten". Agora o arquivo fica igual. Quem já tem a alteração roda uma vez `git checkout -- package-lock.json`
+  antes do `git pull`.
+
 ## [0.4.0] - 2026-10-08
 
 ### Alterado

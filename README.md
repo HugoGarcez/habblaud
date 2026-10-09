@@ -232,6 +232,10 @@ npm install
 npm run docker:up        # ou: npm run build && npm start (e depois npm run mod:install)
 ```
 
+> Se o `git pull` parar com "Your local changes to the following files would be overwritten by merge:
+> package-lock.json", rode `git checkout -- package-lock.json` e repita: até a 0.4.0, o `npm install` alterava esse
+> arquivo.
+
 O `docker:up` também atualiza o mod nas contas em que ele já está instalado (nunca instala sozinho) e avisa:
 "Mod atualizado para 0.3.0 na Conta D; sessões abertas: /reload-plugins". No modo Node, rode `npm run mod:install`
 depois de atualizar. Para não consultar o GitHub, use `HABBLAUD_UPDATE_CHECK=0` (no `.env`, para o Docker).
