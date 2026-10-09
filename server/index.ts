@@ -23,8 +23,11 @@ import { openMainAgent, SessionHistory } from './sources/history';
 import { HistorySet, SourceSet } from './sources/source';
 import { createPermissionRoutes } from './permissions/http';
 import { PermissionRegistry } from './permissions/registry';
+import { codexAccountOf } from './codex/http';
+import { createCodexQueueRunner, findCodexBin } from './messages/codex';
 import { createMessageRoutes } from './messages/http';
 import { MessageRegistry } from './messages/registry';
+import type { CodexLive } from './sources/codex/live';
 import { ClaudeWatcher } from './sources/watcher';
 import { createBuildReader } from './build';
 import { UpdateChecker } from './updates/checker';
@@ -81,6 +84,9 @@ const office = new Office({
 // dela (agents.add(codex)), com o histórico dela no HistorySet abaixo e as contas em accounts.setProviderAccounts.
 const claude = new ClaudeWatcher({ accounts, office, inDocker: config.inDocker });
 const agents = new SourceSet([claude]);
+// Eventos dos hooks do Codex (POST /api/codex/events, mod/habblaud-codex/hook.mjs): vão para a fonte do Codex ao vivo
+// (CodexLive). Quando ela entrar aqui, ligar com `codexLive = codex`; sem ela a rota responde {ok: false}.
+const codexLive: CodexLive | undefined = undefined;
 late.office = office;
 late.agents = agents;
 const hub = new Hub(office);
@@ -107,18 +113,27 @@ const permissions = config.terminal
       viewers: () => hub.localSize,
       // Só o Claude Code: a busca da resposta dada no terminal lê o formato do transcript dele.
       transcriptPathOf: (id) => claude.transcriptPathOf(id),
+      // Pedidos do hook do Codex: a conta pela pasta CODEX_HOME que ele manda.
+      codexAccount: (account, codexHome) => codexAccountOf(accounts.entriesOf('codex'), account, codexHome),
       demoDecide: (id, d) => office.decideDemoPermission(id, d),
       demoDetail: (id) => office.demoPermission(id),
     })
   : undefined;
 late.permissions = permissions;
 // Mensagens pelo escritório (plugin habblaud-mensagens): entram na sessão como se você as tivesse digitado, então
-// seguem a mesma trava (e HABBLAUD_MENSAGENS=0 desliga só elas).
+// seguem a mesma trava (e HABBLAUD_MENSAGENS=0 desliga só elas). Ao Codex vão por `codex queue` (messages/codex.ts):
+// fora do Docker o próprio servidor roda o comando (HABBLAUD_CODEX_BIN ou `codex` do PATH); no Docker, o auxiliar do
+// host (npm run codex:bridge).
+const codexBin = config.messages && !config.inDocker ? findCodexBin(process.env) : undefined;
 const messages = config.messages
   ? new MessageRegistry({
       office,
       demoAgent: (id) => office.demoAgent(id),
       demoDeliver: (id, text) => office.deliverDemoMessage(id, text),
+      codex: {
+        run: codexBin ? createCodexQueueRunner(codexBin) : undefined,
+        homeOf: (account) => accounts.entriesOf('codex').find((e) => e.id === account)?.detected.configDir,
+      },
     })
   : undefined;
 late.messages = messages;
@@ -157,6 +172,7 @@ const api = createApiHandler({
   timeline: createTimelineHandler({ dir: timelineDir, recording: !!timeline }),
   permissions: permissions ? createPermissionRoutes(permissions) : undefined,
   messages: messages ? createMessageRoutes(messages) : undefined,
+  codexLive,
   stats,
   updates,
 });
@@ -233,6 +249,15 @@ server.listen(config.port, config.host, () => {
       ? '   Mensagens pelo escritório: ligadas (precisa do plugin habblaud-mensagens: npm run mod:install).'
       : `   Mensagens pelo escritório: desligadas (${messagesOffReason(process.env, config.host, config.inDocker)}).`,
   );
+  if (config.messages) {
+    log.info(
+      codexBin
+        ? `   Mensagens ao Codex: pelo codex queue (${codexBin}).`
+        : config.inDocker
+          ? '   Mensagens ao Codex: pelo auxiliar do host (deixe npm run codex:bridge rodando no Mac).'
+          : '   Mensagens ao Codex: sem o binário do Codex (codex no PATH ou HABBLAUD_CODEX_BIN); o auxiliar npm run codex:bridge também serve.',
+    );
+  }
   log.info(
     updates.enabled
       ? `   Versão nova: verificando as releases de github.com/${config.repo} a cada 6 h.`
