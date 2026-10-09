@@ -10,6 +10,13 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Corrigido
+
+- No Windows, com o Node 23 até o 24.19, o hook do plugin `habblaud-permissoes` caía ao sair (código 0xC0000409,
+  um bug do Node: nodejs/node#56645) logo depois de receber a resposta do escritório. A decisão chegava antes da
+  queda, mas sem decisão (como em "Responder no terminal") a sessão podia registrar um erro do hook. Agora o hook
+  sai sem cair.
+
 ## [0.4.0] - 2026-10-08
 
 ### Alterado

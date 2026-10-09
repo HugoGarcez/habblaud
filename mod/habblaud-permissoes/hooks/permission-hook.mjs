@@ -199,9 +199,13 @@ export async function main() {
   // Rede de segurança: nada mantém o processo vivo além do tempo limite.
   setTimeout(() => process.exit(0), timeoutMs + 15_000).unref();
   const out = await run();
-  // Pipes são assíncronos no macOS: só sai depois que a decisão foi escrita.
-  if (out) process.stdout.write(`${JSON.stringify(out)}\n`, () => process.exit(0));
-  else process.exit(0);
+  // Sem process.exit() logo depois do fetch: no Windows (Node 23 até 24.19) ele derruba o processo com
+  // 0xC0000409 enquanto o V8 ainda compila em segundo plano o parser do fetch (assert do libuv,
+  // nodejs/node#56645). O processo sai sozinho quando o loop esvazia, o que também espera a escrita da
+  // decisão no pipe (assíncrona no macOS); se algo ainda segurar o loop, o process.exit vem 1 s depois.
+  const finish = () => setTimeout(() => process.exit(0), 1_000).unref();
+  if (out) process.stdout.write(`${JSON.stringify(out)}\n`, finish);
+  else finish();
 }
 
 function isMain() {
