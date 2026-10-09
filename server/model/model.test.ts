@@ -197,6 +197,25 @@ describe('Office', () => {
     expect(office.get('acc:9')).not.toHaveProperty('provider');
   });
 
+  it('moveMain: o principal e os subagentes mudam de sala; a sala antiga vazia sai', () => {
+    const { office, now } = makeOffice();
+    office.addMain({ id: '.codex:t1', provider: 'codex', account: '.codex', sessionId: 't1', cwd: 'Codex (sem projeto)', role: 'x', startedAt: now(), status: 'idle' });
+    office.addSub({ id: '.codex:t2', parentId: '.codex:t1', sessionId: 't2', role: 'worker', background: false, startedAt: now() });
+    office.addMain({ id: 'acc:1', account: 'acc', sessionId: 's1', cwd: '/p/loja', role: 'x', startedAt: now(), status: 'idle' });
+    office.moveMain('.codex:t1', '/p/loja/');
+    const snap = office.commit().snapshot;
+    expect(snap.agents.map((a) => [a.id, a.roomId])).toEqual([
+      ['.codex:t1', '/p/loja'],
+      ['.codex:t2', '/p/loja'],
+      ['acc:1', '/p/loja'],
+    ]);
+    expect(snap.rooms.map((r) => r.id)).toEqual(['/p/loja']);
+    // Subagente não muda sozinho; cwd vazio ou o mesmo não faz nada.
+    office.moveMain('.codex:t2', '/p/outra');
+    office.moveMain('.codex:t1', '');
+    expect(office.get('.codex:t1')?.roomId).toBe('/p/loja');
+  });
+
   it('rev só muda quando algo mudou', () => {
     const { office } = makeOffice();
     const r1 = office.commit();

@@ -5,8 +5,8 @@
 //
 // Privacidade: do .claude.json lemos SOMENTE o e-mail e a organização do perfil da conta
 // (oauthAccount.{emailAddress, organizationName}) e o cache de uso (cachedUsageUtilization);
-// dos arquivos de shell, SOMENTE as linhas `alias X='... claude ...'`. Credenciais nunca são lidas
-// e nada disso vai para o log.
+// dos arquivos de shell, SOMENTE as linhas `alias X='... claude ...'` (e `alias X='... codex ...'`, para as
+// contas do Codex: ver sources/codex/accounts.ts). Credenciais nunca são lidas e nada disso vai para o log.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
@@ -34,6 +34,8 @@ const RC_FILES = ['.zshrc', '.bashrc', '.zprofile', '.bash_profile'];
 /** Override vindo de HABBLAUD_ACCOUNTS (o host passa os metadados prontos para o container). */
 export interface AccountOverride {
   id?: string;
+  /** Ferramenta da conta; ausente = 'claude'. As do Codex ficam fora da descoberta das contas do Claude Code. */
+  provider?: Provider;
   configDir?: string;
   mountDir?: string;
   short?: string;
@@ -48,7 +50,10 @@ export interface AccountOverride {
 export interface ClaudeAlias {
   /** Nome do alias, como digitado no shell (ex.: "d"). */
   name: string;
-  /** Config dir absoluto do CLAUDE_CONFIG_DIR do alias; ausente = conta padrão ($HOME/.claude). */
+  /**
+   * Pasta absoluta da variável do alias (CLAUDE_CONFIG_DIR; no Codex, CODEX_HOME); ausente = conta padrão
+   * ($HOME/.claude; no Codex, a pasta padrão dele).
+   */
   configDir?: string;
 }
 
@@ -134,6 +139,11 @@ export function parseAccountOverrides(raw: string | undefined): AccountOverride[
   }
 }
 
+/** Overrides das contas do Claude Code (sem `provider` ou com 'claude'); os do Codex ficam com a fonte dele. */
+function claudeOverrides(raw: string | undefined): AccountOverride[] {
+  return parseAccountOverrides(raw).filter((o) => o.provider === undefined || o.provider === 'claude');
+}
+
 /**
  * Config dirs observados. HABBLAUD_CLAUDE_DIRS (lista separada por vírgula) substitui tudo;
  * senão: diretórios `$HOME/.claude*` com `projects/` ou `sessions/`, mais CLAUDE_CONFIG_DIR
@@ -184,7 +194,7 @@ function scanClaudeDirs(env: NodeJS.ProcessEnv, home: string): { dirs: string[];
     const abs = expandHome(p, home);
     if (isDir(abs) && notCodex(abs)) found.push(abs);
   }
-  for (const o of parseAccountOverrides(env.HABBLAUD_ACCOUNTS)) {
+  for (const o of claudeOverrides(env.HABBLAUD_ACCOUNTS)) {
     if (typeof o.mountDir !== 'string') continue;
     if (hasClaudeLayout(o.mountDir) && notCodex(o.mountDir)) found.push(expandHome(o.mountDir, home));
   }
@@ -198,33 +208,48 @@ function scanClaudeDirs(env: NodeJS.ProcessEnv, home: string): { dirs: string[];
 }
 
 const ALIAS_RE = /^\s*alias\s+([A-Za-z0-9_][A-Za-z0-9_.-]*)=(?:'([^']*)'|"((?:[^"\\]|\\.)*)")\s*(?:#.*)?$/;
-const INVOKES_CLAUDE = /(?:^|[\s;&|(])(?:[\w.~/-]*\/)?claude(?=$|[\s;&|)])/;
-const CONFIG_DIR_RE = /\bCLAUDE_CONFIG_DIR=(?:"([^"]*)"|'([^']*)'|([^\s;&|]+))/;
+/** O que identifica o alias de cada ferramenta: o comando invocado e a variável com a pasta da conta. */
+const ALIAS_TOOLS: Record<Provider, { invokes: RegExp; dir: RegExp }> = {
+  claude: {
+    invokes: /(?:^|[\s;&|(])(?:[\w.~/-]*\/)?claude(?=$|[\s;&|)])/,
+    dir: /\bCLAUDE_CONFIG_DIR=(?:"([^"]*)"|'([^']*)'|([^\s;&|]+))/,
+  },
+  codex: {
+    invokes: /(?:^|[\s;&|(])(?:[\w.~/-]*\/)?codex(?=$|[\s;&|)])/,
+    dir: /\bCODEX_HOME=(?:"([^"]*)"|'([^']*)'|([^\s;&|]+))/,
+  },
+};
 
 /**
- * Extrai os aliases de shell que invocam o `claude`. Considera SOMENTE linhas
- * `alias NOME='...'` (ou com aspas duplas); qualquer outra linha é ignorada.
+ * Extrai os aliases de shell que invocam a ferramenta (`claude` ou `codex`), com a pasta da conta (CLAUDE_CONFIG_DIR
+ * ou CODEX_HOME). Considera SOMENTE linhas `alias NOME='...'` (ou com aspas duplas); qualquer outra linha é ignorada.
  */
-export function parseClaudeAliases(text: string, home: string): ClaudeAlias[] {
+export function parseToolAliases(text: string, home: string, tool: Provider): ClaudeAlias[] {
+  const { invokes, dir: dirRe } = ALIAS_TOOLS[tool];
   const out: ClaudeAlias[] = [];
   for (const line of text.split(/\r?\n/)) {
     const m = ALIAS_RE.exec(line);
     if (!m) continue;
     const body = m[2] ?? m[3]?.replace(/\\(.)/g, '$1') ?? '';
-    if (!INVOKES_CLAUDE.test(body)) continue;
-    const dir = CONFIG_DIR_RE.exec(body);
+    if (!invokes.test(body)) continue;
+    const dir = dirRe.exec(body);
     const raw = dir ? (dir[1] ?? dir[2] ?? dir[3]) : undefined;
     out.push(raw ? { name: m[1], configDir: expandHome(raw, home) } : { name: m[1] });
   }
   return out;
 }
 
-/** Lê os aliases do `claude` dos arquivos de inicialização do shell do usuário. */
-export function readShellAliases(home: string): ClaudeAlias[] {
+/** Aliases de shell que invocam o `claude` (ver parseToolAliases). */
+export function parseClaudeAliases(text: string, home: string): ClaudeAlias[] {
+  return parseToolAliases(text, home, 'claude');
+}
+
+/** Lê os aliases da ferramenta (padrão: o `claude`) dos arquivos de inicialização do shell do usuário. */
+export function readShellAliases(home: string, tool: Provider = 'claude'): ClaudeAlias[] {
   const out: ClaudeAlias[] = [];
   for (const f of RC_FILES) {
     try {
-      out.push(...parseClaudeAliases(readFileSync(join(home, f), 'utf8'), home));
+      out.push(...parseToolAliases(readFileSync(join(home, f), 'utf8'), home, tool));
     } catch {
       // arquivo inexistente/ilegível
     }
@@ -232,10 +257,12 @@ export function readShellAliases(home: string): ClaudeAlias[] {
   return out;
 }
 
-/** Escolhe o atalho de cada conta: o alias mais curto (até 3 caracteres); empate = o primeiro declarado. */
-export function shortcutsByDir(aliases: ClaudeAlias[], home: string): Map<string, string> {
+/**
+ * Escolhe o atalho de cada conta: o alias mais curto (até 3 caracteres); empate = o primeiro declarado. Alias sem
+ * pasta é da conta padrão (`defaultDir`; padrão $HOME/.claude).
+ */
+export function shortcutsByDir(aliases: ClaudeAlias[], home: string, defaultDir: string = resolve(home, '.claude')): Map<string, string> {
   const best = new Map<string, string>();
-  const defaultDir = resolve(home, '.claude');
   for (const a of aliases) {
     if (a.name.length > 3) continue;
     const dir = a.configDir ?? defaultDir;
@@ -321,7 +348,7 @@ export function accountIds(dirs: string[]): string[] {
 export function detectAccounts(dirs: string[], opts: { home?: string; env?: NodeJS.ProcessEnv } = {}): DetectedAccount[] {
   const env = opts.env ?? process.env;
   const home = opts.home ?? (env.HOME || homedir());
-  const overrides = parseAccountOverrides(env.HABBLAUD_ACCOUNTS);
+  const overrides = claudeOverrides(env.HABBLAUD_ACCOUNTS);
   const shortcuts = shortcutsByDir(readShellAliases(home), home);
   const ids = accountIds(dirs);
 

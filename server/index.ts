@@ -26,6 +26,9 @@ import { PermissionRegistry } from './permissions/registry';
 import { createMessageRoutes } from './messages/http';
 import { MessageRegistry } from './messages/registry';
 import { ClaudeWatcher } from './sources/watcher';
+import { discoverCodexDirs } from './sources/codex/accounts';
+import { CodexHistory } from './sources/codex/history';
+import { CodexSource } from './sources/codex/source';
 import { createBuildReader } from './build';
 import { UpdateChecker } from './updates/checker';
 
@@ -77,10 +80,14 @@ const office = new Office({
   messages: config.messages ? () => late.messages?.reachable() ?? new Set() : undefined,
   updates: () => updates.status(),
 });
-// Fontes de agentes, uma por ferramenta (sources/source.ts). Hoje só a do Claude Code; a do Codex entra aqui, depois
-// dela (agents.add(codex)), com o histórico dela no HistorySet abaixo e as contas em accounts.setProviderAccounts.
+// Fontes de agentes, uma por ferramenta (sources/source.ts): a do Claude Code e, depois dela, a do Codex (quando há
+// pastas do Codex; HABBLAUD_CODEX=0 desliga), com o histórico dela no HistorySet abaixo e as contas registradas por
+// ela mesma (accounts.setProviderAccounts). `codex` também recebe os eventos dos hooks do Codex (CodexLive).
 const claude = new ClaudeWatcher({ accounts, office, inDocker: config.inDocker });
 const agents = new SourceSet([claude]);
+const codexDirs = config.codex ? discoverCodexDirs(process.env, config.home) : [];
+const codex = codexDirs.length ? new CodexSource({ accounts, office, dirs: codexDirs, env: process.env, home: config.home }) : undefined;
+if (codex) agents.add(codex);
 late.office = office;
 late.agents = agents;
 const hub = new Hub(office);
@@ -96,6 +103,7 @@ const terminals = config.terminal
 const history = config.terminal
   ? new HistorySet([new SessionHistory({ accounts: () => accounts.entries(), openAgentOf: (acc, sid) => openMainAgent(office.list(), acc, sid) })])
   : undefined;
+if (history && codex) history.add(new CodexHistory({ accounts: () => accounts.entriesOf('codex'), openAgentOf: (acc, sid) => openMainAgent(office.list(), acc, sid) }));
 // Linha do tempo do timelapse: grava cada snapshot novo (com throttle) em <dataDir>/timeline.
 const timelineDir = join(config.dataDir, TIMELINE_DIR);
 const timeline = config.timeline ? new TimelineRecorder({ dir: timelineDir }) : undefined;
@@ -222,6 +230,16 @@ server.listen(config.port, config.host, () => {
     const src = agents.sources().find((s) => s.label === a.id);
     const usage = accounts.usageView(a.id).status;
     log.info(`   Conta ${a.detected.short} (${a.id}): ${src?.sessions ?? 0} sessão(ões) aberta(s) · uso: ${usage} · ${a.dir}`);
+  }
+  if (codex) {
+    const codexAccounts = codex.accountEntries();
+    const open = codex.sources().reduce((n, s) => n + s.sessions, 0);
+    log.info(`   Codex: ${codexAccounts.length} conta(s), ${open} sessão(ões) aberta(s).`);
+    for (const a of codexAccounts) {
+      log.info(`   Conta ${a.detected.short} do Codex (${a.id}): uso: ${accounts.usageView(a.id).status} · ${a.detected.configDir}`);
+    }
+  } else {
+    log.info(`   Codex: ${config.codex ? 'nenhuma pasta do Codex encontrada (defina HABBLAUD_CODEX_DIRS)' : 'desligado (HABBLAUD_CODEX=0)'}.`);
   }
   if (office.isDemo()) log.info('   Modo demonstração ligado (agentes simulados misturados aos reais).');
   if (config.terminal) log.info('   Terminal: ligado (acesso só local).');
