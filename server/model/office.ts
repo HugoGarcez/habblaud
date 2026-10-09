@@ -666,11 +666,16 @@ export class Office {
 
   // ---------------------------------------------------------------- pedidos de permissão (server/permissions)
 
-  /** Aviso de pedido de permissão vindo do hook; usa o dedupe do "precisa de você" (o mesmo pedido, outro caminho). */
-  noticePermission(id: string, what: string): void {
+  /**
+   * Aviso de pedido de permissão (ou de pergunta do AskUserQuestion) vindo do hook; usa o dedupe do "precisa de
+   * você" (o mesmo pedido, outro caminho).
+   */
+  noticePermission(id: string, what: string, kind: 'permission' | 'question' = 'permission'): void {
     const info = this.agents.get(id)?.info;
     if (!info) return;
-    this.notice('wait', id, 'alert', `🔐 ${info.name} pede permissão em ${this.roomName(info.roomId)}: ${what}`, info.roomId);
+    const room = this.roomName(info.roomId);
+    const text = kind === 'question' ? `❓ ${info.name} tem uma pergunta em ${room}: ${what}` : `🔐 ${info.name} pede permissão em ${room}: ${what}`;
+    this.notice('wait', id, 'alert', text, info.roomId);
     this.markDirty();
   }
 

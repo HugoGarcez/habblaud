@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { AgentInfo, PermissionRequestInfo } from '../../../shared/types';
-import { destinationLabel, expiryText, isLocalHostname, nextPermissionAgent, permissionAgents } from './permission';
+import type { AgentInfo, AskQuestion, PermissionRequestInfo } from '../../../shared/types';
+import { answerFor, buildAnswers, destinationLabel, expiryText, isLocalHostname, isQuestionRequest, nextPermissionAgent, permissionAgents, type AskChoice } from './permission';
 
 function agent(id: string, permission?: Partial<PermissionRequestInfo>, status: AgentInfo['status'] = 'waiting'): AgentInfo {
   const a: AgentInfo = {
@@ -53,5 +53,47 @@ describe('responder pelo escritório (peças puras)', () => {
   it('isLocalHostname: a mesma regra do servidor para aceitar respostas', () => {
     for (const h of ['localhost', 'habblaud.localhost', '127.0.0.1', '127.1.2.3', '[::1]', '::1', 'LOCALHOST']) expect(isLocalHostname(h), h).toBe(true);
     for (const h of ['192.168.0.10', 'meu-mac.local', 'habblaud.lan', '128.0.0.1', '127.0.0.1.nip.io']) expect(isLocalHostname(h), h).toBe(false);
+  });
+});
+
+describe('cartão de pergunta (AskUserQuestion)', () => {
+  // Posições do original: a opção 1 da primeira pergunta e a pergunta 1 foram puladas.
+  const single: AskQuestion = { index: 0, header: 'Banco', question: 'Qual banco usar?', options: [{ index: 0, label: 'Postgres' }, { index: 2, label: 'SQLite' }] };
+  const multi: AskQuestion = { index: 2, question: 'Quais testes rodar?', multiSelect: true, options: [{ index: 0, label: 'Unidade' }, { index: 1, label: 'E2E' }] };
+  const choice = (options: number[], otherOn = false, otherText = ''): AskChoice => ({ options, otherOn, otherText });
+
+  it('isQuestionRequest: só AskUserQuestion com perguntas', () => {
+    expect(isQuestionRequest({ tool: 'AskUserQuestion', questions: [single] })).toBe(true);
+    expect(isQuestionRequest({ tool: 'AskUserQuestion', questions: [] })).toBe(false);
+    expect(isQuestionRequest({ tool: 'Bash' })).toBe(false);
+    expect(isQuestionRequest(undefined)).toBe(false);
+  });
+
+  it('answerFor: escolha única = a opção OU o "Outro"; várias = tudo junto; "Outro" sem texto = sem resposta', () => {
+    expect(answerFor(single, choice([2]))).toEqual({ question: 0, options: [2] });
+    expect(answerFor(single, choice([2], true, '  MySQL '))).toEqual({ question: 0, other: 'MySQL' });
+    expect(answerFor(single, choice([], true, '   '))).toBeUndefined();
+    expect(answerFor(single, choice([]))).toBeUndefined();
+    expect(answerFor(single, undefined)).toBeUndefined();
+    expect(answerFor(multi, choice([1, 0], true, 'lint'))).toEqual({ question: 2, options: [1, 0], other: 'lint' });
+    expect(answerFor(multi, choice([0], false, 'ignorado'))).toEqual({ question: 2, options: [0] });
+    expect(answerFor(multi, choice([0], true, ''))).toBeUndefined();
+    // Posição que a pergunta não mostra: fica de fora.
+    expect(answerFor(multi, choice([7]))).toBeUndefined();
+    expect(answerFor(single, choice([], true, 'x'.repeat(2_500)))!.other).toHaveLength(2_000);
+  });
+
+  it('buildAnswers: o corpo só sai com todas as perguntas respondidas (normalizado como o servidor confere)', () => {
+    const qs = [single, multi];
+    expect(buildAnswers(qs, new Map([[0, choice([0])]]))).toBeUndefined();
+    expect(buildAnswers(qs, new Map([[0, choice([0])], [2, choice([])]]))).toBeUndefined();
+    const ready = new Map([
+      [2, choice([1, 0], true, ' lint ')],
+      [0, choice([2])],
+    ]);
+    expect(buildAnswers(qs, ready)).toEqual([
+      { question: 0, options: [2] },
+      { question: 2, options: [0, 1], other: 'lint' },
+    ]);
   });
 });
