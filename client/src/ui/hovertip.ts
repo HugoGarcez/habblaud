@@ -2,12 +2,15 @@
 import type { UiComponent, UiContext } from './context';
 import { h, setHidden, setText, setVariant } from './dom';
 import { shellStage, shellWaitIn, statusLabel } from './model';
+import { providerOf } from './provider';
 import {
   createAccountChip,
   createActivityLine,
+  createProviderTag,
   createStatusDot,
   updateAccountChip,
   updateActivityLine,
+  updateProviderTag,
   updateShellActivityLine,
   updateStatusDot,
 } from './widgets';
@@ -18,6 +21,7 @@ export class HoverTip implements UiComponent {
   private raf = 0;
   private name: HTMLElement;
   private chip: HTMLElement;
+  private prov: HTMLElement;
   private dot: HTMLElement;
   private status: HTMLElement;
   private activity: HTMLElement;
@@ -26,6 +30,7 @@ export class HoverTip implements UiComponent {
   constructor(private ctx: UiContext) {
     this.name = h('strong', { class: 'ui-tip__name' });
     this.chip = createAccountChip('sm');
+    this.prov = createProviderTag('ui-prov--xs');
     this.dot = createStatusDot();
     this.status = h('span', { class: 'ui-tip__status' });
     this.activity = createActivityLine();
@@ -33,7 +38,7 @@ export class HoverTip implements UiComponent {
     this.el = h(
       'div',
       { class: 'ui-tip', attrs: { 'aria-hidden': 'true' } },
-      h('div', { class: 'ui-tip__top' }, this.name, this.chip),
+      h('div', { class: 'ui-tip__top' }, this.name, this.chip, this.prov),
       h('div', { class: 'ui-tip__line' }, this.dot, this.status),
       this.activity,
       this.mood,
@@ -78,7 +83,8 @@ export class HoverTip implements UiComponent {
       return;
     }
     setText(this.name, a.name);
-    updateAccountChip(this.chip, this.ctx.account(a.account), a.account);
+    updateAccountChip(this.chip, this.ctx.account(a.account), a.account, a.provider);
+    updateProviderTag(this.prov, providerOf(a));
     // Esperando um shell: o que ele espera (com o tempo correndo) e o que anda fazendo enquanto isso.
     const now = this.ctx.now();
     const wait = shellWaitIn(a, this.ctx.store.snapshot?.agents ?? [], now);

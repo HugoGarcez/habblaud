@@ -58,8 +58,11 @@ export function reconnectDelay(attempt: number): number {
   return Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** Math.max(0, attempt));
 }
 
-/** Opções do simulador a partir da query string (?speed=2&sessions=6). `sessions=0` vale: escritório vazio. */
-export function mockOptionsFrom(search: string): { speed: number; sessions: number } {
+/**
+ * Opções do simulador a partir da query string (?speed=2&sessions=6). `sessions=0` vale: escritório vazio. Para
+ * capturas de tela: `seed=N` repete o mesmo escritório e `noquota=1` deixa a conta do Codex "sem cota".
+ */
+export function mockOptionsFrom(search: string): { speed: number; sessions: number; seed?: number; codexNoQuota?: boolean } {
   const params = new URLSearchParams(search);
   const num = (name: string): number | null => {
     const raw = params.get(name);
@@ -69,9 +72,12 @@ export function mockOptionsFrom(search: string): { speed: number; sessions: numb
   };
   const speed = num('speed');
   const sessions = num('sessions');
+  const seed = num('seed');
   return {
     speed: speed !== null && speed > 0 ? Math.min(speed, 50) : 1,
     sessions: sessions !== null && sessions >= 0 ? Math.min(Math.floor(sessions), 40) : 4,
+    ...(seed !== null && seed >= 0 ? { seed: Math.floor(seed) } : {}),
+    ...(params.get('noquota') === '1' ? { codexNoQuota: true } : {}),
   };
 }
 

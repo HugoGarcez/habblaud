@@ -329,7 +329,7 @@ describe('Office', () => {
     expect(new Set(slots).size).toBe(slots.length);
     expect(snap.rooms.find((r) => r.id === '/p/real')!.slot).toBe(0);
     expect(snap.agents.some((a) => a.id.startsWith('demo:'))).toBe(true);
-    expect(snap.accounts.map((a) => a.short)).toEqual(['C', 'X', 'Y']);
+    expect(snap.accounts.map((a) => a.short)).toEqual(['C', 'X', 'Y', 'Z']);
     const demoAgent = snap.agents.find((a) => a.id.startsWith('demo:'))!;
     expect(office.detail(demoAgent.id)?.agent.id).toBe(demoAgent.id);
     office.setDemo(false);

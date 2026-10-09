@@ -2,7 +2,7 @@
 // responder a pergunta, devolver ao terminal) e somem quando a espera acaba sozinha.
 import { describe, expect, it } from 'vitest';
 import { mulberry32 } from '../hash';
-import { demoPermission } from './permission';
+import { DEMO_CODEX_PERMISSION_MS, demoCodexPermission, demoPermission } from './permission';
 import { DemoSimulator } from './simulator';
 
 describe('demoPermission', () => {
@@ -125,5 +125,59 @@ describe('DemoSimulator: pedidos de permissão', () => {
       }
     }
     expect(withPermission).toBeGreaterThan(0);
+  });
+});
+
+describe('pedidos do Codex (demo)', () => {
+  const start = 10_000;
+
+  it('demoCodexPermission: comando, apply_patch ou rede; sem sugestões nem perguntas; prazo de segundos', () => {
+    const tools = new Set<string>();
+    for (let seed = 1; seed < 80; seed++) {
+      const p = demoCodexPermission(`c${seed}`, { files: ['src/app.ts'], commands: ['npm test'] }, mulberry32(seed), 1_000);
+      tools.add(p.text.startsWith('Acesso à rede') ? 'rede' : p.tool);
+      expect(p).toMatchObject({ provider: 'codex', createdAt: 1_000, expiresAt: 1_000 + DEMO_CODEX_PERMISSION_MS });
+      expect(p.suggestions).toBeUndefined();
+      expect(p.questions).toBeUndefined();
+      expect(p.input).toBeTruthy();
+      if (p.tool === 'apply_patch') expect(p.input).toMatch(/^\*\*\* Begin Patch\n\*\*\* Update File: src\/app\.ts\n/);
+    }
+    expect(tools).toEqual(new Set(['Bash', 'apply_patch', 'rede']));
+  });
+
+  it('forcePermission no Codex: espera "aprovar um comando"; recusa só com motivo; sem sempre permitir nem interromper', () => {
+    const sim = new DemoSimulator({ seed: 4, idPrefix: 'demo:' }, start);
+    const id = sim.forcePermission(start, 'question', 'codex')!;
+    const a = sim.snapshot(start).agents.find((x) => x.id === id)!;
+    expect(a).toMatchObject({ provider: 'codex', status: 'waiting', waitingFor: 'aprovar um comando' });
+    const p = a.permission!;
+    expect(p.provider).toBe('codex');
+    expect(p.tool).not.toBe('AskUserQuestion');
+    expect(sim.decidePermission(p.id, { behavior: 'deny' }, start + 1)).toBe(false);
+    expect(sim.decidePermission(p.id, { behavior: 'deny', message: '   ' }, start + 1)).toBe(false);
+    expect(sim.decidePermission(p.id, { behavior: 'allow', suggestion: 0 }, start + 1)).toBe(false);
+    expect(sim.decidePermission(p.id, { behavior: 'deny', message: 'não', interrupt: true }, start + 1)).toBe(false);
+    expect(sim.decidePermission(p.id, { behavior: 'answer', answers: [] }, start + 1)).toBe(false);
+    expect(sim.decidePermission(p.id, { behavior: 'deny', message: 'use pnpm' }, start + 1)).toBe(true);
+    expect(sim.snapshot(start + 1).agents.find((x) => x.id === id)!.recent.at(-1)).toMatchObject({ text: 'Recusado no Habblaud' });
+  });
+
+  it('o prazo do Codex acaba: o pedido sai do escritório e o agente segue esperando no terminal', () => {
+    const sim = new DemoSimulator({ seed: 5 }, start);
+    const id = sim.forcePermission(start, 'permission', 'codex')!;
+    sim.tick(start + DEMO_CODEX_PERMISSION_MS - 1_000);
+    expect(sim.snapshot(start + DEMO_CODEX_PERMISSION_MS - 1_000).agents.find((x) => x.id === id)!.permission).toBeDefined();
+    sim.tick(start + DEMO_CODEX_PERMISSION_MS);
+    const after = sim.snapshot(start + DEMO_CODEX_PERMISSION_MS).agents.find((x) => x.id === id)!;
+    expect(after.permission).toBeUndefined();
+    expect(after.status).toBe('waiting');
+  });
+
+  it('forcePermission sem ferramenta continua escolhendo um agente do Claude Code', () => {
+    for (const seed of [4, 5, 6, 7, 8]) {
+      const sim = new DemoSimulator({ seed }, start);
+      const id = sim.forcePermission(start)!;
+      expect(sim.snapshot(start).agents.find((x) => x.id === id)!.provider).toBeUndefined();
+    }
   });
 });
