@@ -175,11 +175,15 @@ describe('AskUserQuestion no escritório', () => {
     expect(d).toMatchObject({ kind: 'ask', text: 'Fazendo uma pergunta a você', detail: 'Qual banco usar?' });
     expect(d.questions).toEqual([
       {
+        index: 0,
         question: 'Qual banco usar?',
         header: 'Banco',
-        options: [{ label: 'Postgres', description: 'Relacional, já usado no projeto' }, { label: 'SQLite' }],
+        options: [
+          { index: 0, label: 'Postgres', description: 'Relacional, já usado no projeto' },
+          { index: 1, label: 'SQLite' },
+        ],
       },
-      { question: 'Quais testes rodar?', multiSelect: true, options: [{ label: 'Unidade' }, { label: 'E2E' }] },
+      { index: 1, question: 'Quais testes rodar?', multiSelect: true, options: [{ index: 0, label: 'Unidade' }, { index: 1, label: 'E2E' }] },
     ]);
   });
 
@@ -189,7 +193,9 @@ describe('AskUserQuestion no escritório', () => {
     });
     expect(d.questions).toHaveLength(1);
     expect(d.questions![0]!.question).not.toContain('abcdefghijklmnop');
-    expect(d.questions![0]!.options).toEqual([{ label: 'Sim' }]);
+    // As posições são as do original (a resposta pelo escritório volta por elas), com as inválidas contadas.
+    expect(d.questions![0]!.index).toBe(2);
+    expect(d.questions![0]!.options).toEqual([{ index: 1, label: 'Sim' }]);
   });
 
   it('sem perguntas válidas, não cria o campo', () => {

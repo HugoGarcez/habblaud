@@ -80,12 +80,18 @@ export interface Activity {
   questions?: AskQuestion[];
 }
 
-/** Uma pergunta do AskUserQuestion, já mascarada e cortada. Só leitura: a resposta é dada no Claude Code. */
+/**
+ * Uma pergunta do AskUserQuestion, já mascarada e cortada. Com o pedido no escritório (PermissionRequestInfo.questions),
+ * dá para responder por lá; senão a resposta é dada no Claude Code.
+ */
 export interface AskQuestion {
+  /** Posição da pergunta em `tool_input.questions` (entradas inválidas são puladas, então pode haver saltos). */
+  index: number;
   question: string;
   header?: string;
   multiSelect?: boolean;
-  options: Array<{ label: string; description?: string }>;
+  /** `index` = posição da opção em `options` do original: é ela que volta na resposta (PermissionAnswer). */
+  options: Array<{ index: number; label: string; description?: string }>;
 }
 
 export type TaskStatus = 'pending' | 'in_progress' | 'completed';
@@ -155,6 +161,11 @@ export interface AgentInfo {
    * houver vários). Enquanto existe, o agente aparece como 'waiting'. Ver PermissionRequestInfo.
    */
   permission?: PermissionRequestInfo;
+  /**
+   * Dá para mandar mensagem a este agente pelo Habblaud (só principais): a sessão tem o plugin habblaud-mensagens
+   * e perguntou pela caixa de entrada há pouco. Ver POST /api/messages.
+   */
+  canMessage?: boolean;
 }
 
 export interface RoomInfo {
@@ -505,6 +516,11 @@ export interface PermissionRequestInfo {
   subagent?: string;
   /** Regras "sempre permitir" que podem ser aplicadas junto com a aprovação. */
   suggestions?: PermissionSuggestionInfo[];
+  /**
+   * Pedido do AskUserQuestion: as perguntas, para responder pelo escritório (decisão `answer`). Vai também no
+   * snapshot (sem elas o cartão não tem o que mostrar).
+   */
+  questions?: AskQuestion[];
   /** Outros pedidos do mesmo agente esperando depois deste. */
   queued?: number;
   createdAt: number;
@@ -512,14 +528,59 @@ export interface PermissionRequestInfo {
   expiresAt: number;
 }
 
+/**
+ * Resposta a uma pergunta do AskUserQuestion, por POSIÇÃO (AskQuestion.index e o `index` das opções): o hook troca
+ * as posições pelos textos originais que recebeu do Claude Code (a página só vê os textos mascarados e cortados).
+ */
+export interface PermissionAnswer {
+  /** AskQuestion.index. */
+  question: number;
+  /** Posições das opções escolhidas (uma só sem multiSelect). */
+  options?: number[];
+  /** Texto livre ("Outro"). Sem multiSelect, vale no lugar de uma opção. */
+  other?: string;
+}
+
 /** Corpo de POST /api/permissions/:id/decision (vindo da página). */
 export interface PermissionDecision {
-  /** allow = aprovar; deny = recusar; terminal = devolver o pedido ao terminal (o hook sai sem decidir). */
-  behavior: 'allow' | 'deny' | 'terminal';
+  /**
+   * allow = aprovar; deny = recusar; terminal = devolver o pedido ao terminal (o hook sai sem decidir);
+   * answer = responder as perguntas de um AskUserQuestion (`answers`).
+   */
+  behavior: 'allow' | 'deny' | 'terminal' | 'answer';
   /** Recusa: motivo repassado ao agente. */
   message?: string;
   /** Recusa: interrompe o agente (ele para e espera você). */
   interrupt?: boolean;
   /** Aprovação: aplica junto a sugestão desta posição (PermissionSuggestionInfo.index). */
   suggestion?: number;
+  /** Resposta (`answer`): uma por pergunta do pedido. */
+  answers?: PermissionAnswer[];
+}
+
+// ------------------------------------------------------------------ mensagens pelo escritório
+
+/**
+ * Situação de uma mensagem mandada pela página a um agente (GET /api/messages/:id):
+ * queued = esperando a sessão buscar; sent = a sessão buscou e está entregando; delivered = entrou na sessão (ou
+ * na fila dela, se o agente estava ocupado); failed = não entrou (`error` diz por quê).
+ */
+export type OutboxStatus = 'queued' | 'sent' | 'delivered' | 'failed';
+
+export interface OutboxMessage {
+  id: string;
+  /** AgentInfo.id do destinatário (sempre um principal). */
+  agentId: string;
+  status: OutboxStatus;
+  error?: string;
+  createdAt: number;
+  /** Última mudança de status. */
+  updatedAt: number;
+}
+
+/** Mensagem entregue ao plugin habblaud-mensagens (POST /api/mod/inbox). */
+export interface InboxMessage {
+  id: string;
+  /** O texto como foi digitado: o plugin o manda à sessão como se você o tivesse digitado. */
+  text: string;
 }

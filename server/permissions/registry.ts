@@ -358,6 +358,8 @@ export class PermissionRegistry {
       this.release(p, 'terminal');
       return 'ok';
     }
+    // TODO(perguntas): responder AskUserQuestion pelo escritório.
+    if (d.behavior === 'answer') return 'invalid';
     const outcome: WaitResult = { status: 'decided', behavior: d.behavior };
     if (d.message) outcome.message = d.message;
     if (d.interrupt) outcome.interrupt = true;
