@@ -37,11 +37,13 @@ import {
   scanPrefix,
   titleOf,
   type LineResult,
+  type ParseContext,
   type ShellEvent,
   type SpawnInfo,
   type TranscriptSignal,
   type TranscriptState,
 } from './transcript';
+import { tr } from '../../shared/i18n';
 
 export interface WatcherOptions {
   accounts: AccountsService;
@@ -152,6 +154,16 @@ function addBounded(set: Set<string>, v: string): void {
   if (set.size > MAX_SET) set.delete(set.values().next().value as string);
 }
 
+/** Uma linha que falha não descarta as demais já consumidas pelo tail. */
+function parseWatchedLine(state: TranscriptState, line: string, ctx: ParseContext): LineResult {
+  try {
+    return parseLine(state, line, ctx);
+  } catch (err) {
+    log.warnOnce(`line:${ctx.idPrefix}:${errMsg(err)}`, tr('Linha do transcript de {0} ignorada: {1}', [ctx.idPrefix, errMsg(err)]));
+    return { activities: [], signals: [], changed: false, at: ctx.now };
+  }
+}
+
 export class ClaudeWatcher implements AgentSource {
   readonly provider = 'claude' as const;
   private readers = new Map<string, RegistryReader>();
@@ -235,7 +247,7 @@ export class ClaudeWatcher implements AgentSource {
     try {
       this.poll(false);
     } catch (err) {
-      log.warnOnce(`poll:${errMsg(err)}`, `Falha no ciclo de leitura: ${errMsg(err)}`);
+      log.warnOnce(`poll:${errMsg(err)}`, tr('Falha no ciclo de leitura: {0}', [errMsg(err)]));
     }
   }
 
@@ -270,7 +282,7 @@ export class ClaudeWatcher implements AgentSource {
         try {
           this.syncSession(key, acc.id, acc.dir, entry, boot);
         } catch (err) {
-          log.warnOnce(`session:${key}:${errMsg(err)}`, `Sessão ${key}: ${errMsg(err)}`);
+          log.warnOnce(`session:${key}:${errMsg(err)}`, tr('Sessão {0}: {1}', [key, errMsg(err)]));
         }
       }
     }
@@ -301,7 +313,7 @@ export class ClaudeWatcher implements AgentSource {
         account: accountId,
         sessionId: entry.sessionId,
         cwd: entry.cwd,
-        role: entry.agent ? `Agente ${entry.agent}` : 'Agente principal',
+        role: entry.agent ? tr('Agente {0}', [entry.agent]) : tr('Agente principal'),
         startedAt: entry.startedAt ?? this.now(),
         status: st.status ?? 'idle',
         waitingFor: st.waitingFor,
@@ -377,7 +389,7 @@ export class ClaudeWatcher implements AgentSource {
     let owner = job.owner;
     if (!office.has(owner) || (owner !== t.key && office.isSubDone(owner))) owner = t.key;
     const exit = fin.summary ? /exit code (-?\d+)/i.exec(fin.summary)?.[1] : undefined;
-    const detail = [exit !== undefined ? `Código de saída ${exit}` : undefined, job.command].filter(Boolean).join(' — ') || fin.summary;
+    const detail = [exit !== undefined ? tr('Código de saída {0}', [exit]) : undefined, job.command].filter(Boolean).join(' — ') || fin.summary;
     const input: { id: string; label: string; startedAt: number; command?: string } = { id: job.taskId ?? job.toolUseId, label: job.label, startedAt: job.startedAt };
     if (job.command) input.command = job.command;
     office.shellDone(owner, input, fin.outcome, fin.at, detail ? { live, summary: detail } : { live });
@@ -445,7 +457,7 @@ export class ClaudeWatcher implements AgentSource {
     for (let i = 0; i < 4; i++) {
       const r = t.tail.read();
       if (r.reset) {
-        log.warn(`Transcript da sessão ${t.key} foi truncado/substituído; relendo.`);
+        log.warn(tr('Transcript da sessão {0} foi truncado/substituído; relendo.', [t.key]));
         this.loadMain(t, t.tail.path);
         return;
       }
@@ -495,7 +507,7 @@ export class ClaudeWatcher implements AgentSource {
    * (no lugar certo do feed) em vez de um "Fazendo uma pergunta" atrasado.
    */
   private applyMainLines(t: SessionTracker, lines: string[], live: boolean): void {
-    const results = lines.map((line) => parseLine(t.state, line, { idPrefix: t.key, now: this.now() }));
+    const results = lines.map((line) => parseWatchedLine(t.state, line, { idPrefix: t.key, now: this.now() }));
     for (const r of results) {
       for (const a of r.activities) {
         if (a.activity.kind === 'ask' && a.toolUseId && !t.state.pendingTools.has(a.toolUseId)) {
@@ -536,7 +548,7 @@ export class ClaudeWatcher implements AgentSource {
         mergePrefix(state, prefix.state);
         done(prefix.signals, prefix.activities, prefix.shellEvents);
       })
-      .catch((err) => log.warnOnce(`prefix:${path}`, `Não foi possível ler o início de um transcript (${errMsg(err)}).`));
+      .catch((err) => log.warnOnce(`prefix:${path}`, tr('Não foi possível ler o início de um transcript ({0}).', [errMsg(err)])));
   }
 
   /**
@@ -715,7 +727,7 @@ export class ClaudeWatcher implements AgentSource {
       } catch {
         t.known.set(file.path, 0);
       }
-      log.warnOnce(`sub-open:${file.path}`, `Subagente ${file.agentId} ignorado: ${errMsg(err)}`);
+      log.warnOnce(`sub-open:${file.path}`, tr('Subagente {0} ignorado: {1}', [file.agentId, errMsg(err)]));
     }
   }
 
@@ -731,7 +743,7 @@ export class ClaudeWatcher implements AgentSource {
     const results: LineResult[] = [];
     for (let i = 0; i < 64; i++) {
       const r = tail.read();
-      for (const line of r.lines) results.push(parseLine(state, line, { idPrefix: id, now }));
+      for (const line of r.lines) results.push(parseWatchedLine(state, line, { idPrefix: id, now }));
       if (!r.more) break;
     }
     const finished =
@@ -796,11 +808,11 @@ export class ClaudeWatcher implements AgentSource {
         try {
           r = sub.tail.read();
         } catch (err) {
-          log.warnOnce(`sub:${sub.id}`, `Subagente ${sub.id}: ${errMsg(err)}`);
+          log.warnOnce(`sub:${sub.id}`, tr('Subagente {0}: {1}', [sub.id, errMsg(err)]));
           break;
         }
         for (const line of r.lines) {
-          const res = parseLine(sub.state, line, { idPrefix: sub.id, now });
+          const res = parseWatchedLine(sub.state, line, { idPrefix: sub.id, now });
           fresh += res.activities.length;
           this.applyResult(t, sub.id, res, true);
         }

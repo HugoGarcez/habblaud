@@ -104,6 +104,30 @@ describe('segredos mascarados', () => {
     expect(describePrompt('usa a chave sk-proj-0123456789abcdef pra testar').detail).toBe('usa a chave sk-*** pra testar');
   });
 
+  it('webhooks e tokens npm_/hf_ (o segredo some, o host fica)', () => {
+    // Montado em partes: o URL inteiro no fonte dispara o push protection do GitHub.
+    const slack = ['https://hooks.slack.com/services', 'T00000000', 'B00000000', 'X'.repeat(24)].join('/');
+    expect(maskSecrets(`curl -X POST ${slack}`)).toBe(
+      'curl -X POST https://hooks.slack.com/services/***',
+    );
+    expect(maskSecrets('https://discord.com/api/webhooks/123456789012345678/AbCdEfGhIjKlMnOpQrStUvWxYz-_0123456789')).toBe(
+      'https://discord.com/api/webhooks/***',
+    );
+    expect(maskSecrets('https://discordapp.com/api/webhooks/123456789012345678/AbCdEfGhIjKlMnOpQrStUvWxYz-_0123456789')).toBe(
+      'https://discordapp.com/api/webhooks/***',
+    );
+    expect(maskSecrets('curl https://api.telegram.org/bot123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsawX/sendMessage')).toBe(
+      'curl https://api.telegram.org/bot***/sendMessage',
+    );
+    expect(maskSecrets('usa npm_1234567890abcdef1234567890abcdef1234 no ci')).toBe('usa npm_*** no ci');
+    expect(maskSecrets('chave hf_abcdefghijklmnopqrstuvwxyz01234567 solta')).toBe('chave hf_*** solta');
+  });
+
+  it('texto comum com npm ou hf não é segredo', () => {
+    const s = 'rode npm test e npm run build; o modelo hf da huggingface usa npm_config_cache';
+    expect(maskSecrets(s)).toBe(s);
+  });
+
   it('shell: palavras e segmentos', () => {
     expect(shellWords(`a 'b c' "d \\"e\\"" f\\ g ''`)).toEqual(['a', 'b c', 'd "e"', 'f g', '']);
     expect(splitShell('a && b | c; d & e 2>&1 || f "x|y" $(g; h)')).toEqual(['a', 'b', 'c', 'd', 'e 2>&1', 'f "x|y" $(g; h)']);
@@ -112,6 +136,13 @@ describe('segredos mascarados', () => {
 });
 
 describe('atividades', () => {
+  it('TodoWrite ignora itens que não são objetos e tolera tarefas sem status', () => {
+    expect(describeTool('TodoWrite', { todos: [null] })).toEqual({ kind: 'plan', icon: '🗒️', text: 'Atualizando a lista de tarefas' });
+    expect(describeTool('TodoWrite', {
+      todos: [null, undefined, 'inválido', 42, false, { content: 'Sem status' }, { content: 'Pronta', status: 'completed' }, { content: 'Pendente', status: 'pending' }],
+    }).detail).toBe('1/3 concluídas');
+  });
+
   it('ferramentas e especiais em PT-BR', () => {
     expect(describeTool('Agent', { description: 'Revisar código', subagent_type: 'Explore' })).toMatchObject({ kind: 'delegate', text: 'Delegando: Revisar código' });
     expect(SPECIAL.rejected('Write').text).toBe('Você recusou: Write');

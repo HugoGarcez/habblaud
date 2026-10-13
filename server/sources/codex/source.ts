@@ -32,7 +32,7 @@ import type { AccountEntry, AccountsService } from '../../accounts/service';
 import { errMsg, log } from '../../log';
 import type { Office, TranscriptSummary } from '../../model/office';
 import type { AgentSource } from '../source';
-import { FileTail } from '../tail';
+import { FileTail, LineBuffer, warnOversizedLine } from '../tail';
 import type { TerminalParser } from '../terminal';
 import { codexPlanLabel, detectCodexAccounts } from './accounts';
 import { readLocks, readRolloutHead, rolloutDirs, RolloutIndex, parseRolloutName, LOCKS_DIR, type LockInfo } from './files';
@@ -47,6 +47,7 @@ import {
   type RolloutMeta,
 } from './rollout';
 import { createCodexTerminalParser } from './terminal';
+import { tr } from '../../../shared/i18n';
 
 /** Idade mínima do lock para valer como sessão aberta (os locks de manutenção duram menos). */
 export const LOCK_SETTLE_MS = 3_000;
@@ -70,8 +71,8 @@ const PREFIX_HISTORY = 120;
 const BACKLOG_MAX = 400;
 /** Conta sem sessão aberta ao subir: quantos rollouts recentes tentar até achar um com o uso do plano. */
 const SEED_USAGE_FILES = 8;
-const MAIN_ROLE = 'Agente principal (Codex)';
-const SUB_ROLE = 'Subagente (Codex)';
+const MAIN_ROLE = tr('Agente principal (Codex)');
+const SUB_ROLE = tr('Subagente (Codex)');
 
 const HOOK_EVENTS = new Set([
   'SessionStart',
@@ -280,7 +281,7 @@ export class CodexSource implements AgentSource, CodexLive {
     try {
       this.poll(false);
     } catch (err) {
-      log.warnOnce(`codex-poll:${errMsg(err)}`, `Codex: falha no ciclo de leitura: ${errMsg(err)}`);
+      log.warnOnce(`codex-poll:${errMsg(err)}`, tr('Codex: falha no ciclo de leitura: {0}', [errMsg(err)]));
     }
   }
 
@@ -309,7 +310,7 @@ export class CodexSource implements AgentSource, CodexLive {
         try {
           this.syncThread(t, via, now, boot);
         } catch (err) {
-          log.warnOnce(`codex-thread:${key}:${errMsg(err)}`, `Codex: thread ${key}: ${errMsg(err)}`);
+          log.warnOnce(`codex-thread:${key}:${errMsg(err)}`, tr('Codex: thread {0}: {1}', [key, errMsg(err)]));
         }
         seen.add(key);
       }
@@ -515,26 +516,25 @@ export class CodexSource implements AgentSource, CodexLive {
 
   /** Acha o rollout (sem pressa: no máximo a cada 3 s por thread) e lê o que for novo. */
   private pump(t: ThreadTracker, boot: boolean): void {
-    if (!t.tail) {
-      const now = this.now();
-      if (now < t.nextResolveAt) return;
+    const now = this.now();
+    if (now >= t.nextResolveAt) {
       t.nextResolveAt = now + (boot ? 0 : 3_000);
       const path = t.acc.index.find(t.threadId);
-      if (!path) {
-        if (t.acc.index.isCompressedOnly(t.threadId)) {
-          log.warnOnce('codex-zst', 'Codex: há conversas compactadas (.jsonl.zst) que o Habblaud ainda não lê; elas ficam sem detalhes.');
-        }
+      if (path && !samePath(path, t.tail?.path)) {
+        this.load(t, path);
         return;
       }
-      this.load(t, path);
-      return;
+      if (!path && !t.tail && t.acc.index.isCompressedOnly(t.threadId)) {
+        log.warnOnce('codex-zst', tr('Codex: há conversas compactadas (.jsonl.zst) que o Promp IA ainda não lê; elas ficam sem detalhes.'));
+      }
     }
+    if (!t.tail) return;
     for (let i = 0; i < 4; i++) {
       let r;
       try {
         r = t.tail.read();
       } catch (err) {
-        log.warnOnce(`codex-read:${t.key}`, `Codex: rollout de ${t.key} ilegível (${errMsg(err)}).`);
+        log.warnOnce(`codex-read:${t.key}`, tr('Codex: rollout de {0} ilegível ({1}).', [t.key, errMsg(err)]));
         return;
       }
       if (r.missing) {
@@ -559,6 +559,7 @@ export class CodexSource implements AgentSource, CodexLive {
 
   /** Lê o começo (session_meta, título) e a janela do fim do rollout; o resto do começo vai em segundo plano. */
   private load(t: ThreadTracker, path: string): void {
+    this.unwatch(t);
     const head = readRolloutHead(path);
     if (head.meta) this.setMeta(t, head.meta);
     const tail = new FileTail(path);
@@ -713,7 +714,7 @@ export class CodexSource implements AgentSource, CodexLive {
         this.applySummary(t);
         if (t.inOffice) this.opts.office.mergeHistory(t.key, prefix.activities);
       })
-      .catch((err) => log.warnOnce(`codex-prefix:${path}`, `Codex: não foi possível ler o início de um rollout (${errMsg(err)}).`));
+      .catch((err) => log.warnOnce(`codex-prefix:${path}`, tr('Codex: não foi possível ler o início de um rollout ({0}).', [errMsg(err)])));
   }
 
   // ---------------------------------------------------------------- uso do plano
@@ -791,7 +792,7 @@ export class CodexSource implements AgentSource, CodexLive {
     try {
       return this.hookEvent(account, input);
     } catch (err) {
-      log.warnOnce(`codex-hook:${errMsg(err)}`, `Codex: evento de hook ignorado (${errMsg(err)}).`);
+      log.warnOnce(`codex-hook:${errMsg(err)}`, tr('Codex: evento de hook ignorado ({0}).', [errMsg(err)]));
       return false;
     }
   }
@@ -856,7 +857,7 @@ export class CodexSource implements AgentSource, CodexLive {
         break;
       }
       case 'PermissionRequest':
-        this.decide(t, 'waiting', now, 'aprovar um comando', true);
+        this.decide(t, 'waiting', now, tr('aprovar um comando'), true);
         break;
       case 'Stop':
       case 'Interrupt':
@@ -895,13 +896,14 @@ export class CodexSource implements AgentSource, CodexLive {
   private hintTranscript(acc: CodexAccount, threadId: string, path: string | undefined): void {
     if (!path) return;
     const t = this.threads.get(`${acc.id}:${threadId}`);
-    if (t?.tail) return;
     try {
       const real = realpathSync(path);
       const root = realpathSync(acc.dir);
       if (!real.startsWith(root + sep) || parseRolloutName(basename(real))?.threadId !== threadId) return;
+      if (samePath(real, t?.tail?.path)) return;
       acc.index.hint(threadId, real);
-      if (t) t.nextResolveAt = 0;
+      if (t?.tail) this.load(t, real);
+      else if (t) t.nextResolveAt = 0;
     } catch {
       // não existe aqui (Docker) ou ainda não foi criado
     }
@@ -975,6 +977,17 @@ export class CodexSource implements AgentSource, CodexLive {
   }
 }
 
+/** O mesmo arquivo, mesmo que um caminho passe por symlink (o índice guarda o da pasta; o hook manda o realpath). */
+function samePath(a: string, b: string | undefined): boolean {
+  if (b === undefined) return false;
+  if (a === b) return true;
+  try {
+    return realpathSync(a) === realpathSync(b);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Lê em stream (sem travar o event loop) os bytes [0, end) de um rollout: os números, o título e as últimas
  * `keep` atividades anteriores à janela lida ao abrir a sessão.
@@ -989,18 +1002,19 @@ export async function scanPrefix(path: string, end: number, idPrefix: string, ke
     for (const a of r.activities) activities.push(a.activity);
     if (activities.length > keep * 2) activities = activities.slice(-keep);
   };
-  let partial: Buffer | null = null;
+  const pending = new LineBuffer();
+  let discarded = 0;
   const stream = createReadStream(path, { start: 0, end: end - 1, highWaterMark: 1024 * 1024 });
   for await (const chunk of stream as AsyncIterable<Buffer>) {
-    const data: Buffer = partial ? Buffer.concat([partial, chunk]) : chunk;
-    let start = 0;
-    for (let i = data.indexOf(0x0a, start); i !== -1; i = data.indexOf(0x0a, start)) {
-      const line = data.toString('utf8', start, i);
-      start = i + 1;
+    const fed = pending.push(chunk);
+    discarded += fed.discarded;
+    for (const buf of fed.lines) {
+      const line = buf.toString('utf8');
       if (line) take(line);
     }
-    partial = start < data.length ? Buffer.from(data.subarray(start)) : null;
   }
-  if (partial?.length) take(partial.toString('utf8'));
+  const rest = pending.flush();
+  if (rest?.length) take(rest.toString('utf8'));
+  if (discarded) warnOversizedLine(path);
   return { state, activities: activities.slice(-keep) };
 }

@@ -10,9 +10,9 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
-## [0.8.0] - 2026-10-09
+## [0.11.1] - 2026-10-13
 
-Versão do fork (Promp IA) sobre a 0.7.0 do Habblaud.
+Versão do fork (Promp IA) sobre a 0.11.0 do Habblaud.
 
 ### Adicionado
 
@@ -31,6 +31,191 @@ Versão do fork (Promp IA) sobre a 0.7.0 do Habblaud.
 - **Marca Promp IA:** logotipo em pixels "promp" com o selo laranja "IA" no topo, na abertura e na placa da recepção,
   e "Promp IA" em todos os textos da interface e do mod. Os nomes técnicos (`HABBLAUD_*`, `~/.habblaud`, plugins
   `habblaud`, `/habblaud`) continuam iguais. Rode `npm run mod:install` para o Claude Code pegar o mod novo.
+
+## [0.11.0] - 2026-10-13
+
+Para atualizar: `git pull` e `npm run docker:up` (ele também atualiza o mod do Habblaud nas contas). O acesso pelo
+celular é opcional e fica desligado até você rodar `npm run remote:setup`; o passo a passo está no README, em
+"Celular com login e HTTPS". O Novo agente precisa de `HABBLAUD_PTY=1` no `.env`.
+
+### Adicionado
+
+- **Celular com login e HTTPS (opcional, desligado até configurar):** `npm run remote:setup` pergunta usuário, senha
+  (guardada só como hash scrypt no `.env`), um nome para o endereço (`https://<nome>.local`) e, se quiser, um endereço
+  próprio (ex.: `meuclaude.home`). Ele cria uma CA local e o certificado do servidor e deixa o anúncio do
+  `<nome>.local` rodando como serviço. O celular entra numa **segunda porta** (443 se estiver livre, senão 4748), que
+  só é publicada depois do setup: toda requisição nela exige login, e por padrão o celular **aprova e recusa pedidos
+  de permissão**; mensagens, terminal (com as **Entregas**: o que cada agente terminou, com resumo e anexos) e o
+  Novo agente só com `HABBLAUD_REMOTE_ALLOW`. A porta 4747 continua só no computador e sem login. **Configurações ›
+  Acesso pelo celular › Sair** encerra o login daquele aparelho (uma cópia do cookie também deixa de valer). Contribuição de
+  @jasminaladdn (#96).
+- **Novo agente (botão + na barra do topo, opt-in com `HABBLAUD_PTY=1`):** começa uma sessão do Claude Code em
+  segundo plano no computador (`claude --bg`), na pasta escolhida (os projetos recentes vêm sugeridos), com o pedido
+  escrito e anexos; ela aparece no escritório e recebe mensagens e permissões pelo Habblaud. Numa pasta que o Claude
+  Code ainda não conhece, abre a tela de sessão nova do app do Claude preenchida. No Docker, quem começa é o auxiliar
+  do host (`npm run codex:bridge`, que agora roda também sem o Codex). Pelo celular, também precisa de `spawn` em
+  `HABBLAUD_REMOTE_ALLOW`.
+- **Ditado** no Novo agente e na caixa de mensagem: o navegador grava e o **Whisper local** transcreve (`whisper-cli`
+  + `ffmpeg` + um modelo multilíngue); a voz não sai do computador. Sem eles, o botão não aparece.
+- **Espera de até 24 h pelo escritório:** `HABBLAUD_PERMISSION_TIMEOUT` aceita até 86400 s (antes 1800, e o plugin
+  cortava em 330 s). O padrão continua 5 min. Numa espera longa, sem nenhuma página que responda por 5 min (e sem o
+  celular com login configurado para responder), o pedido volta ao terminal.
+- **Mensagens para sessões do app desktop do Claude:** o plugin `habblaud-mensagens` também pergunta ao Habblaud nas
+  sessões com `CLAUDE_CODE_ENTRYPOINT=claude-desktop` (antes só nas que tinham terminal na tela).
+- Pedido esperando sem botões no escritório (o hook já devolveu ao terminal, ou a sessão abriu sem o plugin): o
+  rodapé do terminal diz para responder no Claude Code (ou no Codex).
+
+### Segurança
+
+- Na porta remota, quem separa "do próprio computador" de "da rede" é a porta em que a conexão chegou, nunca o
+  cabeçalho Host. As rotas dos hooks, dos plugins e do auxiliar do host, o terminal interativo, o editor de
+  personagem e renomear salas nunca valem por ela, nem com login.
+- A CA local só assina `localhost`, nomes `.local`, o endereço próprio e IPs de rede privada (`nameConstraints`
+  crítico): mesmo com a chave vazada, um certificado para outro site é recusado. A chave nunca vai para o container.
+- Sessão em cookie `HttpOnly`, `SameSite=Strict` e `Secure`, assinado com HMAC (trocar a senha derruba todas). Uma
+  conferência de senha por vez, contada antes do scrypt; depois de 5 senhas erradas seguidas, cada tentativa espera
+  de 1 s a 5 min.
+- No Docker, o auxiliar do host só lê arquivos de entrega de pastas de projeto conhecidas (as que o Claude Code tem em
+  `<conta>/projects`), da pasta temporária e dos anexos, e nada com cara de segredo. Arquivos e ditado usam rodadas
+  com espera (o servidor só responde quando chega trabalho), em vez de perguntar a cada meio segundo.
+
+### Corrigido
+
+- Celular: tocar num campo de texto não dá mais zoom (o Safari do iPhone amplia campos com letra menor que 16 px).
+- No timelapse, os avisos do canto ficam acima da barra de reprodução, em vez de cobrir a linha do tempo e os botões.
+- Com muitas contas ou a janela estreita, os cartões de uso vão para uma segunda linha da barra superior, em vez de
+  cobrir os botões da direita (zoom, Meu dia, Configurações, Ajuda).
+- No celular (até 480 px), a barra superior não corta mais o logo e o botão do painel lateral: os
+  contadores descem para a linha dos cartões de uso.
+- "Meu dia" no celular: o seletor Demonstração | Dados reais não sai mais da tela (em francês, nem a 390 px).
+- Dois pedidos de permissão do mesmo agente no mesmo instante: o detalhe do mais novo não diz mais que há outro
+  pedido esperando atrás dele.
+- "Meu dia": o limite de 1.000 esperas por dia vale também quando todas estão abertas (antes a lista e o arquivo do
+  dia cresciam sem teto).
+- Um arquivo de conversa reescrito no mesmo lugar (em vez de só crescer) volta a ser lido do começo; antes o
+  conteúdo novo era ignorado ou lido a partir do meio.
+
+## [0.10.0] - 2026-10-13
+
+Para atualizar: `git pull` e `npm run docker:up`. A interface segue o idioma do navegador (ou Configurações › Idioma).
+Os textos que o servidor monta continuam em português; para outro idioma, defina `HABBLAUD_LANG` (`en`, `es` ou `fr`)
+no `.env` antes do `docker:up`. Em outubro, o tema automático já deixa o escritório no clima de Halloween; para o
+visual de sempre, escolha **Nenhum** em Configurações › Aparência.
+
+### Adicionado
+
+- **Temas do escritório** em Configurações › Aparência: decoração em pixel art (árvores com presentes, guirlandas e
+  neve nas janelas no Natal; abóboras, fantasmas, teias e morcegos no Halloween), luzes, tapetes e acessórios nos
+  personagens. **Automático**, o padrão, segue o calendário: Halloween de 1º a 31 de outubro e Natal de 1º de
+  novembro a 26 de dezembro (no resto do ano, o visual de sempre). **Nenhum** deixa o visual de sempre o ano todo, e
+  **Natal** e **Halloween** fixam um tema. A escolha fica salva no navegador.
+- **Interface em inglês, espanhol e francês.** Os textos passam por `tr()` (`shared/i18n.ts`), com o português como
+  língua de origem: um texto sem tradução continua em PT. A interface segue o navegador e pode ser fixada em
+  **Configurações › Idioma**. Os textos montados pelo servidor (atividades, avisos, terminal, logs e scripts de
+  instalação) seguem `HABBLAUD_LANG` (`pt-BR`, `en`, `es` ou `fr`) e, sem ele, o idioma do sistema, menos o inglês
+  (muita máquina e todo container vêm em inglês por padrão): para o servidor em inglês, `HABBLAUD_LANG=en`.
+  `npm run i18n:check` lista os textos ainda sem tradução. O francês veio da comunidade (#67).
+- **README em inglês**, com versões em português (`README.pt-BR.md`), espanhol e francês, e a linha de idiomas no
+  topo de cada um.
+
+## [0.9.0] - 2026-10-13
+
+Para atualizar: `git pull` e `npm run docker:up`. O terminal interativo vem desligado e só funciona fora do Docker:
+`npm install`, `npm run build` e `HABBLAUD_PTY=1 npm start` (leia antes o aviso em "Privacidade e segurança" no
+README).
+
+### Adicionado
+
+- **Terminal interativo (opt-in, `HABBLAUD_PTY=1`):** o Claude Code de verdade numa janela do escritório, com abas para
+  os agentes do mesmo projeto. **Nova sessão** abre um Claude Code na pasta da sala; **Assumir daqui** encerra a sessão
+  aberta noutro terminal e continua a mesma conversa aqui (`claude --resume`); **Encerrar** e o X das abas fecham a
+  sessão, aqui ou noutro terminal. Só para sessões do Claude Code (nem Codex nem demo). Antes de encerrar um processo de
+  fora, o Habblaud confere que o PID ainda é aquele Claude Code. Usa `node-pty` e `@xterm/headless` (dependências
+  opcionais); a tela volta inteira ao reconectar ou trocar de aba, com os modos que o Claude ligou. Ao iniciar, abre
+  um terminal de teste: se o `node-pty` ou o `claude` não funcionarem, o recurso fica desligado, com o motivo no log
+  (no macOS, antes ele corrige a permissão de execução que falta no `spawn-helper` do `node-pty` 1.1.0).
+- **Abas e atalho do terminal:** a janela de terminal ganhou abas com os agentes principais do mesmo projeto (com o
+  começo do que cada um faz), e a lista lateral, um atalho ao lado de cada agente que abre o terminal dele. Com um
+  terminal aberto, clicar noutro agente da lista troca a janela para o dele. Valem também para o terminal ao vivo, com
+  o interativo desligado.
+
+### Corrigido
+
+- Mensagem mandada pelo escritório não vai mais para a conversa errada: se o agente trocar de conversa (`/clear`,
+  `/resume` ou outro thread no Codex) antes de buscá-la, ela falha com o motivo em vez de entrar na conversa nova.
+- As tarefas antigas e seus estados são preservados ao recuperar sessões com histórico longo que ganharam novas tarefas.
+- O detalhe da atividade não mostra mais o segredo de webhooks (Slack, Discord e Telegram) nem de tokens `npm_` e
+  `hf_` colados num comando.
+- Mensagens ao Codex no Docker agora são entregues uma por vez por sessão e confirmadas individualmente, reduzindo
+  falhas prematuras e reenvios duplicados.
+- Listas de tarefas malformadas do Claude Code não interrompem a leitura; o escritório preserva as demais atividades
+  do mesmo lote, inclusive nos subagentes.
+- Uma imagem do Codex gravada no Windows (disco `C:` ou pasta de rede `\\servidor\...`) aparecia com o caminho
+  errado na atividade e no terminal (`/C:/...`, ou a pasta sem o servidor). Agora o caminho é o do arquivo de origem.
+- Salvar um personagem ou voltar ao sorteio não fecha mais outra edição aberta enquanto a resposta chega, nem mostra
+  nela um erro da edição anterior.
+- Uma linha enorme numa conversa, ou uma linha que nunca fechava, ficava inteira na memória e a leitura
+  ia ficando mais lenta. Uma linha acima de 8 MB agora é ignorada, e o Habblaud segue na linha seguinte.
+- Sessões do Codex revertidas passam a mostrar o turno atual no escritório e no terminal, mesmo quando o arquivo da
+  conversa anterior continua no disco.
+- No timelapse, a linha do tempo do agente deixa de mostrar o que aconteceu depois do momento reproduzido quando se
+  volta no tempo. Uma resposta de histórico que ainda estava a caminho também não entra durante o replay.
+- No timelapse, os tempos dos painéis acompanham a reprodução e ficam parados ao pausar, junto com o escritório e o
+  selo do replay.
+- O feed pausado guarda só os 50 eventos mais recentes e libera os dados de sessões antigas, mantendo a contagem de
+  novidades.
+- No timelapse, as setas no controle de velocidade passam a trocar a velocidade, em vez de mover a câmera do escritório.
+- O escritório evita conexões ao vivo duplicadas e libera os recursos de rede e fontes ao ser fechado.
+- `usage:install`, `hooks:install`, `mod:install` e `codex:install` param quando o arquivo de configuração muda
+  no meio da instalação, em vez de apagar essa edição (ela também sumia do backup). Rode o comando de novo; o
+  backup passa a ser o arquivo que foi substituído.
+
+## [0.8.0] - 2026-10-09
+
+Para atualizar: `git pull` e `npm run docker:up`. Renomear salas e editar o personagem funcionam só pelo próprio
+computador (a mesma trava do terminal). Os nomes das salas ficam em `rooms.json` e os personagens em `names.json`, na
+pasta de dados do Habblaud; voltar para a 0.7 faz os personagens escolhidos sumirem na primeira gravação.
+
+### Adicionado
+
+- A lista lateral e a dica do personagem mostram o título da sessão (nos subagentes, a tarefa) embaixo do nome. Na
+  lista, o agente principal parado há 1 minuto ou mais mostra **ocioso 12 min** no lugar de "Principal"; na dica, o
+  estado vem com há quanto tempo ele está assim (**há 12 min**).
+- **Janelas móveis:** o terminal e a gaveta do agente se soltam do lugar arrastando pela barra, mudam de tamanho por
+  qualquer borda ou quina e voltam ao lugar com um duplo clique na barra. O terminal ganha o botão **Expandir na tela
+  toda**. Posição e tamanho ficam guardados no navegador; em tela estreita tudo continua fixo. Solta, a gaveta deixa de
+  reservar a lateral do escritório.
+- **Reordenar a lista lateral:** arrastar a linha de um agente principal muda a ordem dos agentes da sala, e arrastar
+  o cabeçalho de uma sala muda a ordem das salas (no prédio elas ficam onde estão). A ordem fica guardada no
+  navegador; a dos agentes vai pela sessão do Claude Code e sobrevive a retomar a sessão.
+- **Renomear sala:** botão direito numa sala (na lista lateral ou no escritório) abre um campo para dar outro nome a
+  ela; vazio volta ao nome da pasta. O nome fica no servidor (`rooms.json`, na pasta de dados do Habblaud), por pasta:
+  vale em qualquer navegador e sobrevive a reinícios. Na gaveta da sala, um lápis ao lado do nome abre o mesmo campo.
+  Só pelo próprio computador; as salas de demonstração não mudam.
+- **Editar o personagem de um projeto.** Nos detalhes do agente principal, o lápis ao lado do nome abre um editor
+  com o nome, **Sortear** e as peças (pele, cabelo, barba, olhos, roupa, sapatos e acessório), com prévia. A escolha
+  vale para o projeto: a próxima sessão na mesma sala chega com o mesmo personagem, e **Voltar ao sorteio** desfaz.
+  Só funciona pelo próprio computador, como o terminal.
+
+### Alterado
+
+- A linha do tempo do agente mostra os 15 itens mais recentes, com **Mostrar mais** (mais 15 a cada clique, até
+  os 200 guardados) e **Mostrar menos** (volta aos 15). Antes eram 80 de uma vez.
+
+### Corrigido
+
+- No Windows, as mensagens ao Codex procuravam `codex` no PATH e achavam o script que o npm instala ao lado do
+  executável: o Habblaud dizia que as mensagens estavam ligadas, mas cada entrega falhava, porque o script não roda
+  sem shell. Agora a busca é pelo `codex.exe`. Com o Codex instalado só pelo npm, aponte `HABBLAUD_CODEX_BIN` para um
+  `codex.exe`.
+- No Windows, o comando de statusline que já existia antes do `npm run usage:install` (o Habblaud o guarda e
+  continua rodando) era executado pelo `cmd.exe`, e o que funcionava no Claude Code (aspas simples, variáveis, pipes)
+  quebrava. Agora ele roda no Git Bash, como no Claude Code: o de `CLAUDE_CODE_GIT_BASH_PATH` ou o da instalação do
+  Git. Sem o Git Bash, continua no `cmd.exe`.
+- No Windows, os instaladores (`usage:install`, `hooks:install`, `codex:install` e `mod:install`) mostravam os
+  caminhos da pasta do usuário por inteiro (`C:\Users\...`) em vez de `~/...`.
+- A suíte de testes (`npm test`) passa no Windows: os testes que supunham caminhos, shell ou permissões do Linux e do
+  macOS agora valem nos três sistemas, e os poucos que dependem de algo que o Windows não tem são pulados nele.
 
 ## [0.7.0] - 2026-10-09
 

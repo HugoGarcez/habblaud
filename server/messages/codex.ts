@@ -12,6 +12,7 @@
 import { execFile } from 'node:child_process';
 import { accessSync, constants, statSync } from 'node:fs';
 import { delimiter, isAbsolute, join } from 'node:path';
+import { tr } from '../../shared/i18n';
 
 /** Prazo de um `codex queue`. */
 export const QUEUE_TIMEOUT_MS = 20_000;
@@ -40,13 +41,19 @@ function canExecute(p: string): boolean {
   }
 }
 
+/**
+ * Nome do binário no PATH. No Windows, só o `codex.exe`: o `codex` sem extensão e o `codex.cmd` que o npm põe ao lado
+ * são scripts, e o execFile (sem shell) não os roda.
+ */
+export const CODEX_BIN_NAME = process.platform === 'win32' ? 'codex.exe' : 'codex';
+
 /** Binário do Codex: HABBLAUD_CODEX_BIN (caminho de um executável) ou `codex` no PATH. undefined = não achou. */
 export function findCodexBin(env: NodeJS.ProcessEnv, isExecutable: (p: string) => boolean = canExecute): string | undefined {
   const explicit = env.HABBLAUD_CODEX_BIN?.trim();
   if (explicit) return isExecutable(explicit) ? explicit : undefined;
   for (const dir of (env.PATH ?? '').split(delimiter)) {
     if (!dir || !isAbsolute(dir)) continue;
-    const p = join(dir, 'codex');
+    const p = join(dir, CODEX_BIN_NAME);
     if (isExecutable(p)) return p;
   }
   return undefined;
@@ -72,20 +79,20 @@ export function createCodexQueueRunner(bin: string, opts: { env?: NodeJS.Process
   const timeoutMs = opts.timeoutMs ?? QUEUE_TIMEOUT_MS;
   return (job) =>
     new Promise<CodexQueueResult>((done) => {
-      if (!THREAD_ID.test(job.thread)) return done({ ok: false, error: 'id de thread do Codex inválido' });
-      if (!isAbsolute(job.codexHome)) return done({ ok: false, error: 'pasta da conta do Codex inválida' });
+      if (!THREAD_ID.test(job.thread)) return done({ ok: false, error: tr('id de thread do Codex inválido') });
+      if (!isAbsolute(job.codexHome)) return done({ ok: false, error: tr('pasta da conta do Codex inválida') });
       const env = { ...(opts.env ?? process.env), CODEX_HOME: job.codexHome };
       try {
         execFile(bin, queueArgs(job.thread, job.text), { env, timeout: timeoutMs, maxBuffer: 256 * 1024, windowsHide: true, encoding: 'utf8' }, (err, _stdout, stderr) => {
           if (!err) return done({ ok: true });
           const e = err as NodeJS.ErrnoException & { killed?: boolean };
-          if (e.killed) return done({ ok: false, error: `o codex queue não respondeu em ${Math.round(timeoutMs / 1_000)} s (a mensagem pode ter entrado na fila mesmo assim)` });
-          if (e.code === 'ENOENT' || e.code === 'EACCES') return done({ ok: false, error: `não consegui rodar o Codex (${bin})` });
-          done({ ok: false, error: firstLine(stderr) ?? `o codex queue falhou (código ${String(e.code ?? '?')})` });
+          if (e.killed) return done({ ok: false, error: tr('o codex queue não respondeu em {0} s (a mensagem pode ter entrado na fila mesmo assim)', [Math.round(timeoutMs / 1_000)]) });
+          if (e.code === 'ENOENT' || e.code === 'EACCES') return done({ ok: false, error: tr('não consegui rodar o Codex ({0})', [bin]) });
+          done({ ok: false, error: firstLine(stderr) ?? tr('o codex queue falhou (código {0})', [String(e.code ?? '?')]) });
         });
       } catch {
         // Argumento que não dá para passar a um processo (ex.: caractere NUL no texto).
-        done({ ok: false, error: 'a mensagem tem caracteres que não dá para mandar ao Codex' });
+        done({ ok: false, error: tr('a mensagem tem caracteres que não dá para mandar ao Codex') });
       }
     });
 }

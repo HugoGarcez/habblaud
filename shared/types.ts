@@ -4,6 +4,8 @@
 // Regra de evolução: mudanças aqui devem ser ADITIVAS (campos opcionais novos).
 // Renomear/remover campos quebra servidor, mundo e UI ao mesmo tempo.
 
+import type { AppearanceParts } from './appearance';
+
 export type AgentKind = 'main' | 'sub';
 
 /**
@@ -167,6 +169,10 @@ export interface AgentInfo {
   stats: AgentStats;
   /** Semente 32-bit para a aparência determinística do personagem. */
   seed: number;
+  /** Peças escolhidas no editor do personagem, aplicadas por cima da aparência da `seed` (ver shared/appearance.ts). */
+  parts?: AppearanceParts;
+  /** Usa o personagem escolhido para o projeto (a sala): o painel oferece "Voltar ao sorteio". */
+  custom?: true;
   /** Subagente rodando em segundo plano. */
   background?: boolean;
   /**
@@ -328,6 +334,8 @@ export interface OfficeSnapshot {
   serverTime: number;
   rooms: RoomInfo[];
   agents: AgentInfo[];
+  /** Terminais interativos abertos pelo Promp IA (Claude Code rodando dentro do navegador). */
+  ptys?: PtyInfo[];
   /** Contas do Claude detectadas (com uso de 5h/semanal quando disponível). */
   accounts: AccountInfo[];
   meta: {
@@ -350,9 +358,29 @@ export interface OfficeSnapshot {
      * desligar. Quem recebe agora diz AgentInfo.canMessage. Ausente/false = recurso desligado.
      */
     messages?: boolean;
+    /**
+     * Terminal interativo (abrir/assumir sessões e encerrar agentes pelo escritório): só fora do Docker, com
+     * node-pty e acesso local. Ausente = recurso desligado.
+     */
+    pty?: PtyStatus;
     /** Verificação de versão nova no GitHub (ausente nos testes e no timelapse). */
     updates?: UpdateStatus;
   };
+}
+
+/**
+ * O que ESTA página pode fazer (GET /api/access): a porta local libera tudo pelo Host local; a porta remota com login
+ * (server/http/remote.ts) só o que HABBLAUD_REMOTE_ALLOW liberar. `local` = aberta pelo próprio computador (editar
+ * personagem e renomear salas, que nunca valem pela porta remota).
+ */
+export interface AccessInfo {
+  remote: boolean;
+  local: boolean;
+  permissions: boolean;
+  messages: boolean;
+  terminal: boolean;
+  /** Pode abrir agentes novos no app do Claude (POST /api/spawn). */
+  spawn: boolean;
 }
 
 export interface FeedItem {
@@ -504,6 +532,58 @@ export interface RecentSession {
   agentId?: string;
 }
 
+// ------------------------------------------------------------------ entregas
+
+/** Tipo de um anexo de entrega, para escolher o visualizador. */
+export type DeliveryAttachmentKind = 'image' | 'pdf' | 'video' | 'page' | 'text' | 'file';
+
+/** Arquivo que o agente entregou (SendUserFile, link na resposta) ou uma tela capturada no fim do trabalho. */
+export interface DeliveryAttachment {
+  /** Id opaco para GET /api/deliveries/file/:id (nunca o caminho). */
+  id: string;
+  name: string;
+  kind: DeliveryAttachmentKind;
+  /** Legenda do agente (SendUserFile) ou "Tela capturada". */
+  caption?: string;
+  /** Captura de tela que veio dentro da conversa (não é um arquivo do computador). */
+  capture?: boolean;
+}
+
+/**
+ * Uma entrega: o fim de um pedido em que o agente trabalhou (usou ferramentas) e respondeu. Montada do transcript
+ * (server/deliveries/deliveries.ts), do jeito que um BA receberia: manchete, resumo, pedido e anexos.
+ */
+export interface DeliveryInfo {
+  /** "<conta>:<sessão>:<entrada do pedido>". */
+  id: string;
+  account: string;
+  provider?: Provider;
+  sessionId: string;
+  /** Agente ainda no escritório (para o avatar e o "abrir terminal"). */
+  agentId?: string;
+  /** Nome do agente (o do escritório) ou o título da sessão. */
+  agentName?: string;
+  project?: string;
+  /** O que foi pedido (uma linha). */
+  request: string;
+  /** Primeira frase da resposta, sem markdown. */
+  headline: string;
+  /** Parágrafo em linguagem simples (o último da resposta), quando há. */
+  summary?: string;
+  /** A resposta inteira (markdown). */
+  text: string;
+  startedAt: number;
+  finishedAt: number;
+  /** Ferramentas usadas e arquivos alterados no pedido. */
+  tools: number;
+  edited: number;
+  attachments: DeliveryAttachment[];
+}
+
+export interface DeliveriesResponse {
+  deliveries: DeliveryInfo[];
+}
+
 /** Resposta de GET /api/sessions/recent: da atividade mais recente para a mais antiga. */
 export interface RecentSessionsResponse {
   sessions: RecentSession[];
@@ -609,6 +689,30 @@ export interface OutboxMessage {
   createdAt: number;
   /** Última mudança de status. */
   updatedAt: number;
+}
+
+/** Estado do terminal interativo (OfficeSnapshot.meta.pty). */
+export interface PtyStatus {
+  enabled: boolean;
+  /** Por que está desligado. */
+  reason?: string;
+}
+
+/** Terminal interativo aberto pelo Promp IA (node-pty no servidor, xterm.js no navegador). */
+export interface PtyInfo {
+  id: string;
+  /** PID do Claude Code: o agente correspondente é `${account}:${pid}` (= agentId). */
+  pid: number;
+  cwd: string;
+  account: string;
+  agentId: string;
+  /** Sessão retomada (`claude --resume`), quando o terminal assumiu uma sessão que já existia. */
+  resumed?: string;
+  /** Agente que este terminal assumiu (o id antigo, do processo encerrado). */
+  fromAgent?: string;
+  startedAt: number;
+  exitedAt?: number;
+  exitCode?: number;
 }
 
 /** Mensagem entregue ao plugin habblaud-mensagens (POST /api/mod/inbox). */
