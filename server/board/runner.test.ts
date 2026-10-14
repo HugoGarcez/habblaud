@@ -246,6 +246,34 @@ describe('runner', () => {
     expect(await runner.answer('p', card.id, 'msg_1', 'de novo')).toMatch(/desconhecida/);
   });
 
+  it('pergunta de worker que terminou sem resposta sai do card; resposta a pergunta fechada não trava', async () => {
+    const { store, runner, state, complete } = setup();
+    await runner.tick();
+    await settle();
+    await runner.tick();
+    await settle();
+    const dispatch = work(store).run!.actions.a1.dispatchId!;
+    expect(dispatch).toBe('d_task_1');
+    state.messages.push({ id: 'msg_1', type: 'question', subject: 'A ou B?', to_handle: 'run:run_1', from_handle: `dispatch:${dispatch}` });
+    state.messages.push({ id: 'msg_2', type: 'question', subject: 'C ou D?', to_handle: 'run:run_1', from_handle: 'dispatch:outro' });
+    await runner.tick();
+    expect(work(store).run!.questions.map((q) => q.id)).toEqual(['msg_1', 'msg_2']);
+    complete('task_1');
+    await runner.tick();
+    expect(work(store).run!.questions.map((q) => q.id)).toEqual(['msg_2']);
+    expect(work(store).run!.log.some((l) => /seguiu sem/.test(l.text))).toBe(true);
+    // O Orca recusa sempre (a repetição do mutate também).
+    const closed = (): never => {
+      state.fail.set('orchestration reply', closed);
+      throw new CliError('Question msg_2 is closed because its Dispatch is inactive.');
+    };
+    state.fail.set('orchestration reply', closed);
+    expect(await runner.answer('p', card.id, 'msg_2', 'C')).toMatch(/já terminou/);
+    expect(work(store).run!.questions).toEqual([]);
+    await runner.tick();
+    expect(work(store).run!.questions).toEqual([]);
+  });
+
   it('Task que falha trava; tentar de novo usa --retry-of', async () => {
     const { store, runner, state } = setup();
     await runner.tick();

@@ -2746,6 +2746,8 @@ export const ES: Readonly<Record<string, string>> = {
   "Um agente pergunta:": "Un agente pregunta:",
   "Um agente perguntou algo: responda no card.": "Un agente preguntó algo: responde en la tarjeta.",
   "Você respondeu: {0}": "Respondiste: {0}",
+  "Pergunta sem resposta encerrada: o agente seguiu sem ela.": "Pregunta sin respuesta cerrada: el agente siguió sin ella.",
+  "O agente já terminou e seguiu sem esta resposta; veja o resultado das ações.": "El agente ya terminó y siguió sin esta respuesta; mira el resultado de las acciones.",
   "Worktree {0} (branch {1}).": "Worktree {0} (rama {1}).",
   "Worktree: {0} · branch {1}": "Worktree: {0} · rama {1}",
   "Abre o quadro de tarefas do projeto desta sala": "Abre el tablero de tareas del proyecto de esta sala",

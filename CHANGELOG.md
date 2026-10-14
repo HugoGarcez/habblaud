@@ -46,6 +46,8 @@ do meio (0.**3**.0).
   em execução, prontos), a gaveta da sala ganha o botão **Tarefas** (abre o quadro naquele projeto) e os agentes que
   trabalham no worktree de um card aparecem na sala do repositório. Avisos quando um card precisa de você (pergunta
   de agente, plano pronto, card travado) ou quando um PR é aberto; clicar abre o card.
+- **Perguntas que expiram:** quando o agente que perguntou já terminou (seguiu sem a resposta), a pergunta sai do
+  card sozinha, em vez de ficar presa e dar erro do Orca ("Dispatch is inactive") ao responder.
 
 ## [0.11.1] - 2026-10-13
 

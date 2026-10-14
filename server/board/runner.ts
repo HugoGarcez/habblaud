@@ -147,6 +147,9 @@ export class BoardRunner {
           if (work.stage === 'queued') await this.guard(key, () => this.prepare(projectId, cardId));
           else if (work.stage === 'running') await this.advance(projectId, cardId);
           else if (work.stage === 'review') await this.checkReview(projectId, cardId);
+          // Card que já saiu da execução não tem worker para receber resposta.
+          const ended = work.stage === 'review' || work.stage === 'done' || work.stage === 'failed';
+          if (ended && work.run?.questions.length) this.expireQuestions(projectId, cardId);
         } catch (err) {
           log.warnOnce(`board-run:${key}:${errMsg(err)}`, `Quadro: execução de ${cardId} (${projectId}): ${errMsg(err)}`);
         }
@@ -371,6 +374,7 @@ export class BoardRunner {
       if (a.state === 'starting' && a.startRequest && !this.inflight.has(a.startRequest)) void this.startWorker(projectId, cardId, x, a.startRequest);
     }
     changed = (await this.collectQuestions(run)) || changed;
+    changed = this.dropClosedQuestions(run) || changed;
     const failed = work.plan.actions.find((x) => run.actions[x.id].state === 'failed');
     if (failed) {
       this.save(projectId, cardId, (w) => ({ ...w, stage: 'blocked', run, error: tr('A ação "{0}" falhou: {1}', [failed.title, run.actions[failed.id].error ?? '']) }), ['running']);
@@ -502,6 +506,21 @@ export class BoardRunner {
     return changed;
   }
 
+  /** Perguntas de workers que já terminaram (o Orca fecha a pergunta com o dispatch): saem do card. */
+  private dropClosedQuestions(run: CardRun): boolean {
+    const ended = new Set(
+      Object.values(run.actions)
+        .filter((a) => a.dispatchId && (a.state === 'done' || a.state === 'failed' || a.state === 'canceled'))
+        .map((a) => `dispatch:${a.dispatchId}`),
+    );
+    const gone = run.questions.filter((q) => q.from && ended.has(q.from));
+    if (!gone.length) return false;
+    run.questions = run.questions.filter((q) => !gone.includes(q));
+    run.answered.push(...gone.map((q) => q.id));
+    this.note(run, tr('Pergunta sem resposta encerrada: o agente seguiu sem ela.'));
+    return true;
+  }
+
   // ---- 5: commit, push e PR ----
 
   private git(cwd: string, args: string[], timeoutMs = 60_000): Promise<string> {
@@ -617,7 +636,13 @@ export class BoardRunner {
       const from = await this.coordinator(found?.project ?? ({ id: projectId } as BoardProject));
       await this.mutate(['orchestration', 'reply', '--from', from, '--run', run.runId, '--id', questionId, '--body', text], randomUUID());
     } catch (err) {
-      return tr('O Orca não aceitou a resposta: {0}', [err instanceof CliError ? err.message : errMsg(err)]);
+      const msg = err instanceof CliError ? err.message : errMsg(err);
+      // O worker já terminou (seguiu sem a resposta): a pergunta sai do card em vez de ficar presa.
+      if (/closed|inactive/i.test(msg)) {
+        this.expireQuestions(projectId, cardId, questionId);
+        return tr('O agente já terminou e seguiu sem esta resposta; veja o resultado das ações.');
+      }
+      return tr('O Orca não aceitou a resposta: {0}', [msg]);
     }
     this.save(projectId, cardId, (w) => {
       const r = w.run!;
@@ -627,6 +652,19 @@ export class BoardRunner {
       return w;
     });
     return undefined;
+  }
+
+  /** Tira do card perguntas que não têm mais quem as receba (todas, ou só `questionId`). */
+  private expireQuestions(projectId: string, cardId: string, questionId?: string): void {
+    this.save(projectId, cardId, (w) => {
+      const r = w.run!;
+      const gone = r.questions.filter((q) => !questionId || q.id === questionId);
+      if (!gone.length) return w;
+      r.questions = r.questions.filter((q) => !gone.includes(q));
+      r.answered.push(...gone.map((q) => q.id));
+      this.note(r, tr('Pergunta sem resposta encerrada: o agente seguiu sem ela.'));
+      return w;
+    });
   }
 
   /** Tenta de novo as ações que falharam (ou a finalização). */
