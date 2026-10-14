@@ -16,7 +16,9 @@ do meio (0.**3**.0).
   do `origin`, pelo `gh`) ou do Linear (pelo `orca linear`) nas colunas Backlog, Planejando, Aguardando aprovação,
   Em execução, Revisão e Concluído. Escolha a fonte de cada projeto no próprio quadro (fica em
   `~/.habblaud/board.json`); filtro por título, número e labels; clique abre a issue. Só pelo próprio computador.
-  Primeiro passo do orquestrador: criar cards, planejar com IA e executar vêm a seguir. `HABBLAUD_BOARD=0` desliga.
+  `HABBLAUD_BOARD=0` desliga.
+- **Novo card no quadro:** Issue, Funcionalidade ou Correção, com título e descrição, vira issue na fonte do projeto
+  (GitHub com a label `bug`/`enhancement`; Linear com `Bug`/`Feature`, quando existem) e entra no Backlog.
 
 ## [0.11.1] - 2026-10-13
 

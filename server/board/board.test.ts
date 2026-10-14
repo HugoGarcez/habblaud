@@ -8,8 +8,8 @@ import { kindFromLabels } from '../../shared/board';
 import { setQuiet } from '../log';
 import { tempDir } from '../test/fixtures';
 import { CliError, orcaResult, type Exec } from './cli';
-import { parseConfig } from './http';
-import { DONE_KEEP_MS, githubCard, linearCard, linearColumn, listGithub, listLinear } from './providers';
+import { parseConfig, parseNewCard } from './http';
+import { createGithub, createLinear, DONE_KEEP_MS, githubCard, linearCard, linearColumn, listGithub, listLinear, parseIssueUrl } from './providers';
 import { BoardService, githubRepoOf, parseGithubUrl } from './service';
 import { BoardStore } from './store';
 
@@ -125,6 +125,7 @@ describe('BoardService', () => {
       if (cmd === 'repo list --json') return ok({ repos: [{ id: 'r1', path: '/p/app' }, { id: 'r2', path: '/p/local' }] });
       if (cmd === 'linear team list --json') return opts.teams === undefined ? ok({ teams: [{ key: 'PRO', name: 'Promp' }] }) : (opts.teams as string);
       if (args[0] === '-C') return args[1] === '/p/app' ? 'https://github.com/fork/app.git\n' : Promise.reject(new CliError('sem origin'));
+      if (args[0] === 'issue' && args[1] === 'create') return 'https://github.com/fork/app/issues/5\n';
       if (args[0] === 'issue') return opts.ghFails ? Promise.reject(new CliError(opts.ghFails)) : JSON.stringify([{ number: 1, title: 'a', url: 'u', state: 'OPEN', updatedAt: iso(0) }]);
       if (args[0] === 'linear') return ok({ issues: [{ identifier: 'PRO-9', title: 'z', url: 'u', state: { type: 'started', name: 'In Progress' }, updatedAt: iso(0) }] });
       throw new Error(`inesperado: ${cmd}`);
@@ -172,6 +173,23 @@ describe('BoardService', () => {
     expect(v?.error).toMatch(/issues estão desligadas/);
   });
 
+  it('create: issue na fonte com rodapé e o card entra no cache; projeto desconhecido = undefined', async () => {
+    const { board, calls } = service();
+    await board.view('github:up/app');
+    const r = await board.create('github:up/app', { kind: 'issue', title: 'Nova', body: 'texto' });
+    expect(r && 'card' in r ? r.card.ref : r).toBe('#5');
+    const create = calls.find((c) => c[2] === 'create')!;
+    expect(create[create.indexOf('--repo') + 1]).toBe('fork/app');
+    expect(create[create.indexOf('--body') + 1]).toBe('texto\n\n---\n_Criado pelo Promp IA._');
+    expect((await board.view('github:up/app'))?.cards.map((c) => c.ref)).toEqual(['#5', '#1']);
+    expect(await board.create('nao-existe', { kind: 'issue', title: 'x', body: '' })).toBeUndefined();
+  });
+
+  it('create sem fonte configurada: erro legível', async () => {
+    const { board } = service({ teams: JSON.stringify({ ok: false, error: { message: 'x' } }) });
+    expect(await board.create('repo:r2', { kind: 'issue', title: 'x', body: '' })).toEqual({ error: expect.stringMatching(/GitHub ou Linear/) });
+  });
+
   it('store relê o arquivo e ignora entradas inválidas', () => {
     const { store, file } = service();
     store.setConfig('a', { source: 'github' });
@@ -190,5 +208,60 @@ describe('parseConfig', () => {
     expect(() => parseConfig({ source: 'linear' })).toThrow();
     expect(() => parseConfig({ source: 'jira' })).toThrow();
     expect(() => parseConfig({ source: 'linear', linearTeam: 'a b' })).toThrow();
+  });
+});
+
+describe('criar cards', () => {
+  const card = { kind: 'fix' as const, title: 'Login quebra', body: 'passos' };
+
+  it('GitHub: gh issue create com a label do tipo; label inexistente cria sem ela', async () => {
+    const calls: string[][] = [];
+    let missing = true;
+    const exec: Exec = async (_bin, args) => {
+      calls.push(args);
+      if (args.includes('--label') && missing) {
+        missing = false;
+        throw new CliError("could not add label: 'bug' not found");
+      }
+      return 'Creating issue\nhttps://github.com/o/r/issues/42\n';
+    };
+    const c = await createGithub(exec, 'gh', 'o/r', card, NOW);
+    expect(c).toMatchObject({ id: 'github:42', ref: '#42', url: 'https://github.com/o/r/issues/42', kind: 'fix', column: 'backlog', state: 'open' });
+    expect(calls[0]).toEqual(['issue', 'create', '--repo', 'o/r', '--title', 'Login quebra', '--body', 'passos', '--label', 'bug']);
+    expect(calls[1]).not.toContain('--label');
+    expect(() => parseIssueUrl('nada')).toThrow(CliError);
+  });
+
+  it('GitHub: outro erro não tenta de novo', async () => {
+    let n = 0;
+    const exec: Exec = async () => {
+      n++;
+      throw new CliError('HTTP 403');
+    };
+    await expect(createGithub(exec, 'gh', 'o/r', card)).rejects.toThrow('HTTP 403');
+    expect(n).toBe(1);
+  });
+
+  it('Linear: orca linear create com time, label e write-id; lê result.issue ou result', async () => {
+    const calls: string[][] = [];
+    const exec: Exec = async (_bin, args) => {
+      calls.push(args);
+      return ok({ issue: { identifier: 'PRO-12', title: 'Login quebra', url: 'https://linear.app/x/PRO-12', state: { type: 'backlog', name: 'Backlog' } } });
+    };
+    expect(await createLinear(exec, 'orca', 'PRO', { ...card, kind: 'feature' }, NOW)).toMatchObject({ id: 'linear:PRO-12', column: 'backlog', kind: 'feature', labels: ['Feature'] });
+    expect(calls[0]).toContain('--write-id');
+    expect(calls[0].slice(calls[0].indexOf('--label'), calls[0].indexOf('--label') + 2)).toEqual(['--label', 'Feature']);
+    const flat: Exec = async () => ok({ identifier: 'PRO-13', url: 'u', title: 't' });
+    expect((await createLinear(flat, 'orca', 'PRO', { ...card, kind: 'issue' })).ref).toBe('PRO-13');
+    await expect(createLinear(async () => ok({}), 'orca', 'PRO', card)).rejects.toBeInstanceOf(CliError);
+  });
+
+  it('parseNewCard: tipo, título (espaços juntados) e limites', () => {
+    expect(parseNewCard({ kind: 'feature', title: '  a\n b ', body: ' x ' })).toEqual({ kind: 'feature', title: 'a b', body: 'x' });
+    expect(parseNewCard({ kind: 'issue', title: 't' })).toEqual({ kind: 'issue', title: 't', body: '' });
+    expect(() => parseNewCard({ kind: 'bug', title: 't' })).toThrow();
+    expect(() => parseNewCard({ kind: 'fix', title: ' ' })).toThrow();
+    expect(() => parseNewCard({ kind: 'fix', title: 'x'.repeat(201) })).toThrow();
+    expect(() => parseNewCard({ kind: 'fix', title: 't', body: 'x'.repeat(20_001) })).toThrow();
   });
 });

@@ -1,0 +1,137 @@
+// Formulário "Novo card" do quadro de tarefas (ui/board.ts): tipo (Issue, Funcionalidade, Correção), título e
+// descrição. Quem cria a issue é o quadro (POST /api/board/projects/:id/cards); aqui só o formulário.
+import { CARD_BODY_MAX, CARD_TITLE_MAX, type CardKind, type NewCard } from '../../../shared/board';
+import { tr } from '../../../shared/i18n';
+import { kindLabel } from './board-model';
+import { h, setHidden, setText } from './dom';
+
+const KINDS: readonly CardKind[] = ['issue', 'feature', 'fix'];
+
+/** Dica de cada tipo (embaixo do seletor). */
+function kindHint(k: CardKind): string {
+  switch (k) {
+    case 'issue':
+      return tr('Uma tarefa ou pergunta qualquer.');
+    case 'feature':
+      return tr('Algo novo para o projeto fazer.');
+    case 'fix':
+      return tr('Algo que está errado e precisa de conserto: diga o que acontece e o que deveria acontecer.');
+  }
+}
+
+export interface NewCardFormOptions {
+  /** Cria a issue; devolve a mensagem de erro, ou undefined se deu certo. */
+  submit(card: NewCard): Promise<string | undefined>;
+}
+
+export class NewCardForm {
+  readonly el: HTMLFormElement;
+  private kind: CardKind = 'issue';
+  private readonly kindBtns: HTMLButtonElement[];
+  private readonly hint: HTMLElement;
+  private readonly target: HTMLElement;
+  private readonly title: HTMLInputElement;
+  private readonly body: HTMLTextAreaElement;
+  private readonly error: HTMLElement;
+  private readonly createBtn: HTMLButtonElement;
+  private busy = false;
+
+  constructor(private readonly opts: NewCardFormOptions) {
+    this.kindBtns = KINDS.map((k) =>
+      h('button', { class: 'ui-seg__opt', type: 'button', role: 'radio', text: kindLabel(k), attrs: { 'data-kind': k }, on: { click: () => this.setKind(k) } }),
+    );
+    this.hint = h('p', { class: 'ui-board-new__hint' });
+    this.target = h('p', { class: 'ui-board-new__target' });
+    this.title = h('input', {
+      class: 'ui-rename__input',
+      type: 'text',
+      attrs: { id: 'ui-board-new-title', maxlength: CARD_TITLE_MAX, placeholder: tr('Ex.: Botão de salvar não responde no celular'), autocomplete: 'off', required: true },
+    });
+    this.body = h('textarea', {
+      class: 'ui-rename__input ui-board-new__body',
+      attrs: { id: 'ui-board-new-body', rows: 6, maxlength: CARD_BODY_MAX, placeholder: tr('Detalhes: contexto, o que deve mudar, critérios para dar como pronto (opcional)') },
+    });
+    this.error = h('p', { class: 'ui-board-new__error', role: 'alert', hidden: true });
+    this.createBtn = h('button', { class: 'ui-btn ui-perm__btn ui-perm__btn--allow', type: 'submit' }, tr('Criar card'));
+    const cancel = h('button', { class: 'ui-btn', type: 'button', text: tr('Cancelar'), on: { click: () => this.close() } });
+
+    this.el = h(
+      'form',
+      { class: 'ui-board-new', hidden: true, attrs: { 'aria-label': tr('Novo card'), novalidate: true } },
+      h('div', { class: 'ui-seg ui-board-new__kinds', role: 'radiogroup', attrs: { 'aria-label': tr('Tipo do card') } }, ...this.kindBtns),
+      this.hint,
+      h('label', { class: 'ui-spawn__label', attrs: { for: 'ui-board-new-title' }, text: tr('Título') }),
+      this.title,
+      h('label', { class: 'ui-spawn__label', attrs: { for: 'ui-board-new-body' }, text: tr('Descrição') }),
+      this.body,
+      this.error,
+      h('div', { class: 'ui-board-new__foot' }, this.target, cancel, this.createBtn),
+    );
+    this.el.addEventListener('submit', (e) => {
+      e.preventDefault();
+      void this.send();
+    });
+    this.el.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        this.close();
+      } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        void this.send();
+      }
+    });
+    this.setKind('issue');
+  }
+
+  get isOpen(): boolean {
+    return !this.el.hidden;
+  }
+
+  /** `where`: para onde a issue vai ("GitHub · dono/repo", "Linear · PRO"). */
+  open(where: string): void {
+    setText(this.target, tr('Vai para: {0}', [where]));
+    setHidden(this.error, true);
+    setHidden(this.el, false);
+    this.title.focus();
+  }
+
+  close(): void {
+    setHidden(this.el, true);
+  }
+
+  private setKind(k: CardKind): void {
+    this.kind = k;
+    for (const b of this.kindBtns) b.setAttribute('aria-checked', String(b.dataset.kind === k));
+    setText(this.hint, kindHint(k));
+  }
+
+  private async send(): Promise<void> {
+    if (this.busy) return;
+    const title = this.title.value.trim();
+    if (!title) {
+      this.showError(tr('Escreva um título.'));
+      this.title.focus();
+      return;
+    }
+    this.busy = true;
+    this.createBtn.disabled = true;
+    setText(this.createBtn, tr('Criando…'));
+    try {
+      const err = await this.opts.submit({ kind: this.kind, title, body: this.body.value });
+      if (err) return this.showError(err);
+      this.title.value = '';
+      this.body.value = '';
+      this.setKind('issue');
+      this.close();
+    } finally {
+      this.busy = false;
+      this.createBtn.disabled = false;
+      setText(this.createBtn, tr('Criar card'));
+    }
+  }
+
+  private showError(text: string): void {
+    setText(this.error, text);
+    setHidden(this.error, false);
+  }
+}

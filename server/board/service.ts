@@ -3,11 +3,11 @@
 // configuração, o GitHub quando o origin é do GitHub, senão o Linear quando há um time só.
 //
 // Tudo com cache curto: a página pede de novo ao abrir o quadro e a cada ~30 s enquanto ele está aberto.
-import type { BoardIndex, BoardProject, BoardProjectConfig, BoardView, LinearTeam } from '../../shared/board';
+import type { BoardCard, BoardIndex, BoardProject, BoardProjectConfig, BoardView, LinearTeam, NewCard } from '../../shared/board';
 import { tr } from '../../shared/i18n';
 import { errMsg } from '../log';
 import { CliError, execCli, orcaResult, type Exec } from './cli';
-import { listGithub, listLinear, listLinearTeams } from './providers';
+import { createGithub, createLinear, listGithub, listLinear, listLinearTeams } from './providers';
 import type { BoardStore } from './store';
 
 export const PROJECTS_TTL_MS = 60_000;
@@ -106,6 +106,27 @@ export class BoardService {
     view.cards.sort((a, b) => b.updatedAt - a.updatedAt);
     this.views.set(projectId, { at: this.now(), value: view });
     return view;
+  }
+
+  /**
+   * Card novo: vira issue na fonte do projeto (com a label do tipo, quando existe lá) e entra no Backlog. Erro de
+   * configuração ou da fonte volta como `{error}` (a página mostra); projeto desconhecido, undefined.
+   */
+  async create(projectId: string, card: NewCard): Promise<{ card: BoardCard } | { error: string } | undefined> {
+    const project = (await this.index()).projects.find((p) => p.id === projectId);
+    if (!project) return undefined;
+    const body = `${card.body.trim()}\n\n---\n${tr('_Criado pelo Promp IA._')}`.trim();
+    try {
+      let created: BoardCard;
+      if (project.source === 'github' && project.github && this.opts.gh) created = await createGithub(this.exec, this.opts.gh, project.github, { ...card, body }, this.now());
+      else if (project.source === 'linear' && project.linearTeam) created = await createLinear(this.exec, this.opts.orca, project.linearTeam, { ...card, body }, this.now());
+      else return { error: tr('Escolha de onde vêm as tarefas deste projeto: GitHub ou Linear.') };
+      const cached = this.views.get(projectId);
+      if (cached) cached.value = { ...cached.value, cards: [created, ...cached.value.cards.filter((c) => c.id !== created.id)] };
+      return { card: created };
+    } catch (err) {
+      return { error: describeError(err, project.source) };
+    }
   }
 
   async setConfig(projectId: string, config: BoardProjectConfig): Promise<BoardProject | undefined> {

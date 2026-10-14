@@ -68,7 +68,17 @@ export interface BoardIndex {
   linear: boolean;
 }
 
-/** PUT /api/board/:projeto/config */
+/** POST /api/board/projects/:id/cards: card novo (vira issue na fonte do projeto). */
+export interface NewCard {
+  kind: CardKind;
+  title: string;
+  body: string;
+}
+
+export const CARD_TITLE_MAX = 200;
+export const CARD_BODY_MAX = 20_000;
+
+/** POST /api/board/projects/:id/config */
 export interface BoardProjectConfig {
   source: BoardSource | null;
   linearTeam?: string;

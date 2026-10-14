@@ -9260,3 +9260,66 @@ html.is-replay #world {
   color: var(--ui-faint);
   font-size: 12px;
 }
+
+.ui-board__new {
+  height: 30px;
+}
+
+.ui-board__new:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ui-board-new {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 720px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--ui-line-strong);
+  background: var(--ui-bg-soft);
+}
+
+.ui-board-new[hidden] {
+  display: none;
+}
+
+.ui-board-new__kinds {
+  align-self: flex-start;
+}
+
+.ui-board-new__hint,
+.ui-board-new__target {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+
+.ui-board-new__body {
+  resize: vertical;
+  min-height: 96px;
+}
+
+.ui-board-new__error {
+  margin: 0;
+  color: #ffb4a8;
+  font-size: 12px;
+}
+
+.ui-board-new__foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.ui-board-new__target {
+  margin-right: auto;
+}
+
+.ui-board__card.is-fresh .ui-board__card-link {
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 1px var(--ui-accent-soft);
+}

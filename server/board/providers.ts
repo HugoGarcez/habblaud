@@ -1,11 +1,12 @@
-// Fontes dos cards: issues do GitHub (gh) e do Linear (orca linear). Só leitura nesta fase.
+// Fontes dos cards: issues do GitHub (gh) e do Linear (orca linear): listar e criar.
 //
 // GitHub: `gh issue list --repo dono/repo --state all` (as abertas e as fechadas nas últimas 2 semanas). Aberta vai
 // para o Backlog, a não ser que tenha uma label `promp:*` (GITHUB_COLUMN_LABELS); fechada vai para Concluído.
 // Linear: `orca linear list-issues --team <key>`. Tipo do estado → coluna: backlog/unstarted = Backlog, started =
 // Em execução (ou Revisão, se o nome do estado fala em revisão), completed = Concluído; cancelado e duplicado ficam
 // de fora.
-import { GITHUB_COLUMN_LABELS, kindFromLabels, type BoardCard, type BoardColumn, type LinearTeam } from '../../shared/board';
+import { randomUUID } from 'node:crypto';
+import { GITHUB_COLUMN_LABELS, kindFromLabels, type BoardCard, type BoardColumn, type CardKind, type LinearTeam, type NewCard } from '../../shared/board';
 import { CliError, orcaResult, type Exec } from './cli';
 
 /** Quanto tempo uma issue fechada continua na coluna Concluído. */
@@ -121,4 +122,66 @@ export async function listLinear(exec: Exec, orca: string, team: string, now = D
 export async function listLinearTeams(exec: Exec, orca: string): Promise<LinearTeam[]> {
   const r = orcaResult<{ teams: { key: string; name: string }[] }>(await exec(orca, ['linear', 'team', 'list', '--json']));
   return (r.teams ?? []).map((t) => ({ key: t.key, name: t.name }));
+}
+
+/** Label de cada tipo na fonte (as padrão do GitHub e do Linear); `issue` não leva label. */
+export const KIND_LABELS: Readonly<Record<'github' | 'linear', Partial<Record<CardKind, string>>>> = {
+  github: { fix: 'bug', feature: 'enhancement' },
+  linear: { fix: 'Bug', feature: 'Feature' },
+};
+
+/** A label pedida não existe no repositório/time: cria sem ela (o tipo ainda vale no card devolvido). */
+function isMissingLabel(err: unknown): boolean {
+  return err instanceof CliError && /label/i.test(err.message) && /not found|could not|invalid|unknown|no label|não/i.test(err.message);
+}
+
+async function withLabelFallback<T>(label: string | undefined, run: (label: string | undefined) => Promise<T>): Promise<T> {
+  try {
+    return await run(label);
+  } catch (err) {
+    if (label && isMissingLabel(err)) return run(undefined);
+    throw err;
+  }
+}
+
+/** `gh issue create` devolve a URL da issue nova (última linha). */
+export function parseIssueUrl(stdout: string): { url: string; number: number } {
+  const url = stdout.trim().split('\n').pop()?.trim() ?? '';
+  const m = /\/issues\/(\d+)$/.exec(url);
+  if (!m) throw new CliError('o gh não devolveu o endereço da issue');
+  return { url, number: Number(m[1]) };
+}
+
+export async function createGithub(exec: Exec, gh: string, repo: string, card: NewCard, now = Date.now()): Promise<BoardCard> {
+  const label = KIND_LABELS.github[card.kind];
+  const { url, number } = await withLabelFallback(label, async (l) =>
+    parseIssueUrl(await exec(gh, ['issue', 'create', '--repo', repo, '--title', card.title, '--body', card.body, ...(l ? ['--label', l] : [])], { timeoutMs: 30_000 })),
+  );
+  return { id: `github:${number}`, source: 'github', ref: `#${number}`, title: card.title, body: clip(card.body), url, kind: card.kind, column: 'backlog', labels: label ? [label] : [], state: 'open', updatedAt: now };
+}
+
+export async function createLinear(exec: Exec, orca: string, team: string, card: NewCard, now = Date.now()): Promise<BoardCard> {
+  const label = KIND_LABELS.linear[card.kind];
+  // --write-id: se a resposta se perder, repetir com o mesmo id não cria outra issue.
+  const writeId = randomUUID();
+  const r = await withLabelFallback(label, async (l) =>
+    orcaResult<{ issue?: LinearIssue } & Partial<LinearIssue>>(
+      await exec(orca, ['linear', 'create', '--team', team, '--title', card.title, '--body', card.body, '--write-id', writeId, ...(l ? ['--label', l] : []), '--json'], { timeoutMs: 30_000 }),
+    ),
+  );
+  const issue = (r.issue ?? r) as Partial<LinearIssue>;
+  if (!issue.identifier || !issue.url) throw new CliError('o Linear não devolveu a issue criada');
+  return {
+    id: `linear:${issue.identifier}`,
+    source: 'linear',
+    ref: issue.identifier,
+    title: issue.title ?? card.title,
+    body: clip(card.body),
+    url: issue.url,
+    kind: card.kind,
+    column: linearColumn(issue.state) ?? 'backlog',
+    labels: label ? [label] : [],
+    state: issue.state?.name ?? '',
+    updatedAt: now,
+  };
 }

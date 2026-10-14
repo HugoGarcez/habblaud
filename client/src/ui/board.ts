@@ -1,10 +1,11 @@
 // Quadro de tarefas (botão "Tarefas" da barra superior; atalho K): o kanban de cada projeto do Orca, com as issues
 // do GitHub ou do Linear nas colunas Backlog → Planejando → Aguardando aprovação → Em execução → Revisão → Concluído.
-// Nesta fase é só leitura: escolher o projeto e a fonte, filtrar e abrir a issue na fonte. Os dados vêm de
+// Escolher o projeto e a fonte, filtrar, abrir a issue na fonte e criar cards novos (viram issue: ui/board-new.ts). Os dados vêm de
 // GET /api/board e GET /api/board/projects/:id (server/board/), relidos a cada 30 s com a janela aberta.
-import type { BoardCard, BoardIndex, BoardProject, BoardSource, BoardView } from '../../../shared/board';
+import type { BoardCard, BoardIndex, BoardProject, BoardSource, BoardView, NewCard } from '../../../shared/board';
 import { tr } from '../../../shared/i18n';
 import { columnLabel, groupCards, kindLabel, matchesFilter, pickProject } from './board-model';
+import { NewCardForm } from './board-new';
 import type { UiContext } from './context';
 import { h, iconButton, setHidden, setText } from './dom';
 import { ICONS } from './icons';
@@ -46,6 +47,10 @@ export class BoardPanel {
   private readonly statusText: HTMLElement;
   private readonly retry: HTMLButtonElement;
   private readonly columns: HTMLElement;
+  private readonly newBtn: HTMLButtonElement;
+  private readonly form: NewCardForm;
+  /** Card recém-criado (destacado até a próxima troca de projeto). */
+  private fresh: string | null = null;
   private index: BoardIndex | null = null;
   private view: BoardView | null = null;
   private projectId: string | null = null;
@@ -79,6 +84,8 @@ export class BoardPanel {
     this.retry = h('button', { class: 'ui-link-btn', type: 'button', text: tr('Tentar de novo'), hidden: true, on: { click: () => void this.load(true) } });
     this.status = h('p', { class: 'ui-board__status', attrs: { 'aria-live': 'polite' } }, this.statusText, ' ', this.retry);
     this.columns = h('div', { class: 'ui-board__columns' });
+    this.form = new NewCardForm({ submit: (card) => this.createCard(card) });
+    this.newBtn = h('button', { class: 'ui-btn ui-board__new', type: 'button', text: tr('+ Novo card'), on: { click: () => this.toggleForm() } });
 
     this.el = h(
       'dialog',
@@ -87,10 +94,10 @@ export class BoardPanel {
         'div',
         { class: 'ui-dialog__head ui-board__head' },
         h('h2', { text: tr('Tarefas'), attrs: { id: 'ui-board-title' } }),
-        h('div', { class: 'ui-board__controls' }, this.projectSel, this.sourceSel, this.teamSel, this.filter, refresh),
+        h('div', { class: 'ui-board__controls' }, this.projectSel, this.sourceSel, this.teamSel, this.filter, refresh, this.newBtn),
         close,
       ),
-      h('div', { class: 'ui-board__body' }, this.status, this.columns),
+      h('div', { class: 'ui-board__body' }, this.form.el, this.status, this.columns),
     );
     this.el.addEventListener('click', (e) => {
       if (e.target === this.el) this.close();
@@ -133,6 +140,8 @@ export class BoardPanel {
 
   private pick(id: string): void {
     this.projectId = id;
+    this.fresh = null;
+    this.form.close();
     writeLast(id);
     this.view = null;
     this.renderCards();
@@ -171,6 +180,44 @@ export class BoardPanel {
     } catch (err) {
       if (seq !== this.loadSeq) return;
       this.setStatus(err instanceof Error ? err.message : String(err), true);
+    }
+  }
+
+  /** Para onde vão os cards deste projeto; undefined = sem fonte utilizável (o botão fica desligado). */
+  private destination(): string | undefined {
+    const p = this.index?.projects.find((x) => x.id === this.projectId);
+    if (!p || this.view?.error) return undefined;
+    if (p.source === 'github' && p.github) return `GitHub · ${p.github}`;
+    if (p.source === 'linear' && p.linearTeam) return `Linear · ${p.linearTeam}`;
+    return undefined;
+  }
+
+  private toggleForm(): void {
+    if (this.form.isOpen) return this.form.close();
+    const where = this.destination();
+    if (where) this.form.open(where);
+  }
+
+  private async createCard(card: NewCard): Promise<string | undefined> {
+    const projectId = this.projectId;
+    if (!projectId) return tr('Escolha um projeto.');
+    try {
+      const created = await api<BoardCard>(`/api/board/projects/${encodeURIComponent(projectId)}/cards`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(card),
+      });
+      if (this.projectId === projectId && this.view) {
+        this.view = { ...this.view, cards: [created, ...this.view.cards.filter((c) => c.id !== created.id)] };
+        this.fresh = created.id;
+        this.filter.value = '';
+        this.renderCards();
+      }
+      this.setStatus(tr('Card {0} criado.', [created.ref]));
+      this.ctx.announce(tr('Card {0} criado.', [created.ref]));
+      return undefined;
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
     }
   }
 
@@ -215,9 +262,18 @@ export class BoardPanel {
     this.teamSel.replaceChildren(...teams.map((t) => h('option', { text: `${t.name} (${t.key})`, attrs: { value: t.key } })));
     if (project?.linearTeam) this.teamSel.value = project.linearTeam;
     setHidden(this.teamSel, project?.source !== 'linear' || teams.length < 2);
+    this.renderNewButton();
+  }
+
+  private renderNewButton(): void {
+    const where = this.destination();
+    this.newBtn.disabled = !where;
+    this.newBtn.title = where ? tr('Cria uma issue em {0}', [where]) : tr('Escolha uma fonte que esteja funcionando para criar cards');
+    if (!where) this.form.close();
   }
 
   private renderCards(): void {
+    this.renderNewButton();
     const cards = (this.view?.cards ?? []).filter((c) => matchesFilter(c, this.filter.value));
     this.columns.replaceChildren(
       ...groupCards(cards).map(({ column, cards: list }) =>
@@ -237,7 +293,7 @@ export class BoardPanel {
     const updated = ago(c.updatedAt, this.ctx.now());
     return h(
       'li',
-      { class: `ui-board__card ui-board__card--${c.kind}` },
+      { class: `ui-board__card ui-board__card--${c.kind}${c.id === this.fresh ? ' is-fresh' : ''}` },
       h(
         'a',
         { class: 'ui-board__card-link', attrs: { href: c.url, target: '_blank', rel: 'noopener noreferrer', title: c.body || c.title } },
