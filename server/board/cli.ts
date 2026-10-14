@@ -4,7 +4,7 @@ import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 
-export type Exec = (bin: string, args: string[], opts?: { timeoutMs?: number; cwd?: string }) => Promise<string>;
+export type Exec = (bin: string, args: string[], opts?: { timeoutMs?: number; cwd?: string; env?: NodeJS.ProcessEnv }) => Promise<string>;
 
 export class CliError extends Error {
   constructor(
@@ -25,13 +25,25 @@ function firstLine(s: string): string {
 
 export const execCli: Exec = (bin, args, opts = {}) =>
   new Promise((resolve, reject) => {
-    execFile(bin, args, { timeout: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS, maxBuffer: 32 * 1024 * 1024, cwd: opts.cwd }, (err, stdout, stderr) => {
+    const child = execFile(bin, args, { timeout: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS, maxBuffer: 32 * 1024 * 1024, cwd: opts.cwd, env: opts.env }, (err, stdout, stderr) => {
       if (!err) return resolve(stdout);
       // O Orca responde erros em JSON no stdout, mesmo saindo com código != 0.
       if (stdout.trim().startsWith('{')) return resolve(stdout);
-      reject(new CliError(firstLine(String(stderr)) || firstLine(err.message)));
+      reject(new CliError(firstLine(String(stderr)) || firstLine(String(stdout)) || firstLine(err.message)));
     });
+    // Nada a mandar pela entrada (o `claude -p` espera alguns segundos por ela se ficar aberta).
+    child.stdin?.end();
   });
+
+/** Roda de novo uma vez depois de `delayMs` se falhar (a CLI do Orca às vezes falha quando chamada junto com outra). */
+export async function retryOnce<T>(fn: () => Promise<T>, delayMs = 400): Promise<T> {
+  try {
+    return await fn();
+  } catch {
+    await new Promise((r) => setTimeout(r, delayMs));
+    return fn();
+  }
+}
 
 /** Resultado de `orca … --json`: `{ok, result}` ou `{ok: false, error: {code, message}}`. */
 export function orcaResult<T>(stdout: string): T {

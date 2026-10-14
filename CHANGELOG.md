@@ -19,6 +19,12 @@ do meio (0.**3**.0).
   `HABBLAUD_BOARD=0` desliga.
 - **Novo card no quadro:** Issue, Funcionalidade ou Correção, com título e descrição, vira issue na fonte do projeto
   (GitHub com a label `bug`/`enhancement`; Linear com `Bug`/`Feature`, quando existem) e entra no Backlog.
+- **Planejar com IA:** clique num card para ver o detalhe e planejar. Um Claude Code só de leitura (na conta do Claude
+  com mais folga, modelo `HABBLAUD_PLANNER_MODEL`, padrão sonnet) lê o repositório e quebra o card em até 8 ações,
+  escolhendo a IA de cada uma (Claude, Codex, Antigravity, OpenCode) pelo perfil e pelas cotas de 5 h e semanal. O
+  roteador troca a IA sem cota, ordena as ações que mudam arquivos e anota cada ajuste. Você troca a IA, edita
+  títulos e instruções, remove ações e aprova: o plano vira comentário na issue e o card entra na fila de execução.
+  Leva cerca de 1 minuto; até 2 planejamentos ao mesmo tempo.
 
 ## [0.11.1] - 2026-10-13
 

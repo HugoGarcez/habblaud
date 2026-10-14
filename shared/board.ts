@@ -29,6 +29,74 @@ export interface BoardProject {
   linearTeam?: string;
 }
 
+/** IAs que o Orca sabe pôr para trabalhar (`orca orchestration worker-start --agent`). */
+export type AgentId = 'claude' | 'codex' | 'antigravity' | 'opencode';
+export const AGENT_IDS: readonly AgentId[] = ['claude', 'codex', 'antigravity', 'opencode'];
+
+/** Tipo de uma ação do plano. */
+export type ActionType = 'analysis' | 'implementation' | 'tests' | 'review' | 'docs';
+export const ACTION_TYPES: readonly ActionType[] = ['analysis', 'implementation', 'tests', 'review', 'docs'];
+
+export interface PlanAction {
+  /** Id curto e único no plano ("a1", "a2"...). */
+  id: string;
+  title: string;
+  /** Instruções completas para o agente (ele não vê o resto do plano). */
+  instructions: string;
+  type: ActionType;
+  agent: AgentId;
+  /** Muda arquivos (ações que escrevem rodam uma de cada vez, na ordem). */
+  writes: boolean;
+  /** Ids das ações que precisam terminar antes. */
+  deps: string[];
+  /** Por que esta IA. */
+  reason: string;
+}
+
+export interface CardPlan {
+  summary: string;
+  actions: PlanAction[];
+  createdAt: number;
+  /** Modelo do planejador. */
+  model: string;
+  /** Ajustes que o roteador fez (IA trocada por falta de cota, dependência acrescentada...). */
+  notes: string[];
+}
+
+/**
+ * Onde o Promp IA está com o card (estado local, em board.json): planejando, plano esperando aprovação, aprovado e
+ * na fila de execução, ou planejamento que falhou (volta ao Backlog com o erro). Ausente = a coluna da fonte.
+ */
+export type CardStage = 'planning' | 'approval' | 'queued' | 'failed';
+export const CARD_STAGES: readonly CardStage[] = ['planning', 'approval', 'queued', 'failed'];
+
+export interface CardWork {
+  stage: CardStage;
+  plan?: CardPlan;
+  /** Último erro (planejamento que falhou...). */
+  error?: string;
+  updatedAt: number;
+}
+
+/** Situação de cada IA para o planejador e para a página. */
+export interface AgentQuota {
+  agent: AgentId;
+  name: string;
+  /** A CLI está neste computador. */
+  installed: boolean;
+  /** Pode receber trabalho agora (instalada e com cota). */
+  available: boolean;
+  /** Maior uso entre as contas da IA, em %: o da conta com mais folga. */
+  fiveHour?: number;
+  sevenDay?: number;
+  /** Números antigos. */
+  stale?: boolean;
+  /** Por que não está disponível. */
+  reason?: string;
+  /** No que ela é boa (vai para o planejador). */
+  strengths: string;
+}
+
 export interface BoardCard {
   /** "<fonte>:<ref>" (ex.: "github:12", "linear:PRO-3"). */
   id: string;
@@ -45,12 +113,16 @@ export interface BoardCard {
   /** Estado na fonte ("open", "closed", "In Progress"...). */
   state: string;
   updatedAt: number;
+  /** O que o Promp IA está fazendo com o card (planejamento, aprovação...). */
+  work?: CardWork;
 }
 
 export interface BoardView {
   project: BoardProject;
   cards: BoardCard[];
   fetchedAt: number;
+  /** As IAs e as cotas (para escolher a IA de cada ação). */
+  agents: AgentQuota[];
   /** A fonte não respondeu (ou não está configurada): o motivo, para a página mostrar. */
   error?: string;
 }
@@ -77,6 +149,26 @@ export interface NewCard {
 
 export const CARD_TITLE_MAX = 200;
 export const CARD_BODY_MAX = 20_000;
+
+/** Coluna do card: a do estado local do Promp IA, quando há, senão a da fonte. */
+export function stageColumn(stage: CardStage, source: BoardColumn): BoardColumn {
+  switch (stage) {
+    case 'planning':
+      return 'planning';
+    case 'approval':
+      return 'approval';
+    case 'queued':
+      return 'running';
+    case 'failed':
+      return source;
+  }
+}
+
+/** PUT /api/board/projects/:id/cards/:card/plan: plano editado na página. */
+export interface PlanEdit {
+  summary?: string;
+  actions: PlanAction[];
+}
 
 /** POST /api/board/projects/:id/config */
 export interface BoardProjectConfig {

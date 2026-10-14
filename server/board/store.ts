@@ -1,13 +1,21 @@
-// Estado do quadro em <dataDir>/board.json: a configuração de cada projeto (fonte dos cards e time do Linear).
+// Estado do quadro em <dataDir>/board.json: a configuração de cada projeto (fonte dos cards e time do Linear) e o que
+// o Promp IA está fazendo com cada card (CardWork: planejamento, plano, aprovação).
 // Gravação atômica (arquivo temporário + rename), como o names.json.
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { BoardProjectConfig, BoardSource } from '../../shared/board';
+import { CARD_STAGES, type BoardProjectConfig, type BoardSource, type CardWork } from '../../shared/board';
 import { errMsg, log } from '../log';
 
 interface BoardFile {
   version: 1;
   projects: Record<string, BoardProjectConfig>;
+  /** projeto → card → trabalho. */
+  cards: Record<string, Record<string, CardWork>>;
+}
+
+function isWork(v: unknown): v is CardWork {
+  const w = v as Partial<CardWork> | null;
+  return !!w && CARD_STAGES.includes(w.stage as CardWork['stage']) && typeof w.updatedAt === 'number';
 }
 
 function isSource(v: unknown): v is BoardSource | null {
@@ -15,7 +23,7 @@ function isSource(v: unknown): v is BoardSource | null {
 }
 
 export class BoardStore {
-  private data: BoardFile = { version: 1, projects: {} };
+  private data: BoardFile = { version: 1, projects: {}, cards: {} };
 
   constructor(private readonly file: string) {}
 
@@ -27,7 +35,11 @@ export class BoardStore {
         if (!c || !isSource(c.source)) continue;
         projects[id] = { source: c.source, ...(typeof c.linearTeam === 'string' && c.linearTeam ? { linearTeam: c.linearTeam } : {}) };
       }
-      this.data = { version: 1, projects };
+      const cards: BoardFile['cards'] = {};
+      for (const [pid, byCard] of Object.entries(raw.cards ?? {})) {
+        for (const [cid, w] of Object.entries(byCard ?? {})) if (isWork(w)) (cards[pid] ??= {})[cid] = w;
+      }
+      this.data = { version: 1, projects, cards };
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') log.warn(`Quadro: ${this.file} ilegível (${errMsg(err)}); começando vazio.`);
     }
@@ -39,6 +51,29 @@ export class BoardStore {
 
   setConfig(projectId: string, config: BoardProjectConfig): void {
     this.data.projects[projectId] = config;
+    this.save();
+  }
+
+  work(projectId: string, cardId: string): CardWork | undefined {
+    return this.data.cards[projectId]?.[cardId];
+  }
+
+  works(projectId: string): Readonly<Record<string, CardWork>> {
+    return this.data.cards[projectId] ?? {};
+  }
+
+  /** Todos os trabalhos (para retomar depois de reiniciar). */
+  allWorks(): { projectId: string; cardId: string; work: CardWork }[] {
+    return Object.entries(this.data.cards).flatMap(([projectId, byCard]) => Object.entries(byCard).map(([cardId, work]) => ({ projectId, cardId, work })));
+  }
+
+  /** Grava (ou, com undefined, apaga) o trabalho de um card. */
+  setWork(projectId: string, cardId: string, work: CardWork | undefined): void {
+    if (work) (this.data.cards[projectId] ??= {})[cardId] = work;
+    else if (this.data.cards[projectId]) {
+      delete this.data.cards[projectId][cardId];
+      if (!Object.keys(this.data.cards[projectId]).length) delete this.data.cards[projectId];
+    }
     this.save();
   }
 

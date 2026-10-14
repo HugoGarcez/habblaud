@@ -2,9 +2,10 @@
 // do GitHub ou do Linear nas colunas Backlog → Planejando → Aguardando aprovação → Em execução → Revisão → Concluído.
 // Escolher o projeto e a fonte, filtrar, abrir a issue na fonte e criar cards novos (viram issue: ui/board-new.ts). Os dados vêm de
 // GET /api/board e GET /api/board/projects/:id (server/board/), relidos a cada 30 s com a janela aberta.
-import type { BoardCard, BoardIndex, BoardProject, BoardSource, BoardView, NewCard } from '../../../shared/board';
+import type { BoardCard, BoardIndex, BoardProject, BoardSource, BoardView, CardStage, NewCard, PlanEdit } from '../../../shared/board';
 import { tr } from '../../../shared/i18n';
 import { columnLabel, groupCards, kindLabel, matchesFilter, pickProject } from './board-model';
+import { CardDetail } from './board-detail';
 import { NewCardForm } from './board-new';
 import type { UiContext } from './context';
 import { h, iconButton, setHidden, setText } from './dom';
@@ -12,6 +13,8 @@ import { ICONS } from './icons';
 import { ago } from './spawn';
 
 const REFRESH_MS = 30_000;
+/** Com algum card planejando, relê mais rápido (o plano aparece logo que chega). */
+const PLANNING_REFRESH_MS = 4_000;
 const LAST_PROJECT_KEY = 'habblaud.board.project';
 
 function readLast(): string | null {
@@ -37,6 +40,19 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+function stageLabel(s: CardStage): string {
+  switch (s) {
+    case 'planning':
+      return tr('Planejando…');
+    case 'approval':
+      return tr('Plano pronto');
+    case 'queued':
+      return tr('Na fila');
+    case 'failed':
+      return tr('Falhou');
+  }
+}
+
 export class BoardPanel {
   readonly el: HTMLDialogElement;
   private readonly projectSel: HTMLSelectElement;
@@ -49,6 +65,8 @@ export class BoardPanel {
   private readonly columns: HTMLElement;
   private readonly newBtn: HTMLButtonElement;
   private readonly form: NewCardForm;
+  private readonly detail: CardDetail;
+  private fastTimer: ReturnType<typeof setTimeout> | null = null;
   /** Card recém-criado (destacado até a próxima troca de projeto). */
   private fresh: string | null = null;
   private index: BoardIndex | null = null;
@@ -85,6 +103,12 @@ export class BoardPanel {
     this.status = h('p', { class: 'ui-board__status', attrs: { 'aria-live': 'polite' } }, this.statusText, ' ', this.retry);
     this.columns = h('div', { class: 'ui-board__columns' });
     this.form = new NewCardForm({ submit: (card) => this.createCard(card) });
+    this.detail = new CardDetail({
+      plan: (c) => this.cardAction(c, 'plan', 'POST'),
+      approve: async (c, edit) => (edit ? ((await this.cardAction(c, 'plan', 'PUT', edit)) ?? this.cardAction(c, 'approve', 'POST')) : this.cardAction(c, 'approve', 'POST')),
+      discard: (c) => this.cardAction(c, 'discard', 'POST'),
+      close: () => this.closeDetail(),
+    });
     this.newBtn = h('button', { class: 'ui-btn ui-board__new', type: 'button', text: tr('+ Novo card'), on: { click: () => this.toggleForm() } });
 
     this.el = h(
@@ -97,7 +121,7 @@ export class BoardPanel {
         h('div', { class: 'ui-board__controls' }, this.projectSel, this.sourceSel, this.teamSel, this.filter, refresh, this.newBtn),
         close,
       ),
-      h('div', { class: 'ui-board__body' }, this.form.el, this.status, this.columns),
+      h('div', { class: 'ui-board__main' }, h('div', { class: 'ui-board__body' }, this.form.el, this.status, this.columns), this.detail.el),
     );
     this.el.addEventListener('click', (e) => {
       if (e.target === this.el) this.close();
@@ -134,6 +158,9 @@ export class BoardPanel {
   private onClosed(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    if (this.fastTimer) clearTimeout(this.fastTimer);
+    this.fastTimer = null;
+    this.closeDetail();
     this.button.setAttribute('aria-expanded', 'false');
     this.opener?.focus();
   }
@@ -142,6 +169,7 @@ export class BoardPanel {
     this.projectId = id;
     this.fresh = null;
     this.form.close();
+    this.closeDetail();
     writeLast(id);
     this.view = null;
     this.renderCards();
@@ -172,6 +200,8 @@ export class BoardPanel {
       this.mergeProject(view.project);
       this.renderControls();
       this.renderCards();
+      this.syncDetail();
+      this.scheduleFast();
       if (view.error) this.setStatus(view.error, true);
       else {
         const when = ago(view.fetchedAt, this.ctx.now()) || tr('agora');
@@ -180,6 +210,63 @@ export class BoardPanel {
     } catch (err) {
       if (seq !== this.loadSeq) return;
       this.setStatus(err instanceof Error ? err.message : String(err), true);
+    }
+  }
+
+  private openDetail(id: string): void {
+    const card = this.view?.cards.find((c) => c.id === id);
+    if (!card) return;
+    this.form.close();
+    this.detail.show(card, this.view?.agents ?? []);
+    this.el.classList.add('has-detail');
+    this.renderCards();
+    (this.detail.el.querySelector('button, a, select, textarea, input') as HTMLElement | null)?.focus();
+  }
+
+  private closeDetail(): void {
+    if (!this.detail.isOpen) return;
+    const id = this.detail.cardId;
+    this.detail.hide();
+    this.el.classList.remove('has-detail');
+    this.renderCards();
+    if (id) (this.columns.querySelector(`[data-card="${CSS.escape(id)}"]`) as HTMLElement | null)?.focus();
+  }
+
+  /** Card aberto no detalhe com os dados novos (ou fecha, se ele sumiu da lista). */
+  private syncDetail(): void {
+    const id = this.detail.cardId;
+    if (!id) return;
+    const card = this.view?.cards.find((c) => c.id === id);
+    if (card) this.detail.show(card, this.view?.agents ?? []);
+    else this.closeDetail();
+  }
+
+  private scheduleFast(): void {
+    if (this.fastTimer) clearTimeout(this.fastTimer);
+    this.fastTimer = null;
+    if (!this.el.open || !this.view?.cards.some((c) => c.work?.stage === 'planning')) return;
+    this.fastTimer = setTimeout(() => void this.load(false), PLANNING_REFRESH_MS);
+  }
+
+  /** Planejar, editar, aprovar ou descartar: devolve o erro, ou undefined (e o quadro já mostra o card novo). */
+  private async cardAction(card: BoardCard, verb: 'plan' | 'approve' | 'discard', method: 'POST' | 'PUT', body?: PlanEdit): Promise<string | undefined> {
+    const projectId = this.projectId;
+    if (!projectId) return tr('Escolha um projeto.');
+    try {
+      const updated = await api<BoardCard>(`/api/board/projects/${encodeURIComponent(projectId)}/cards/${encodeURIComponent(card.id)}/${verb}`, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body ?? {}),
+      });
+      if (this.projectId === projectId && this.view) {
+        this.view = { ...this.view, cards: this.view.cards.map((c) => (c.id === updated.id ? updated : c)) };
+        this.renderCards();
+        this.syncDetail();
+        this.scheduleFast();
+      }
+      return undefined;
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
     }
   }
 
@@ -291,13 +378,21 @@ export class BoardPanel {
 
   private cardEl(c: BoardCard): HTMLElement {
     const updated = ago(c.updatedAt, this.ctx.now());
+    const stage = c.work?.stage;
+    const selected = this.detail.cardId === c.id;
     return h(
       'li',
-      { class: `ui-board__card ui-board__card--${c.kind}${c.id === this.fresh ? ' is-fresh' : ''}` },
+      { class: `ui-board__card ui-board__card--${c.kind}${c.id === this.fresh ? ' is-fresh' : ''}${selected ? ' is-selected' : ''}` },
       h(
-        'a',
-        { class: 'ui-board__card-link', attrs: { href: c.url, target: '_blank', rel: 'noopener noreferrer', title: c.body || c.title } },
-        h('span', { class: 'ui-board__card-top' }, h('span', { class: 'ui-board__ref', text: c.ref }), h('span', { class: `ui-board__kind ui-board__kind--${c.kind}`, text: kindLabel(c.kind) })),
+        'button',
+        { class: 'ui-board__card-link', type: 'button', attrs: { 'data-card': c.id, 'aria-pressed': selected, title: c.body || c.title }, on: { click: () => this.openDetail(c.id) } },
+        h(
+          'span',
+          { class: 'ui-board__card-top' },
+          h('span', { class: 'ui-board__ref', text: c.ref }),
+          h('span', { class: `ui-board__kind ui-board__kind--${c.kind}`, text: kindLabel(c.kind) }),
+          stage ? h('span', { class: `ui-board__stage ui-board__stage--${stage}`, text: stageLabel(stage) }) : null,
+        ),
         h('span', { class: 'ui-board__title', text: c.title }),
         c.labels.length || updated
           ? h(

@@ -185,3 +185,13 @@ export async function createLinear(exec: Exec, orca: string, team: string, card:
     updatedAt: now,
   };
 }
+
+/** Comentário numa issue (o plano aprovado, depois o andamento). `ref`: "#12" ou "PRO-3". */
+export async function commentIssue(exec: Exec, bins: { gh?: string; orca: string }, target: { source: 'github' | 'linear'; repo?: string; ref: string }, body: string): Promise<void> {
+  if (target.source === 'github') {
+    if (!bins.gh || !target.repo) throw new CliError('sem gh ou repositório');
+    await exec(bins.gh, ['issue', 'comment', target.ref.replace(/^#/, ''), '--repo', target.repo, '--body', body], { timeoutMs: 30_000 });
+  } else {
+    orcaResult(await exec(bins.orca, ['linear', 'comment', 'add', target.ref, '--body', body, '--write-id', randomUUID(), '--json'], { timeoutMs: 30_000 }));
+  }
+}

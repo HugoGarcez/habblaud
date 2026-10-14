@@ -5,6 +5,10 @@
 //   GET  /api/board/projects/:id[?refresh=1]         200 BoardView | 404
 //   POST /api/board/projects/:id/config              {source, linearTeam?}: 200 BoardProject | 400 | 404
 //   POST /api/board/projects/:id/cards               {kind, title, body}: 201 BoardCard | 400 | 404 | 502 (fonte)
+//   POST /api/board/projects/:id/cards/:card/plan    {}: 202 BoardCard (Planejando; o plano chega depois) | 404 | 409
+//   PUT  /api/board/projects/:id/cards/:card/plan    PlanEdit: 200 BoardCard | 400 | 404 | 409
+//   POST /api/board/projects/:id/cards/:card/approve {}: 200 BoardCard (na fila) | 404 | 409
+//   POST /api/board/projects/:id/cards/:card/discard {}: 200 BoardCard (de volta à coluna da fonte) | 404
 //
 // `:id` é o id do projeto no Orca com encodeURIComponent ("github%3Adono%2Frepo").
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -12,10 +16,11 @@ import { CARD_BODY_MAX, CARD_TITLE_MAX, type BoardProjectConfig, type NewCard } 
 import { tr } from '../../shared/i18n';
 import { HttpError, readJson, sendJson } from '../http/app';
 import { errMsg, log } from '../log';
-import type { BoardService } from './service';
+import type { BoardResult, BoardService } from './service';
 
 const PROJECT = /^\/api\/board\/projects\/([^/]+)(\/config|\/cards)?$/;
 const TEAM = /^[A-Za-z0-9_-]{1,32}$/;
+const CARD_ACTION = /^\/api\/board\/projects\/([^/]+)\/cards\/([^/]+)\/(plan|approve|discard)$/;
 
 function methodNotAllowed(res: ServerResponse, allow: string): void {
   res.setHeader('Allow', allow);
@@ -58,6 +63,38 @@ export function createBoardRoutes(board: BoardService): (req: IncomingMessage, r
     if (path === '/api/board') {
       if (!isRead) return methodNotAllowed(res, 'GET');
       board.index().then((i) => sendJson(res, 200, i), (err) => fail(res, err));
+      return;
+    }
+    const act = CARD_ACTION.exec(path);
+    if (act) {
+      let pid: string;
+      let cid: string;
+      try {
+        pid = decodeURIComponent(act[1]);
+        cid = decodeURIComponent(act[2]);
+      } catch {
+        return sendJson(res, 400, { error: tr('id inválido') });
+      }
+      const verb = act[3];
+      const reply = (r: BoardResult<unknown>, okStatus = 200) => ('ok' in r ? sendJson(res, okStatus, r.ok) : sendJson(res, r.status, { error: r.error }));
+      if (verb === 'plan' && method === 'PUT') {
+        readJson(req)
+          .then(async (body) => {
+            const b = body as { summary?: unknown; actions?: unknown } | null;
+            if (!Array.isArray(b?.actions)) throw new HttpError(400, tr('esperado {actions: [...], summary?}'));
+            reply(await board.editPlan(pid, cid, { actions: b.actions, ...(typeof b.summary === 'string' ? { summary: b.summary } : {}) }));
+          })
+          .catch((err) => fail(res, err));
+        return;
+      }
+      if (method !== 'POST') return methodNotAllowed(res, verb === 'plan' ? 'POST, PUT' : 'POST');
+      readJson(req)
+        .then(async () => {
+          if (verb === 'plan') reply(await board.plan(pid, cid), 202);
+          else if (verb === 'approve') reply(await board.approve(pid, cid));
+          else reply(await board.discard(pid, cid));
+        })
+        .catch((err) => fail(res, err));
       return;
     }
     const m = PROJECT.exec(path);

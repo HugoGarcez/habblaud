@@ -40,6 +40,8 @@ import { findBin } from './board/cli';
 import { createBoardRoutes } from './board/http';
 import { BoardService } from './board/service';
 import { BoardStore } from './board/store';
+import { runnableClaudeBin } from './claude-bin';
+import type { AgentId } from '../shared/board';
 import { discoverCodexDirs } from './sources/codex/accounts';
 import { CodexHistory } from './sources/codex/history';
 import { CodexSource } from './sources/codex/source';
@@ -47,7 +49,6 @@ import { createBuildReader } from './build';
 import { UpdateChecker } from './updates/checker';
 import { tr } from '../shared/i18n';
 import { createCliRunner, createOpener, SpawnService } from './spawn/spawn';
-import { runnableClaudeBin } from './claude-bin';
 import { AttachmentStore } from './spawn/attachments';
 import { recentFolders } from './spawn/folders';
 import { isDemoId } from '../shared/timeline';
@@ -140,7 +141,26 @@ late.orca = orca;
 const orcaBin = config.inDocker || process.env.HABBLAUD_BOARD === '0' ? undefined : findOrcaBin();
 const boardStore = new BoardStore(join(config.dataDir, 'board.json'));
 if (orcaBin) boardStore.load();
-const board = orcaBin ? new BoardService({ store: boardStore, orca: orcaBin, gh: findBin('gh') }) : undefined;
+// IAs com CLI neste computador (o ~/.local/bin entra no PATH: é onde o instalador do Claude Code e do Codex põem).
+const agentPath = { ...process.env, PATH: `${process.env.PATH ?? ''}:${join(config.home, '.local', 'bin')}` };
+const boardClaude = runnableClaudeBin(agentPath);
+const installedAgents = new Set<AgentId>();
+if (boardClaude) installedAgents.add('claude');
+if (findBin('codex', agentPath)) installedAgents.add('codex');
+if (findAgyBin()) installedAgents.add('antigravity');
+if (findBin('opencode')) installedAgents.add('opencode');
+const board = orcaBin
+  ? new BoardService({
+      store: boardStore,
+      orca: orcaBin,
+      gh: findBin('gh'),
+      claude: boardClaude,
+      installed: installedAgents,
+      plannerModel: process.env.HABBLAUD_PLANNER_MODEL?.trim() || undefined,
+      // As contas como a barra superior mostra (uso com a janela vencida já zerada).
+      accounts: () => hub.current().accounts,
+    })
+  : undefined;
 late.agents = agents;
 // Página que pode responder pelo escritório: Host local na porta local; na remota, só com permissions liberado.
 const hub = new Hub(office, {
