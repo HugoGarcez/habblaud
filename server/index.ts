@@ -159,6 +159,7 @@ const board = orcaBin
       plannerModel: process.env.HABBLAUD_PLANNER_MODEL?.trim() || undefined,
       // As contas como a barra superior mostra (uso com a janela vencida já zerada).
       accounts: () => hub.current().accounts,
+      maxWorkers: Number(process.env.HABBLAUD_BOARD_MAX_WORKERS) > 0 ? Number(process.env.HABBLAUD_BOARD_MAX_WORKERS) : undefined,
     })
   : undefined;
 late.agents = agents;
@@ -304,6 +305,7 @@ if (config.demo) office.setDemo(true);
 void agents.start();
 orca.start();
 agyUsage.start();
+board?.start();
 accounts.start();
 hub.start();
 if (timeline) {
@@ -522,6 +524,7 @@ function shutdown(signal: string): void {
   agents.stop();
   orca.stop();
   agyUsage.stop();
+  board?.stop();
   accounts.stop();
   hub.stop();
   terminals?.stop();

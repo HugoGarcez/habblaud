@@ -11,6 +11,8 @@ interface BoardFile {
   projects: Record<string, BoardProjectConfig>;
   /** projeto → card → trabalho. */
   cards: Record<string, Record<string, CardWork>>;
+  /** projeto → handle do terminal coordenador no Orca. */
+  coordinators: Record<string, string>;
 }
 
 function isWork(v: unknown): v is CardWork {
@@ -23,7 +25,7 @@ function isSource(v: unknown): v is BoardSource | null {
 }
 
 export class BoardStore {
-  private data: BoardFile = { version: 1, projects: {}, cards: {} };
+  private data: BoardFile = { version: 1, projects: {}, cards: {}, coordinators: {} };
 
   constructor(private readonly file: string) {}
 
@@ -39,7 +41,9 @@ export class BoardStore {
       for (const [pid, byCard] of Object.entries(raw.cards ?? {})) {
         for (const [cid, w] of Object.entries(byCard ?? {})) if (isWork(w)) (cards[pid] ??= {})[cid] = w;
       }
-      this.data = { version: 1, projects, cards };
+      const coordinators: Record<string, string> = {};
+      for (const [pid, h] of Object.entries(raw.coordinators ?? {})) if (typeof h === 'string' && h) coordinators[pid] = h;
+      this.data = { version: 1, projects, cards, coordinators };
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') log.warn(`Quadro: ${this.file} ilegível (${errMsg(err)}); começando vazio.`);
     }
@@ -74,6 +78,15 @@ export class BoardStore {
       delete this.data.cards[projectId][cardId];
       if (!Object.keys(this.data.cards[projectId]).length) delete this.data.cards[projectId];
     }
+    this.save();
+  }
+
+  coordinator(projectId: string): string | undefined {
+    return this.data.coordinators[projectId];
+  }
+
+  setCoordinator(projectId: string, handle: string): void {
+    this.data.coordinators[projectId] = handle;
     this.save();
   }
 

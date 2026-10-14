@@ -25,6 +25,14 @@ do meio (0.**3**.0).
   roteador troca a IA sem cota, ordena as ações que mudam arquivos e anota cada ajuste. Você troca a IA, edita
   títulos e instruções, remove ações e aprova: o plano vira comentário na issue e o card entra na fila de execução.
   Leva cerca de 1 minuto; até 2 planejamentos ao mesmo tempo.
+- **Execução pelos agentes do Orca:** o card aprovado ganha um worktree próprio no Orca (ligado à issue), um Run e
+  uma Task por ação (com as dependências). Cada Task pronta ganha um worker com a IA escolhida, respeitando a cota e
+  o limite de workers ao mesmo tempo (`HABBLAUD_BOARD_MAX_WORKERS`, padrão 3). Os agentes aparecem no escritório; o
+  card mostra o andamento de cada ação, o histórico e as perguntas dos agentes, que você responde pelo próprio card.
+  No fim, o Promp IA faz o commit, o push e abre o PR ("Closes #N"; no Linear, o PR é anexado à issue) e o card vai
+  para Revisão; PR aceito, Concluído. Ação que falha trava o card: tentar de novo ou cancelar (o worktree fica). Um
+  terminal "Promp IA · coordenador" por projeto aparece no Orca: é por ele que o Promp IA fala com a orquestração.
+- Com a máquina carregada, o quadro usa a última lista de projetos e times enquanto o Orca responde.
 
 ## [0.11.1] - 2026-10-13
 

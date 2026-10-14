@@ -18,6 +18,7 @@ import { CliError, execCli, orcaResult, retryOnce, type Exec } from './cli';
 import { DEFAULT_PLANNER_MODEL, plannerPrompt, runPlanner } from './planner';
 import { commentIssue, createGithub, createLinear, listGithub, listLinear, listLinearTeams } from './providers';
 import { route } from './router';
+import { BoardRunner, DEFAULT_MAX_WORKERS } from './runner';
 import type { BoardStore } from './store';
 
 /** Planejamentos ao mesmo tempo (cada um é um Claude Code rodando). */
@@ -46,6 +47,8 @@ export interface BoardServiceOptions {
   plannerModel?: string;
   /** Avisa que o quadro mudou (a página relê). */
   onChange?: () => void;
+  /** Workers ao mesmo tempo no quadro todo (HABBLAUD_BOARD_MAX_WORKERS). */
+  maxWorkers?: number;
 }
 
 export type BoardResult<T> = { ok: T } | { error: string; status: 400 | 404 | 409 | 502 };
@@ -96,11 +99,26 @@ export class BoardService {
   private projectsCache?: Cached<Omit<BoardProject, 'source' | 'linearTeam'>[]>;
   private teamsCache?: Cached<LinearTeam[] | null>;
   private views = new Map<string, Cached<Omit<BoardView, 'agents'>>>();
+  private projectsLoading?: Promise<Omit<BoardProject, 'source' | 'linearTeam'>[]>;
+  private teamsLoading?: Promise<LinearTeam[] | null>;
   private planning = new Set<string>();
+  readonly runner: BoardRunner;
 
   constructor(private readonly opts: BoardServiceOptions) {
     this.exec = opts.exec ?? execCli;
     this.now = opts.now ?? Date.now;
+    this.runner = new BoardRunner({
+      store: opts.store,
+      exec: this.exec,
+      orca: opts.orca,
+      gh: opts.gh,
+      git: opts.git,
+      now: this.now,
+      lookup: (p, c) => this.lookup(p, c),
+      agents: () => this.agents(),
+      maxWorkers: opts.maxWorkers ?? DEFAULT_MAX_WORKERS,
+      onChange: opts.onChange,
+    });
     // Planejamento que estava rodando quando o servidor parou: não volta sozinho.
     for (const { projectId, cardId, work } of opts.store.allWorks()) {
       if (work.stage === 'planning') opts.store.setWork(projectId, cardId, { stage: 'failed', error: tr('O planejamento foi interrompido (o Promp IA reiniciou). Planeje de novo.'), updatedAt: this.now() });
@@ -128,6 +146,20 @@ export class BoardService {
     return { ...card, column: stageColumn(work.stage, card.column), work };
   }
 
+  /** Liga a execução (as rodadas do runner). */
+  start(): void {
+    this.runner.start();
+  }
+
+  stop(): void {
+    this.runner.stop();
+  }
+
+  /** Projeto e card atuais (da fonte, com cache). */
+  lookup(projectId: string, cardId: string): Promise<{ project: BoardProject; card: BoardCard } | undefined> {
+    return this.findCard(projectId, cardId);
+  }
+
   private async findCard(projectId: string, cardId: string): Promise<{ project: BoardProject; card: BoardCard } | undefined> {
     const raw = await this.sourceView(projectId, false);
     const card = raw?.cards.find((c) => c.id === cardId);
@@ -146,7 +178,7 @@ export class BoardService {
     const { project, card } = found;
     const current = this.opts.store.work(projectId, cardId);
     if (current?.stage === 'planning' || this.planning.has(`${projectId}|${cardId}`)) return { error: tr('Este card já está sendo planejado.'), status: 409 };
-    if (current?.stage === 'queued') return { error: tr('O plano deste card já foi aprovado.'), status: 409 };
+    if (current && current.stage !== 'approval' && current.stage !== 'failed') return { error: tr('O plano deste card já foi aprovado.'), status: 409 };
     if (card.column === 'done') return { error: tr('Este card já está concluído.'), status: 409 };
     if (!this.opts.claude) return { error: tr('O planejador precisa do Claude Code (claude) neste computador.'), status: 409 };
     if (!project.path) return { error: tr('O Orca não informou a pasta deste projeto.'), status: 409 };
@@ -210,6 +242,7 @@ export class BoardService {
     if (stuck.length) return { error: tr('"{0}" usa {1}, que não está instalada neste computador: troque a IA.', [stuck[0].title, AGENT_NAMES[stuck[0].agent]]), status: 409 };
     const next: CardWork = { stage: 'queued', plan: work.plan, updatedAt: this.now() };
     this.setWork(projectId, cardId, next);
+    void this.runner.tick();
     const { project, card } = found;
     commentIssue(this.exec, { gh: this.opts.gh, orca: this.opts.orca }, { source: card.source, repo: project.github, ref: card.ref }, planMarkdown(work.plan)).catch((err) =>
       log.warn(`Quadro: não deu para comentar o plano em ${card.ref}: ${err instanceof CliError ? err.message : errMsg(err)}`),
@@ -217,12 +250,36 @@ export class BoardService {
     return { ok: this.decorate(card, next) };
   }
 
-  /** Descarta o plano (ou o erro): o card volta à coluna da fonte. */
+  /**
+   * Descarta o plano (ou o erro) ou cancela a execução (os workers param; o worktree fica): o card volta à coluna
+   * da fonte.
+   */
   async discard(projectId: string, cardId: string): Promise<BoardResult<BoardCard>> {
     const found = await this.findCard(projectId, cardId);
     if (!found) return { error: tr('card desconhecido (a lista pode estar desatualizada: atualize o quadro)'), status: 404 };
-    this.setWork(projectId, cardId, undefined);
+    if (this.opts.store.work(projectId, cardId)?.run) await this.runner.cancel(projectId, cardId);
+    else this.setWork(projectId, cardId, undefined);
     return { ok: found.card };
+  }
+
+  /** Resposta a uma pergunta de um worker. */
+  async answer(projectId: string, cardId: string, questionId: string, text: string): Promise<BoardResult<BoardCard>> {
+    const err = await this.runner.answer(projectId, cardId, questionId, text);
+    if (err) return { error: err, status: 409 };
+    return this.current(projectId, cardId);
+  }
+
+  /** Tenta de novo um card travado. */
+  async retry(projectId: string, cardId: string): Promise<BoardResult<BoardCard>> {
+    const err = await this.runner.retry(projectId, cardId);
+    if (err) return { error: err, status: 409 };
+    return this.current(projectId, cardId);
+  }
+
+  private async current(projectId: string, cardId: string): Promise<BoardResult<BoardCard>> {
+    const found = await this.findCard(projectId, cardId);
+    if (!found) return { error: tr('card desconhecido (a lista pode estar desatualizada: atualize o quadro)'), status: 404 };
+    return { ok: this.decorate(found.card, this.opts.store.work(projectId, cardId)) };
   }
 
   private async sourceView(projectId: string, refresh: boolean): Promise<Omit<BoardView, 'agents'> | undefined> {
@@ -289,8 +346,22 @@ export class BoardService {
     return { ...p, source: null };
   }
 
-  private async rawProjects(): Promise<Omit<BoardProject, 'source' | 'linearTeam'>[]> {
-    if (this.projectsCache && this.now() - this.projectsCache.at < PROJECTS_TTL_MS) return this.projectsCache.value;
+  /**
+   * Projetos do Orca. Com cache vencido, devolve o cache na hora e renova em segundo plano (a CLI do Orca pode levar
+   * dezenas de segundos com a máquina carregada; os projetos quase nunca mudam).
+   */
+  private rawProjects(): Promise<Omit<BoardProject, 'source' | 'linearTeam'>[]> {
+    const c = this.projectsCache;
+    if (c && this.now() - c.at < PROJECTS_TTL_MS) return Promise.resolve(c.value);
+    this.projectsLoading ??= this.fetchProjects().finally(() => (this.projectsLoading = undefined));
+    if (c) {
+      this.projectsLoading.catch(() => undefined);
+      return Promise.resolve(c.value);
+    }
+    return this.projectsLoading;
+  }
+
+  private async fetchProjects(): Promise<Omit<BoardProject, 'source' | 'linearTeam'>[]> {
     let projects: OrcaProject[];
     let repos: OrcaRepo[];
     try {
@@ -329,9 +400,18 @@ export class BoardService {
     }
   }
 
-  /** Times do Linear; null = Linear não conectado no Orca (ou fora do ar). */
-  private async linearTeams(): Promise<LinearTeam[] | null> {
-    if (this.teamsCache && this.now() - this.teamsCache.at < TEAMS_TTL_MS) return this.teamsCache.value;
+  /**
+   * Times do Linear; null = Linear não conectado no Orca (ou fora do ar). Mesmo esquema dos projetos: cache vencido
+   * sai na hora e renova em segundo plano.
+   */
+  private linearTeams(): Promise<LinearTeam[] | null> {
+    const c = this.teamsCache;
+    if (c && this.now() - c.at < TEAMS_TTL_MS) return Promise.resolve(c.value);
+    this.teamsLoading ??= this.fetchTeams().finally(() => (this.teamsLoading = undefined));
+    return c ? Promise.resolve(c.value) : this.teamsLoading;
+  }
+
+  private async fetchTeams(): Promise<LinearTeam[] | null> {
     let value: LinearTeam[] | null;
     try {
       value = await retryOnce(() => listLinearTeams(this.exec, this.opts.orca));

@@ -16,7 +16,8 @@ export class CliError extends Error {
   }
 }
 
-export const DEFAULT_TIMEOUT_MS = 20_000;
+/** Prazo padrão: a CLI do Orca leva mais de 10 s com a máquina carregada. */
+export const DEFAULT_TIMEOUT_MS = 60_000;
 
 /** A primeira linha não vazia do stderr (ou da mensagem), cortada: vai para a página. */
 function firstLine(s: string): string {
@@ -29,6 +30,7 @@ export const execCli: Exec = (bin, args, opts = {}) =>
       if (!err) return resolve(stdout);
       // O Orca responde erros em JSON no stdout, mesmo saindo com código != 0.
       if (stdout.trim().startsWith('{')) return resolve(stdout);
+      if ((err as { killed?: boolean }).killed) return reject(new CliError(`${bin.split('/').pop()} não respondeu em ${Math.round((opts.timeoutMs ?? DEFAULT_TIMEOUT_MS) / 1000)} s`));
       reject(new CliError(firstLine(String(stderr)) || firstLine(String(stdout)) || firstLine(err.message)));
     });
     // Nada a mandar pela entrada (o `claude -p` espera alguns segundos por ela se ficar aberta).

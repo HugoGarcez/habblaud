@@ -65,16 +65,68 @@ export interface CardPlan {
 
 /**
  * Onde o Promp IA está com o card (estado local, em board.json): planejando, plano esperando aprovação, aprovado e
- * na fila de execução, ou planejamento que falhou (volta ao Backlog com o erro). Ausente = a coluna da fonte.
+ * na fila, executando, travado (ação que falhou), em revisão (PR aberto), concluído (PR aceito), ou planejamento que
+ * falhou (volta à coluna da fonte com o erro). Ausente = a coluna da fonte.
  */
-export type CardStage = 'planning' | 'approval' | 'queued' | 'failed';
-export const CARD_STAGES: readonly CardStage[] = ['planning', 'approval', 'queued', 'failed'];
+export type CardStage = 'planning' | 'approval' | 'queued' | 'running' | 'blocked' | 'review' | 'done' | 'failed';
+export const CARD_STAGES: readonly CardStage[] = ['planning', 'approval', 'queued', 'running', 'blocked', 'review', 'done', 'failed'];
+
+/** Situação de uma ação do plano na execução. */
+export type ActionState = 'waiting' | 'starting' | 'running' | 'done' | 'failed' | 'canceled';
+
+export interface ActionRun {
+  state: ActionState;
+  /** Task do Orca. */
+  taskId?: string;
+  /** Dispatch do worker (worker-start). */
+  dispatchId?: string;
+  /** Id de pedido do worker-start (recupera a resposta perdida com --retry-request). */
+  startRequest?: string;
+  /** Pedido do task-create. */
+  createRequest?: string;
+  startedAt?: number;
+  finishedAt?: number;
+  /** Resumo do worker (worker_done) ou o resultado da task. */
+  result?: string;
+  error?: string;
+  /** Esperando cota de uma IA (texto para a página). */
+  waitingFor?: string;
+}
+
+/** Pergunta de um worker (orchestration ask), esperando resposta pelo card. */
+export interface CardQuestion {
+  id: string;
+  text: string;
+  options?: string[];
+  from?: string;
+  at: number;
+}
+
+export interface CardRun {
+  runId?: string;
+  runRequest?: string;
+  /** Worktree do card (Orca), ligado à issue. */
+  worktree?: { id: string; path: string; branch: string };
+  /** Nome pedido ao Orca para o worktree (acha o worktree se a resposta se perder). */
+  worktreeName?: string;
+  actions: Record<string, ActionRun>;
+  questions: CardQuestion[];
+  /** Perguntas já respondidas (não voltam). */
+  answered: string[];
+  pr?: { url: string; number?: number };
+  startedAt: number;
+  finishedAt?: number;
+  /** Últimos acontecimentos, para a página. */
+  log: { at: number; text: string }[];
+}
 
 export interface CardWork {
   stage: CardStage;
   plan?: CardPlan;
-  /** Último erro (planejamento que falhou...). */
+  /** Último erro (planejamento que falhou, ação que falhou...). */
   error?: string;
+  /** Execução (a partir da aprovação). */
+  run?: CardRun;
   updatedAt: number;
 }
 
@@ -158,7 +210,13 @@ export function stageColumn(stage: CardStage, source: BoardColumn): BoardColumn 
     case 'approval':
       return 'approval';
     case 'queued':
+    case 'running':
+    case 'blocked':
       return 'running';
+    case 'review':
+      return 'review';
+    case 'done':
+      return 'done';
     case 'failed':
       return source;
   }

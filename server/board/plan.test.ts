@@ -208,7 +208,8 @@ describe('fluxo do serviço', () => {
     expect(comment[comment.indexOf('--body') + 1]).toMatch(/Plano do Promp IA[\s\S]*1\. \*\*Corrigir\*\* · Claude/);
     expect(await board.editPlan('p', 'github:1', { actions: [] })).toMatchObject({ status: 409 });
     v = await board.view('p');
-    expect(v?.cards[0].work?.stage).toBe('queued');
+    // A aprovação já chama o runner (que aqui, sem um Orca de verdade, trava na preparação).
+    expect(['queued', 'running', 'blocked']).toContain(v?.cards[0].work?.stage);
   });
 
   it('planejamento que falha volta à coluna da fonte com o erro; descartar limpa', async () => {

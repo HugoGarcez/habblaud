@@ -8,7 +8,9 @@
 //   POST /api/board/projects/:id/cards/:card/plan    {}: 202 BoardCard (Planejando; o plano chega depois) | 404 | 409
 //   PUT  /api/board/projects/:id/cards/:card/plan    PlanEdit: 200 BoardCard | 400 | 404 | 409
 //   POST /api/board/projects/:id/cards/:card/approve {}: 200 BoardCard (na fila) | 404 | 409
-//   POST /api/board/projects/:id/cards/:card/discard {}: 200 BoardCard (de volta à coluna da fonte) | 404
+//   POST /api/board/projects/:id/cards/:card/discard {}: 200 BoardCard (de volta à coluna da fonte; cancela a execução)
+//   POST /api/board/projects/:id/cards/:card/retry   {}: 200 BoardCard (card travado volta a rodar) | 409
+//   POST /api/board/projects/:id/cards/:card/answer  {questionId, text}: 200 BoardCard | 400 | 409
 //
 // `:id` é o id do projeto no Orca com encodeURIComponent ("github%3Adono%2Frepo").
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -20,7 +22,7 @@ import type { BoardResult, BoardService } from './service';
 
 const PROJECT = /^\/api\/board\/projects\/([^/]+)(\/config|\/cards)?$/;
 const TEAM = /^[A-Za-z0-9_-]{1,32}$/;
-const CARD_ACTION = /^\/api\/board\/projects\/([^/]+)\/cards\/([^/]+)\/(plan|approve|discard)$/;
+const CARD_ACTION = /^\/api\/board\/projects\/([^/]+)\/cards\/([^/]+)\/(plan|approve|discard|retry|answer)$/;
 
 function methodNotAllowed(res: ServerResponse, allow: string): void {
   res.setHeader('Allow', allow);
@@ -89,10 +91,16 @@ export function createBoardRoutes(board: BoardService): (req: IncomingMessage, r
       }
       if (method !== 'POST') return methodNotAllowed(res, verb === 'plan' ? 'POST, PUT' : 'POST');
       readJson(req)
-        .then(async () => {
+        .then(async (body) => {
           if (verb === 'plan') reply(await board.plan(pid, cid), 202);
           else if (verb === 'approve') reply(await board.approve(pid, cid));
-          else reply(await board.discard(pid, cid));
+          else if (verb === 'retry') reply(await board.retry(pid, cid));
+          else if (verb === 'answer') {
+            const b = body as { questionId?: unknown; text?: unknown } | null;
+            const text = typeof b?.text === 'string' ? b.text.trim().slice(0, 4_000) : '';
+            if (typeof b?.questionId !== 'string' || !text) throw new HttpError(400, tr('esperado {questionId, text}'));
+            reply(await board.answer(pid, cid, b.questionId, text));
+          } else reply(await board.discard(pid, cid));
         })
         .catch((err) => fail(res, err));
       return;

@@ -15,6 +15,8 @@ import { ago } from './spawn';
 const REFRESH_MS = 30_000;
 /** Com algum card planejando, relê mais rápido (o plano aparece logo que chega). */
 const PLANNING_REFRESH_MS = 4_000;
+/** Com algum card em execução. */
+const RUNNING_REFRESH_MS = 8_000;
 const LAST_PROJECT_KEY = 'habblaud.board.project';
 
 function readLast(): string | null {
@@ -48,6 +50,14 @@ function stageLabel(s: CardStage): string {
       return tr('Plano pronto');
     case 'queued':
       return tr('Na fila');
+    case 'running':
+      return tr('Rodando');
+    case 'blocked':
+      return tr('Travado');
+    case 'review':
+      return tr('PR aberto');
+    case 'done':
+      return tr('Concluído');
     case 'failed':
       return tr('Falhou');
   }
@@ -107,6 +117,8 @@ export class BoardPanel {
       plan: (c) => this.cardAction(c, 'plan', 'POST'),
       approve: async (c, edit) => (edit ? ((await this.cardAction(c, 'plan', 'PUT', edit)) ?? this.cardAction(c, 'approve', 'POST')) : this.cardAction(c, 'approve', 'POST')),
       discard: (c) => this.cardAction(c, 'discard', 'POST'),
+      retry: (c) => this.cardAction(c, 'retry', 'POST'),
+      answer: (c, questionId, text) => this.cardAction(c, 'answer', 'POST', { questionId, text }),
       close: () => this.closeDetail(),
     });
     this.newBtn = h('button', { class: 'ui-btn ui-board__new', type: 'button', text: tr('+ Novo card'), on: { click: () => this.toggleForm() } });
@@ -244,12 +256,14 @@ export class BoardPanel {
   private scheduleFast(): void {
     if (this.fastTimer) clearTimeout(this.fastTimer);
     this.fastTimer = null;
-    if (!this.el.open || !this.view?.cards.some((c) => c.work?.stage === 'planning')) return;
-    this.fastTimer = setTimeout(() => void this.load(false), PLANNING_REFRESH_MS);
+    const stages = new Set(this.view?.cards.map((c) => c.work?.stage));
+    if (!this.el.open) return;
+    if (stages.has('planning')) this.fastTimer = setTimeout(() => void this.load(false), PLANNING_REFRESH_MS);
+    else if (stages.has('queued') || stages.has('running')) this.fastTimer = setTimeout(() => void this.load(false), RUNNING_REFRESH_MS);
   }
 
   /** Planejar, editar, aprovar ou descartar: devolve o erro, ou undefined (e o quadro já mostra o card novo). */
-  private async cardAction(card: BoardCard, verb: 'plan' | 'approve' | 'discard', method: 'POST' | 'PUT', body?: PlanEdit): Promise<string | undefined> {
+  private async cardAction(card: BoardCard, verb: 'plan' | 'approve' | 'discard' | 'retry' | 'answer', method: 'POST' | 'PUT', body?: PlanEdit | { questionId: string; text: string }): Promise<string | undefined> {
     const projectId = this.projectId;
     if (!projectId) return tr('Escolha um projeto.');
     try {

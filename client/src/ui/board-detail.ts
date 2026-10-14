@@ -1,7 +1,7 @@
 // Detalhe de um card do quadro (ui/board.ts): descrição, link para a issue e o trabalho do Promp IA com o card —
 // Planejar com IA, acompanhar o planejamento, editar o plano (IA, título e instruções de cada ação; remover ações),
 // aprovar ou descartar. Quem fala com o servidor é o quadro; aqui só a apresentação e as edições locais.
-import { AGENT_IDS, type ActionType, type AgentId, type AgentQuota, type BoardCard, type PlanAction, type PlanEdit } from '../../../shared/board';
+import { AGENT_IDS, type ActionRun, type ActionState, type ActionType, type AgentId, type AgentQuota, type BoardCard, type PlanAction, type PlanEdit } from '../../../shared/board';
 import { tr } from '../../../shared/i18n';
 import { kindLabel } from './board-model';
 import { h, iconButton, setHidden, setText } from './dom';
@@ -11,6 +11,8 @@ export interface CardDetailActions {
   plan(card: BoardCard): Promise<string | undefined>;
   approve(card: BoardCard, edit: PlanEdit | undefined): Promise<string | undefined>;
   discard(card: BoardCard): Promise<string | undefined>;
+  retry(card: BoardCard): Promise<string | undefined>;
+  answer(card: BoardCard, questionId: string, text: string): Promise<string | undefined>;
   close(): void;
 }
 
@@ -26,6 +28,23 @@ export function actionTypeLabel(t: ActionType): string {
       return tr('Revisão');
     case 'docs':
       return tr('Documentação');
+  }
+}
+
+export function actionStateLabel(s: ActionState): string {
+  switch (s) {
+    case 'waiting':
+      return tr('Aguardando');
+    case 'starting':
+      return tr('Iniciando…');
+    case 'running':
+      return tr('Trabalhando');
+    case 'done':
+      return tr('Concluída');
+    case 'failed':
+      return tr('Falhou');
+    case 'canceled':
+      return tr('Cancelada');
   }
 }
 
@@ -80,8 +99,9 @@ export class CardDetail {
     const same = this.card?.id === card.id;
     const planChanged = this.card?.work?.plan?.createdAt !== card.work?.plan?.createdAt || this.card?.work?.stage !== card.work?.stage;
     if (!same || planChanged || card.work?.stage !== 'approval') this.draft = undefined;
-    // Durante a edição, não redesenha por cima do que a pessoa está digitando.
-    if (same && this.draft && !planChanged) {
+    // Durante a edição (plano ou resposta a uma pergunta), não redesenha por cima do que a pessoa está digitando.
+    const typing = document.activeElement instanceof HTMLElement && this.el.contains(document.activeElement) && /^(TEXTAREA|INPUT|SELECT)$/.test(document.activeElement.tagName);
+    if (same && (this.draft || typing) && !planChanged) {
       this.card = card;
       this.agents = agents;
       return;
@@ -155,6 +175,7 @@ export class CardDetail {
       'section',
       { class: 'ui-board-card__section' },
       h('h4', { text: editable ? tr('Plano (aguardando sua aprovação)') : tr('Plano aprovado') }),
+      editable ? null : this.renderRunHead(),
       plan.summary ? h('p', { class: 'ui-board-card__summary', text: plan.summary }) : null,
       plan.notes.length ? h('ul', { class: 'ui-board-card__notes' }, ...plan.notes.map((n) => h('li', { text: n }))) : null,
       h('ol', { class: 'ui-board-card__actions' }, ...list.map((a, i) => this.renderAction(a, i, byId, editable && list.length > 1, editable))),
@@ -170,15 +191,63 @@ export class CardDetail {
         ),
       );
     } else {
-      section.append(
-        h('p', { class: 'ui-board-new__hint', text: tr('Na fila: a execução pelos agentes do Orca chega na próxima versão do quadro.') }),
-        h('div', { class: 'ui-board-new__foot' }, this.button(tr('Tirar da fila'), '', () => this.run(() => this.actions.discard(c)))),
-      );
+      const stage = c.work!.stage;
+      const run = c.work!.run;
+      if (run?.log.length) {
+        section.append(
+          h(
+            'details',
+            { class: 'ui-board-card__details ui-board-card__log' },
+            h('summary', { text: tr('Histórico da execução') }),
+            h('ol', {}, ...run.log.slice().reverse().map((l) => h('li', { text: `${new Date(l.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · ${l.text}` }))),
+          ),
+        );
+      }
+      const foot = h('div', { class: 'ui-board-new__foot' });
+      if (stage === 'blocked') foot.append(this.button(tr('Tentar de novo'), 'allow', () => this.run(() => this.actions.retry(c))));
+      if (stage === 'queued' || stage === 'running' || stage === 'blocked') {
+        foot.prepend(this.button(stage === 'queued' && !run?.runId ? tr('Tirar da fila') : tr('Cancelar execução'), '', () => this.run(() => this.actions.discard(c))));
+      }
+      if (stage === 'review' || stage === 'done') foot.append(this.button(tr('Tirar do quadro'), '', () => this.run(() => this.actions.discard(c))));
+      if (foot.childElementCount) section.append(foot);
     }
     return section;
   }
 
+  /** Situação da execução: erro, perguntas dos agentes, worktree e PR. */
+  private renderRunHead(): HTMLElement | null {
+    const c = this.card!;
+    const w = c.work!;
+    const run = w.run;
+    const box = h('div', { class: 'ui-board-card__run' });
+    if (w.stage === 'queued') box.append(h('p', { class: 'ui-board-new__hint', text: tr('Na fila: preparando o worktree e as tarefas no Orca…') }));
+    if (w.error) box.append(h('p', { class: 'ui-board-new__error', text: w.error }));
+    for (const q of run?.questions ?? []) box.append(this.renderQuestion(q.id, q.text, q.options));
+    if (run?.pr) box.append(h('p', {}, h('a', { class: 'ui-link-btn', text: tr('Abrir o PR ↗'), attrs: { href: run.pr.url, target: '_blank', rel: 'noopener noreferrer' } })));
+    if (run?.worktree) box.append(h('p', { class: 'ui-board-new__hint', text: tr('Worktree: {0} · branch {1}', [run.worktree.path, run.worktree.branch.replace(/^refs\/heads\//, '')]) }));
+    return box.childElementCount ? box : null;
+  }
+
+  private renderQuestion(id: string, text: string, options?: string[]): HTMLElement {
+    const c = this.card!;
+    const input = h('textarea', { class: 'ui-rename__input', attrs: { rows: 2, placeholder: tr('Sua resposta'), 'aria-label': tr('Resposta ao agente') } });
+    const send = (answer: string) => {
+      const t = answer.trim();
+      if (t) void this.run(() => this.actions.answer(c, id, t));
+    };
+    return h(
+      'div',
+      { class: 'ui-board-card__question', role: 'group', attrs: { 'aria-label': tr('Pergunta de um agente') } },
+      h('strong', { text: tr('Um agente pergunta:') }),
+      h('p', { class: 'ui-board-card__body', text }),
+      options?.length ? h('div', { class: 'ui-board-card__options' }, ...options.map((o) => this.button(o, '', () => send(o)))) : null,
+      input,
+      h('div', { class: 'ui-board-new__foot' }, this.button(tr('Responder'), 'allow', () => send(input.value))),
+    );
+  }
+
   private renderAction(a: PlanAction, i: number, byId: Map<string, number>, removable: boolean, editable: boolean): HTMLElement {
+    const runState: ActionRun | undefined = this.card?.work?.run?.actions[a.id];
     const deps = a.deps.map((d) => byId.get(d)).filter((n): n is number => !!n);
     const quota = new Map(this.agents.map((q) => [q.agent, q]));
     const meta = h(
@@ -186,6 +255,7 @@ export class CardDetail {
       { class: 'ui-board-card__action-meta' },
       h('span', { class: 'ui-board__label', text: actionTypeLabel(a.type) }),
       a.writes ? h('span', { class: 'ui-board__label', text: tr('muda arquivos') }) : null,
+      runState ? h('span', { class: `ui-board__stage ui-board__action-state--${runState.state}`, text: actionStateLabel(runState.state) }) : null,
       deps.length ? h('span', { class: 'ui-board__ago', text: tr('depois de {0}', [deps.join(', ')]) }) : null,
     );
     let agentEl: HTMLElement;
@@ -219,7 +289,10 @@ export class CardDetail {
       ),
       meta,
       h('div', { class: 'ui-board-card__agent-row' }, agentEl),
-      a.reason ? h('p', { class: 'ui-board-new__hint', text: a.reason }) : null,
+      a.reason && !runState ? h('p', { class: 'ui-board-new__hint', text: a.reason }) : null,
+      runState?.waitingFor ? h('p', { class: 'ui-board-new__hint', text: runState.waitingFor }) : null,
+      runState?.result ? h('p', { class: 'ui-board-card__result', text: runState.result }) : null,
+      runState?.error ? h('p', { class: 'ui-board-new__error', text: runState.error }) : null,
       h('details', { class: 'ui-board-card__details' }, h('summary', { text: tr('Instruções para o agente') }), instructions),
     );
   }
