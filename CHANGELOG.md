@@ -10,6 +10,14 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Adicionado
+
+- **Quadro de tarefas (Tarefas, atalho K):** o kanban de cada projeto do Orca, com as issues do GitHub (repositório
+  do `origin`, pelo `gh`) ou do Linear (pelo `orca linear`) nas colunas Backlog, Planejando, Aguardando aprovação,
+  Em execução, Revisão e Concluído. Escolha a fonte de cada projeto no próprio quadro (fica em
+  `~/.habblaud/board.json`); filtro por título, número e labels; clique abre a issue. Só pelo próprio computador.
+  Primeiro passo do orquestrador: criar cards, planejar com IA e executar vêm a seguir. `HABBLAUD_BOARD=0` desliga.
+
 ## [0.11.1] - 2026-10-13
 
 Versão do fork (Promp IA) sobre a 0.11.0 do Habblaud.

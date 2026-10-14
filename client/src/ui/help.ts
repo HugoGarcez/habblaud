@@ -87,6 +87,7 @@ const SHORTCUTS: [string[], string][] = [
   [['L'], tr('Abrir ou fechar o timelapse do dia')],
   [['P'], tr('Ir até o próximo pedido de permissão ou pergunta para responder pelo escritório')],
   [['M'], tr('Meu dia: para onde foi o tempo (trabalhando, esperando você...)')],
+  [['K'], tr('Tarefas: quadro dos projetos do Orca')],
   [['O', '0'], tr('Visão geral do prédio')],
   [['Esc'], tr('Fechar a busca do terminal, depois o terminal; depois, a gaveta e a seleção')],
   [['['], tr('Mostrar ou ocultar o painel lateral')],

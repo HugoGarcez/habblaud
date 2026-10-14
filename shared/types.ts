@@ -381,6 +381,8 @@ export interface AccessInfo {
   terminal: boolean;
   /** Pode abrir agentes novos no app do Claude (POST /api/spawn). */
   spawn: boolean;
+  /** Quadro de tarefas dos projetos do Orca (/api/board; só pelo próprio computador). Ausente = servidor antigo. */
+  board?: boolean;
 }
 
 export interface FeedItem {

@@ -63,6 +63,11 @@ export interface ApiDeps {
    * não dependem da trava do terminal).
    */
   codexLive?: CodexLive;
+  /**
+   * Quadro de tarefas dos projetos do Orca (/api/board, server/board/http.ts). Dispara agentes (fases seguintes):
+   * só pelo próprio computador, nunca pela porta remota.
+   */
+  board?: (req: IncomingMessage, res: ServerResponse, path: string, url: URL) => void;
   /** Novo agente pelo escritório (/api/spawn e, para o auxiliar do host, /api/host/spawn/*; server/spawn/spawn.ts). */
   spawn?: SpawnService;
   /** Pastas sugeridas no "Novo agente" (GET /api/spawn/folders; spawn/folders.ts): projetos recentes. */
@@ -381,6 +386,7 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
           messages: !!deps.messages && trusted(req, 'messages'),
           terminal: !!terminals && trusted(req, 'terminal'),
           spawn: !!deps.spawn && trusted(req, 'spawn'),
+          board: !!deps.board && !remote && trusted(req),
         };
         sendJson(res, 200, access);
       }
@@ -431,6 +437,12 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       } else {
         deps.permissions(req, res, path);
       }
+      return true;
+    }
+    if (path === '/api/board' || path.startsWith('/api/board/')) {
+      if (!deps.board) sendJson(res, 403, { error: tr('quadro de tarefas desligado (precisa do Orca neste computador; HABBLAUD_BOARD=0 desliga)') });
+      else if (isRemote(req) || !trusted(req)) sendJson(res, 403, { error: tr('o quadro de tarefas só abre pelo próprio computador (http://localhost)') });
+      else deps.board(req, res, path, url);
       return true;
     }
     if (path === '/api/pty' || path.startsWith('/api/pty/') || AGENT_ACTION_ROUTE.test(path)) {

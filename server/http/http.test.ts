@@ -102,6 +102,21 @@ describe('API HTTP', () => {
     env.cleanup();
   });
 
+  it('/api/board: desligado sem o quadro; só pelo Host local; /api/access diz se há', async () => {
+    const port = new URL(env.base).port;
+    expect((await fetch(`${env.base}/api/board`)).status).toBe(403);
+    expect(((await (await fetch(`${env.base}/api/access`)).json()) as { board?: boolean }).board).toBe(false);
+    const other = await start({ board: (_req, res) => void res.end('{"projects":[]}') });
+    try {
+      expect((await fetch(`${other.base}/api/board`)).status).toBe(200);
+      expect(((await (await fetch(`${other.base}/api/access`)).json()) as { board?: boolean }).board).toBe(true);
+      expect((await raw(other.base, '/api/board', { headers: { Host: `habblaud.lan:${port}` } })).status).toBe(403);
+    } finally {
+      await other.close();
+      other.cleanup();
+    }
+  });
+
   it('GET /api/snapshot', async () => {
     const res = await fetch(`${env.base}/api/snapshot`);
     expect(res.status).toBe(200);

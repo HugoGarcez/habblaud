@@ -36,6 +36,10 @@ import type { CodexLive } from './sources/codex/live';
 import { ClaudeWatcher } from './sources/watcher';
 import { findOrcaBin, OrcaWatcher } from './sources/orca';
 import { AntigravityUsageService, findAgyBin } from './sources/antigravity-usage';
+import { findBin } from './board/cli';
+import { createBoardRoutes } from './board/http';
+import { BoardService } from './board/service';
+import { BoardStore } from './board/store';
 import { discoverCodexDirs } from './sources/codex/accounts';
 import { CodexHistory } from './sources/codex/history';
 import { CodexSource } from './sources/codex/source';
@@ -132,6 +136,11 @@ const orca = new OrcaWatcher({
 });
 late.office = office;
 late.orca = orca;
+// Quadro de tarefas dos projetos do Orca (server/board/): fora do Docker e com a CLI do Orca. HABBLAUD_BOARD=0 desliga.
+const orcaBin = config.inDocker || process.env.HABBLAUD_BOARD === '0' ? undefined : findOrcaBin();
+const boardStore = new BoardStore(join(config.dataDir, 'board.json'));
+if (orcaBin) boardStore.load();
+const board = orcaBin ? new BoardService({ store: boardStore, orca: orcaBin, gh: findBin('gh') }) : undefined;
 late.agents = agents;
 // Página que pode responder pelo escritório: Host local na porta local; na remota, só com permissions liberado.
 const hub = new Hub(office, {
@@ -314,6 +323,7 @@ const api = createApiHandler({
   permissions: permissions ? createPermissionRoutes(permissions) : undefined,
   messages: messages ? createMessageRoutes(messages) : undefined,
   pty: ptys ? createPtyRoutes(ptys) : undefined,
+  board: board ? createBoardRoutes(board) : undefined,
   spawn,
   attachments,
   dictation,
