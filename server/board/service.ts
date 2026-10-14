@@ -9,14 +9,14 @@
 // Planejar (planner.ts + router.ts): o card vai para Planejando, o planejador roda em segundo plano e o plano cai em
 // Aguardando aprovação; a pessoa edita, aprova (o plano vira comentário na issue e o card entra na fila de execução)
 // ou descarta. Planejamento que falha volta o card à coluna da fonte, com o erro.
-import { BOARD_COLUMNS, stageColumn, type AgentId, type BoardAllView, type BoardAttention, type BoardColumn, type BoardSummary, type BoardCard, type BoardIndex, type BoardProject, type BoardProjectConfig, type BoardView, type CardPlan, type CardWork, type LinearTeam, type NewCard, type PlanEdit } from '../../shared/board';
+import { BOARD_COLUMNS, kindFromLabels, stageColumn, type AgentId, type BoardAllView, type BoardAttention, type BoardColumn, type BoardSummary, type BoardCard, type BoardIndex, type BoardProject, type BoardProjectConfig, type BoardView, type CardDetails, type CardEdit, type CardPlan, type CardWork, type LinearTeam, type NewCard, type PlanEdit } from '../../shared/board';
 import { tr } from '../../shared/i18n';
 import type { AccountInfo } from '../../shared/types';
 import { errMsg, log } from '../log';
 import { agentQuotas, AGENT_NAMES, bestClaudeAccount } from './agents';
 import { CliError, execCli, orcaResult, retryOnce, type Exec } from './cli';
-import { DEFAULT_PLANNER_MODEL, plannerPrompt, runPlanner } from './planner';
-import { commentIssue, createGithub, createLinear, listGithub, listLinear, listLinearTeams } from './providers';
+import { DEFAULT_PLANNER_MODEL, plannerPrompt, runPlanner, type PlanRevision } from './planner';
+import { commentIssue, createGithub, issueDetails, updateIssue, createLinear, listGithub, listLinear, listLinearTeams } from './providers';
 import { route } from './router';
 import { BoardRunner, DEFAULT_MAX_WORKERS } from './runner';
 import type { BoardStore } from './store';
@@ -123,7 +123,9 @@ export class BoardService {
     });
     // Planejamento que estava rodando quando o servidor parou: não volta sozinho.
     for (const { projectId, cardId, work } of opts.store.allWorks()) {
-      if (work.stage === 'planning') opts.store.setWork(projectId, cardId, { stage: 'failed', error: tr('O planejamento foi interrompido (o Promp IA reiniciou). Planeje de novo.'), updatedAt: this.now() });
+      if (work.stage !== 'planning') continue;
+      if (work.revising && work.plan) opts.store.setWork(projectId, cardId, { ...work, stage: 'approval', revising: undefined, error: tr('A revisão foi interrompida (o Promp IA reiniciou); o plano anterior continua.'), updatedAt: this.now() });
+      else opts.store.setWork(projectId, cardId, { stage: 'failed', error: tr('O planejamento foi interrompido (o Promp IA reiniciou). Planeje de novo.'), updatedAt: this.now() });
     }
   }
 
@@ -268,13 +270,18 @@ export class BoardService {
   }
 
   /** Começa o planejamento (em segundo plano). Devolve o card já em Planejando. */
-  async plan(projectId: string, cardId: string): Promise<BoardResult<BoardCard>> {
+  /**
+   * Planeja (ou, com `feedback`, revisa o plano que espera aprovação: o planejador recebe o plano atual e o pedido).
+   * Durante a revisão o plano anterior fica guardado e volta se ela falhar.
+   */
+  async plan(projectId: string, cardId: string, feedback?: string): Promise<BoardResult<BoardCard>> {
     const found = await this.findCard(projectId, cardId);
     if (!found) return { error: tr('card desconhecido (a lista pode estar desatualizada: atualize o quadro)'), status: 404 };
     const { project, card } = found;
     const current = this.opts.store.work(projectId, cardId);
     if (current?.stage === 'planning' || this.planning.has(`${projectId}|${cardId}`)) return { error: tr('Este card já está sendo planejado.'), status: 409 };
     if (current && current.stage !== 'approval' && current.stage !== 'failed') return { error: tr('O plano deste card já foi aprovado.'), status: 409 };
+    if (feedback && (current?.stage !== 'approval' || !current.plan)) return { error: tr('Só dá para pedir revisão de um plano que espera aprovação.'), status: 409 };
     if (card.column === 'done') return { error: tr('Este card já está concluído.'), status: 409 };
     if (!this.opts.claude) return { error: tr('O planejador precisa do Claude Code (claude) neste computador.'), status: 409 };
     if (!project.path) return { error: tr('O Orca não informou a pasta deste projeto.'), status: 409 };
@@ -283,25 +290,31 @@ export class BoardService {
       return { error: tr('Nenhuma conta do Claude com cota para planejar agora.'), status: 409 };
     }
     if (this.planning.size >= MAX_PLANNERS) return { error: tr('Já há {0} planejamentos em andamento; espere um terminar.', [MAX_PLANNERS]), status: 409 };
-    const work: CardWork = { stage: 'planning', ref: card.ref, title: card.title, updatedAt: this.now() };
+    const work: CardWork = feedback
+      ? { stage: 'planning', ref: card.ref, title: card.title, plan: current!.plan, revising: feedback, updatedAt: this.now() }
+      : { stage: 'planning', ref: card.ref, title: card.title, updatedAt: this.now() };
     this.setWork(projectId, cardId, work);
     const key = `${projectId}|${cardId}`;
     this.planning.add(key);
-    void this.runPlan(project, card, account?.configDir).finally(() => {
+    void this.runPlan(project, card, account?.configDir, feedback ? { previous: current!.plan!, feedback } : undefined).finally(() => {
       this.planning.delete(key);
       this.opts.onChange?.();
     });
     return { ok: this.decorate(card, work) };
   }
 
-  private async runPlan(project: BoardProject, card: BoardCard, configDir: string | undefined): Promise<void> {
+  private async runPlan(project: BoardProject, card: BoardCard, configDir: string | undefined, revision?: PlanRevision): Promise<void> {
     const model = this.opts.plannerModel || DEFAULT_PLANNER_MODEL;
     try {
       const quotas = this.agents();
-      const raw = await runPlanner({ claude: this.opts.claude!, cwd: project.path!, configDir, model, exec: this.exec }, plannerPrompt(project, card, quotas));
+      // O card guarda só o começo da descrição: o planejador lê a issue inteira (se a fonte responder).
+      const full = await issueDetails(this.exec, { gh: this.opts.gh, orca: this.opts.orca }, { source: card.source, repo: project.github, ref: card.ref }).catch(() => undefined);
+      const forPlanner = full ? { ...card, title: full.title || card.title, body: full.body } : card;
+      const raw = await runPlanner({ claude: this.opts.claude!, cwd: project.path!, configDir, model, exec: this.exec }, plannerPrompt(project, forPlanner, quotas, revision));
       const { actions, notes } = route(raw.actions, this.agents());
       if (!actions.length) throw new CliError(tr('o planejador não devolveu nenhuma ação válida'));
-      const plan: CardPlan = { summary: raw.summary, actions, notes, createdAt: this.now(), model };
+      const revisions = revision ? [...(revision.previous.revisions ?? []), revision.feedback] : undefined;
+      const plan: CardPlan = { summary: raw.summary, actions, notes, createdAt: this.now(), model, ...(revisions ? { revisions } : {}) };
       // A pessoa pode ter descartado enquanto rodava.
       if (this.opts.store.work(project.id, card.id)?.stage !== 'planning') return;
       this.setWork(project.id, card.id, { stage: 'approval', plan, updatedAt: this.now() });
@@ -309,8 +322,49 @@ export class BoardService {
       const msg = err instanceof CliError ? err.message : errMsg(err);
       log.warn(`Quadro: planejamento de ${card.ref} (${project.name}) falhou: ${msg}`);
       if (this.opts.store.work(project.id, card.id)?.stage !== 'planning') return;
-      this.setWork(project.id, card.id, { stage: 'failed', error: tr('O planejamento falhou: {0}', [msg]), updatedAt: this.now() });
+      if (revision) this.setWork(project.id, card.id, { stage: 'approval', plan: revision.previous, error: tr('A revisão falhou ({0}); o plano anterior continua.', [msg]), updatedAt: this.now() });
+      else this.setWork(project.id, card.id, { stage: 'failed', error: tr('O planejamento falhou: {0}', [msg]), updatedAt: this.now() });
     }
+  }
+
+  /** Texto completo do card na fonte (para editar). */
+  async details(projectId: string, cardId: string): Promise<BoardResult<CardDetails>> {
+    const found = await this.findCard(projectId, cardId);
+    if (!found) return { error: tr('card desconhecido (a lista pode estar desatualizada: atualize o quadro)'), status: 404 };
+    const { project, card } = found;
+    try {
+      const d = await issueDetails(this.exec, { gh: this.opts.gh, orca: this.opts.orca }, { source: card.source, repo: project.github, ref: card.ref });
+      const fromLabels = kindFromLabels(d.labels);
+      return { ok: { kind: fromLabels !== 'issue' ? fromLabels : card.kind, title: d.title, body: d.body } };
+    } catch (err) {
+      return { error: describeError(err, card.source), status: 502 };
+    }
+  }
+
+  /**
+   * Edita o card: título, descrição e tipo vão para a issue na fonte. Card em execução não muda (as instruções dos
+   * agentes já foram dadas); com plano esperando aprovação, o plano continua e a página sugere planejar de novo.
+   */
+  async edit(projectId: string, cardId: string, edit: CardEdit): Promise<BoardResult<BoardCard>> {
+    const found = await this.findCard(projectId, cardId);
+    if (!found) return { error: tr('card desconhecido (a lista pode estar desatualizada: atualize o quadro)'), status: 404 };
+    const { project, card } = found;
+    const work = this.opts.store.work(projectId, cardId);
+    if (work && ['planning', 'queued', 'running', 'blocked'].includes(work.stage)) return { error: tr('Não dá para editar um card que está sendo planejado ou executado.'), status: 409 };
+    const target = { source: card.source, repo: project.github, ref: card.ref };
+    const bins = { gh: this.opts.gh, orca: this.opts.orca };
+    try {
+      const current = await issueDetails(this.exec, bins, target);
+      await updateIssue(this.exec, bins, target, edit, current);
+    } catch (err) {
+      return { error: describeError(err, card.source), status: 502 };
+    }
+    const updated: BoardCard = { ...card, title: edit.title, body: edit.body.length > 600 ? `${edit.body.slice(0, 599)}…` : edit.body, kind: edit.kind, updatedAt: this.now() };
+    const cached = this.views.get(projectId);
+    if (cached) cached.value = { ...cached.value, cards: cached.value.cards.map((c) => (c.id === cardId ? updated : c)) };
+    if (work) this.setWork(projectId, cardId, { ...work, title: edit.title, ...(work.stage === 'approval' ? { error: tr('O card foi editado depois do plano: peça uma revisão ou planeje de novo se mudou o que precisa ser feito.') } : {}) });
+    else this.opts.onChange?.();
+    return { ok: { ...this.decorate(updated, this.opts.store.work(projectId, cardId)), projectId, projectName: project.name } };
   }
 
   /** Plano editado na página (troca de IA, ações removidas ou reescritas): o roteador confere de novo. */
@@ -353,8 +407,13 @@ export class BoardService {
   async discard(projectId: string, cardId: string): Promise<BoardResult<BoardCard>> {
     const found = await this.findCard(projectId, cardId);
     if (!found) return { error: tr('card desconhecido (a lista pode estar desatualizada: atualize o quadro)'), status: 404 };
-    if (this.opts.store.work(projectId, cardId)?.run) await this.runner.cancel(projectId, cardId);
+    const work = this.opts.store.work(projectId, cardId);
+    if (work?.run) await this.runner.cancel(projectId, cardId);
+    // Cancelar uma revisão volta ao plano anterior (o resultado que chegar depois é ignorado).
+    else if (work?.stage === 'planning' && work.revising && work.plan) this.setWork(projectId, cardId, { ...work, stage: 'approval', revising: undefined, error: undefined, updatedAt: this.now() });
     else this.setWork(projectId, cardId, undefined);
+    const after = this.opts.store.work(projectId, cardId);
+    if (after) return { ok: this.decorate(found.card, after) };
     return { ok: found.card };
   }
 

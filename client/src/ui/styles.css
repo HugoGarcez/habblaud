@@ -9617,3 +9617,21 @@ html.is-replay #world {
   margin-right: auto;
   max-width: 360px;
 }
+
+.ui-board-card__edit {
+  height: 24px;
+  margin-left: auto;
+}
+
+.ui-board-card__top > .ui-board-card__edit + .ui-icon-btn {
+  margin-left: 0;
+}
+
+.ui-board-card__revise {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--ui-line);
+}

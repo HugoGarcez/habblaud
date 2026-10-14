@@ -6,7 +6,9 @@
 //   GET  /api/board/projects/:id[?refresh=1]         200 BoardView | 404
 //   POST /api/board/projects/:id/config              {source, linearTeam?}: 200 BoardProject | 400 | 404
 //   POST /api/board/projects/:id/cards               {kind, title, body}: 201 BoardCard | 400 | 404 | 502 (fonte)
-//   POST /api/board/projects/:id/cards/:card/plan    {}: 202 BoardCard (Planejando; o plano chega depois) | 404 | 409
+//   PUT  /api/board/projects/:id/cards/:card         {kind, title, body}: 200 BoardCard (issue editada) | 400 | 404 | 409 | 502
+//   GET  /api/board/projects/:id/cards/:card/details 200 CardDetails (texto completo da issue) | 404 | 502
+//   POST /api/board/projects/:id/cards/:card/plan    {feedback?}: 202 BoardCard (Planejando; com feedback, revisa o plano)
 //   PUT  /api/board/projects/:id/cards/:card/plan    PlanEdit: 200 BoardCard | 400 | 404 | 409
 //   POST /api/board/projects/:id/cards/:card/approve {}: 200 BoardCard (na fila) | 404 | 409
 //   POST /api/board/projects/:id/cards/:card/discard {}: 200 BoardCard (de volta à coluna da fonte; cancela a execução)
@@ -15,7 +17,7 @@
 //
 // `:id` é o id do projeto no Orca com encodeURIComponent ("github%3Adono%2Frepo").
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { CARD_BODY_MAX, CARD_TITLE_MAX, type BoardProjectConfig, type NewCard } from '../../shared/board';
+import { CARD_BODY_MAX, CARD_TITLE_MAX, REVISION_MAX, type BoardProjectConfig, type NewCard } from '../../shared/board';
 import { tr } from '../../shared/i18n';
 import { HttpError, readJson, sendJson } from '../http/app';
 import { errMsg, log } from '../log';
@@ -23,7 +25,8 @@ import type { BoardResult, BoardService } from './service';
 
 const PROJECT = /^\/api\/board\/projects\/([^/]+)(\/config|\/cards)?$/;
 const TEAM = /^[A-Za-z0-9_-]{1,32}$/;
-const CARD_ACTION = /^\/api\/board\/projects\/([^/]+)\/cards\/([^/]+)\/(plan|approve|discard|retry|answer)$/;
+const CARD_ACTION = /^\/api\/board\/projects\/([^/]+)\/cards\/([^/]+)\/(plan|approve|discard|retry|answer|details)$/;
+const CARD = /^\/api\/board\/projects\/([^/]+)\/cards\/([^/]+)$/;
 
 function methodNotAllowed(res: ServerResponse, allow: string): void {
   res.setHeader('Allow', allow);
@@ -73,6 +76,26 @@ export function createBoardRoutes(board: BoardService): (req: IncomingMessage, r
       board.allView(url.searchParams.get('refresh') === '1').then((v) => sendJson(res, 200, v), (err) => fail(res, err));
       return;
     }
+    const cardOnly = CARD.exec(path);
+    if (cardOnly) {
+      if (method !== 'PUT') return methodNotAllowed(res, 'PUT');
+      let pid: string;
+      let cid: string;
+      try {
+        pid = decodeURIComponent(cardOnly[1]);
+        cid = decodeURIComponent(cardOnly[2]);
+      } catch {
+        return sendJson(res, 400, { error: tr('id inválido') });
+      }
+      readJson(req)
+        .then(async (body) => {
+          const r = await board.edit(pid, cid, parseNewCard(body));
+          if ('ok' in r) sendJson(res, 200, r.ok);
+          else sendJson(res, r.status, { error: r.error });
+        })
+        .catch((err) => fail(res, err));
+      return;
+    }
     const act = CARD_ACTION.exec(path);
     if (act) {
       let pid: string;
@@ -85,6 +108,11 @@ export function createBoardRoutes(board: BoardService): (req: IncomingMessage, r
       }
       const verb = act[3];
       const reply = (r: BoardResult<unknown>, okStatus = 200) => ('ok' in r ? sendJson(res, okStatus, r.ok) : sendJson(res, r.status, { error: r.error }));
+      if (verb === 'details') {
+        if (!isRead) return methodNotAllowed(res, 'GET');
+        board.details(pid, cid).then((r) => reply(r), (err) => fail(res, err));
+        return;
+      }
       if (verb === 'plan' && method === 'PUT') {
         readJson(req)
           .then(async (body) => {
@@ -98,7 +126,11 @@ export function createBoardRoutes(board: BoardService): (req: IncomingMessage, r
       if (method !== 'POST') return methodNotAllowed(res, verb === 'plan' ? 'POST, PUT' : 'POST');
       readJson(req)
         .then(async (body) => {
-          if (verb === 'plan') reply(await board.plan(pid, cid), 202);
+          if (verb === 'plan') {
+            const fb = (body as { feedback?: unknown } | null)?.feedback;
+            const feedback = typeof fb === 'string' ? fb.trim().slice(0, REVISION_MAX) : '';
+            reply(await board.plan(pid, cid, feedback || undefined), 202);
+          }
           else if (verb === 'approve') reply(await board.approve(pid, cid));
           else if (verb === 'retry') reply(await board.retry(pid, cid));
           else if (verb === 'answer') {

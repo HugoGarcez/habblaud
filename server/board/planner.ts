@@ -5,7 +5,7 @@
 // Roda na conta do Claude com mais folga (CLAUDE_CONFIG_DIR), na pasta do projeto, sem as configurações do usuário
 // (--setting-sources project: sem hooks nem plugins pessoais, o que também deixa a chamada bem mais rápida) e sem
 // servidores MCP. Modelo: HABBLAUD_PLANNER_MODEL (padrão sonnet).
-import { ACTION_TYPES, AGENT_IDS, type AgentQuota, type BoardCard, type BoardProject } from '../../shared/board';
+import { ACTION_TYPES, AGENT_IDS, type AgentQuota, type BoardCard, type BoardProject, type CardPlan } from '../../shared/board';
 import { CliError, type Exec } from './cli';
 import { MAX_ACTIONS } from './router';
 
@@ -46,7 +46,23 @@ function quotaLine(q: AgentQuota): string {
 
 const KIND_TEXT = { issue: 'tarefa', feature: 'funcionalidade nova', fix: 'correção de bug' } as const;
 
-export function plannerPrompt(project: BoardProject, card: BoardCard, quotas: readonly AgentQuota[]): string {
+/** Revisão: o plano atual e o que a pessoa pediu para mudar. */
+export interface PlanRevision {
+  previous: CardPlan;
+  feedback: string;
+}
+
+export function plannerPrompt(project: BoardProject, card: BoardCard, quotas: readonly AgentQuota[], revision?: PlanRevision): string {
+  const revise = revision
+    ? [
+        '',
+        'REVISÃO: você já sugeriu o plano abaixo e a pessoa pediu mudanças. Refaça o plano atendendo o pedido; mantenha o que o pedido não manda mudar (inclusive as IAs escolhidas, se não forem o assunto).',
+        'Plano atual (JSON):',
+        JSON.stringify({ summary: revision.previous.summary, actions: revision.previous.actions.map(({ id, title, instructions, type, agent, writes, deps, reason }) => ({ id, title, instructions, type, agent, writes, deps, reason })) }),
+        ...(revision.previous.revisions?.length ? ['Pedidos anteriores (já atendidos):', ...revision.previous.revisions.map((r) => `- ${r}`)] : []),
+        `Pedido da pessoa agora: ${revision.feedback}`,
+      ]
+    : [];
   return [
     `Você é o planejador do Promp IA, que distribui trabalho de programação entre várias IAs. Projeto: "${project.name}"${project.github ? ` (GitHub ${project.github})` : ''}, na pasta atual.`,
     '',
@@ -67,6 +83,7 @@ export function plannerPrompt(project: BoardProject, card: BoardCard, quotas: re
     '- Se fizer sentido, termine com uma revisão por uma IA diferente da que implementou.',
     '- Não inclua ações de commit, push ou abrir PR: o Promp IA faz isso no fim.',
     '- Escreva títulos, instruções e motivos em português.',
+    ...revise,
   ].join('\n');
 }
 

@@ -195,3 +195,63 @@ export async function commentIssue(exec: Exec, bins: { gh?: string; orca: string
     orcaResult(await exec(bins.orca, ['linear', 'comment', 'add', target.ref, '--body', body, '--write-id', randomUUID(), '--json'], { timeoutMs: 30_000 }));
   }
 }
+
+/** Texto completo de uma issue (o card só guarda o começo da descrição): para editar. */
+export interface IssueDetails {
+  title: string;
+  body: string;
+  labels: string[];
+}
+
+export async function issueDetails(exec: Exec, bins: { gh?: string; orca: string }, target: { source: 'github' | 'linear'; repo?: string; ref: string }): Promise<IssueDetails> {
+  if (target.source === 'github') {
+    if (!bins.gh || !target.repo) throw new CliError('sem gh ou repositório');
+    const out = await exec(bins.gh, ['issue', 'view', target.ref.replace(/^#/, ''), '--repo', target.repo, '--json', 'title,body,labels']);
+    let d: { title?: string; body?: string; labels?: { name: string }[] };
+    try {
+      d = JSON.parse(out);
+    } catch {
+      throw new CliError('resposta do gh ilegível');
+    }
+    return { title: d.title ?? '', body: d.body ?? '', labels: (d.labels ?? []).map((l) => l.name) };
+  }
+  const r = orcaResult<{ issue?: LinearIssue } & Partial<LinearIssue>>(await exec(bins.orca, ['linear', 'issue', target.ref, '--json']));
+  const i = (r.issue ?? r) as Partial<LinearIssue>;
+  const labels = (i.labels ?? []).map((l) => (typeof l === 'string' ? l : (l.name ?? ''))).filter(Boolean);
+  return { title: i.title ?? '', body: i.description ?? '', labels };
+}
+
+/**
+ * Atualiza título, descrição e tipo de uma issue. O tipo troca a label de tipo (bug/enhancement no GitHub, Bug/Feature
+ * no Linear) e mantém as outras labels. Label de tipo que não existe na fonte fica de fora (como na criação).
+ */
+export async function updateIssue(
+  exec: Exec,
+  bins: { gh?: string; orca: string },
+  target: { source: 'github' | 'linear'; repo?: string; ref: string },
+  edit: NewCard,
+  current: IssueDetails,
+): Promise<void> {
+  const kindLabels = Object.values(KIND_LABELS[target.source]).map((l) => l!.toLowerCase());
+  const wanted = KIND_LABELS[target.source][edit.kind];
+  const others = current.labels.filter((l) => !kindLabels.includes(l.toLowerCase()));
+  if (target.source === 'github') {
+    if (!bins.gh || !target.repo) throw new CliError('sem gh ou repositório');
+    const remove = current.labels.filter((l) => kindLabels.includes(l.toLowerCase()) && l !== wanted);
+    const args = ['issue', 'edit', target.ref.replace(/^#/, ''), '--repo', target.repo, '--title', edit.title, '--body', edit.body];
+    await withLabelFallback(wanted && !current.labels.includes(wanted) ? wanted : undefined, (add) =>
+      exec(bins.gh!, [...args, ...(add ? ['--add-label', add] : []), ...remove.flatMap((l) => ['--remove-label', l])], { timeoutMs: 30_000 }),
+    );
+    return;
+  }
+  const labels = wanted ? [...others, wanted] : others;
+  await withLabelFallback(wanted, async (l) =>
+    orcaResult(
+      await exec(
+        bins.orca,
+        ['linear', 'save-issue', target.ref, '--title', edit.title, '--description', edit.body, ...(l ? labels : others).flatMap((x) => ['--label', x]), '--write-id', randomUUID(), '--json'],
+        { timeoutMs: 30_000 },
+      ),
+    ),
+  );
+}

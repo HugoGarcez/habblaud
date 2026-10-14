@@ -61,6 +61,8 @@ export interface CardPlan {
   model: string;
   /** Ajustes que o roteador fez (IA trocada por falta de cota, dependência acrescentada...). */
   notes: string[];
+  /** Pedidos de revisão já atendidos pelo planejador, do mais antigo ao mais novo. */
+  revisions?: string[];
 }
 
 /**
@@ -122,6 +124,8 @@ export interface CardRun {
 
 export interface CardWork {
   stage: CardStage;
+  /** Planejando uma revisão: o plano anterior continua em `plan` e volta se a revisão falhar. */
+  revising?: string;
   /** Como a fonte mostra o card ("#12", "PRO-3") e o título: para avisos sem buscar a fonte. */
   ref?: string;
   title?: string;
@@ -234,6 +238,18 @@ export interface NewCard {
   title: string;
   body: string;
 }
+
+/** PUT /api/board/projects/:id/cards/:card: card editado (vai para a issue na fonte). */
+export type CardEdit = NewCard;
+
+/** GET /api/board/projects/:id/cards/:card/details: texto completo da issue (para editar). */
+export interface CardDetails {
+  kind: CardKind;
+  title: string;
+  body: string;
+}
+
+export const REVISION_MAX = 4_000;
 
 export const CARD_TITLE_MAX = 200;
 export const CARD_BODY_MAX = 20_000;

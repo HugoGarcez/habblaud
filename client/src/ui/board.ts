@@ -4,7 +4,7 @@
 // (GET /api/board/all); escolher um projeto filtra (GET /api/board/projects/:id) e deixa trocar a fonte dele.
 // Filtrar por texto, abrir o detalhe do card (ui/board-detail.ts: planejar, aprovar, acompanhar a execução) e criar
 // cards novos (ui/board-new.ts). Relido a cada 30 s com a janela aberta (mais rápido com card planejando ou rodando).
-import type { AgentQuota, BoardAllView, BoardCard, BoardIndex, BoardProject, BoardSource, BoardView, CardStage, NewCard, PlanEdit } from '../../../shared/board';
+import type { AgentQuota, BoardAllView, BoardCard, BoardIndex, BoardProject, BoardSource, BoardView, CardDetails, CardEdit, CardStage, NewCard, PlanEdit } from '../../../shared/board';
 import { tr } from '../../../shared/i18n';
 import { cardKey, columnLabel, groupCards, kindLabel, matchesFilter, projectForPath } from './board-model';
 import { CardDetail } from './board-detail';
@@ -128,6 +128,9 @@ export class BoardPanel {
       discard: (c) => this.cardAction(c, 'discard', 'POST'),
       retry: (c) => this.cardAction(c, 'retry', 'POST'),
       answer: (c, questionId, text) => this.cardAction(c, 'answer', 'POST', { questionId, text }),
+      revise: async (c, feedback, edit) => (edit ? ((await this.cardAction(c, 'plan', 'PUT', edit)) ?? this.cardAction(c, 'plan', 'POST', { feedback })) : this.cardAction(c, 'plan', 'POST', { feedback })),
+      details: (c) => this.cardDetails(c),
+      edit: (c, edit) => this.editCard(c, edit),
       close: () => this.closeDetail(),
     });
     this.newBtn = h('button', { class: 'ui-btn ui-board__new', type: 'button', text: tr('+ Novo card'), on: { click: () => this.toggleForm() } });
@@ -307,7 +310,7 @@ export class BoardPanel {
   }
 
   /** Planejar, editar, aprovar, descartar, tentar de novo, responder: devolve o erro, ou undefined. */
-  private async cardAction(card: BoardCard, verb: 'plan' | 'approve' | 'discard' | 'retry' | 'answer', method: 'POST' | 'PUT', body?: PlanEdit | { questionId: string; text: string }): Promise<string | undefined> {
+  private async cardAction(card: BoardCard, verb: 'plan' | 'approve' | 'discard' | 'retry' | 'answer', method: 'POST' | 'PUT', body?: PlanEdit | { questionId: string; text: string } | { feedback: string }): Promise<string | undefined> {
     const projectId = card.projectId ?? this.projectId;
     if (!projectId) return tr('Este card não está ligado a um projeto do Orca.');
     try {
@@ -323,6 +326,39 @@ export class BoardPanel {
         this.syncDetail();
         this.scheduleFast();
       }
+      return undefined;
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  private cardUrl(card: BoardCard): string | undefined {
+    const projectId = card.projectId ?? this.projectId;
+    return projectId ? `/api/board/projects/${encodeURIComponent(projectId)}/cards/${encodeURIComponent(card.id)}` : undefined;
+  }
+
+  private async cardDetails(card: BoardCard): Promise<CardDetails | string> {
+    const url = this.cardUrl(card);
+    if (!url) return tr('Este card não está ligado a um projeto do Orca.');
+    try {
+      return await api<CardDetails>(`${url}/details`);
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  private async editCard(card: BoardCard, edit: CardEdit): Promise<string | undefined> {
+    const url = this.cardUrl(card);
+    if (!url) return tr('Este card não está ligado a um projeto do Orca.');
+    try {
+      const updated = await api<BoardCard>(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(edit) });
+      const merged: BoardCard = { ...updated, projectId: card.projectId ?? this.projectId ?? undefined, projectName: card.projectName };
+      if (this.view) {
+        this.view = { ...this.view, cards: this.view.cards.map((c) => (cardKey(c) === cardKey(merged) ? merged : c)) };
+        this.renderCards();
+        this.syncDetail();
+      }
+      this.ctx.announce(tr('Card {0} atualizado.', [card.ref]));
       return undefined;
     } catch (err) {
       return err instanceof Error ? err.message : String(err);

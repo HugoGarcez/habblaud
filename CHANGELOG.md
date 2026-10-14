@@ -36,6 +36,12 @@ do meio (0.**3**.0).
 - **Todos os projetos por padrão:** sem filtro, o quadro mostra os cards de todos os projetos do Orca e dos times do
   Linear que nenhum projeto usa (esses só para ver e abrir), cada um com o nome do projeto. Escolher um projeto
   filtra e deixa trocar a fonte dele; o "+ Novo card" pede o projeto.
+- **Editar card:** o botão **Editar** no detalhe carrega o texto completo da issue e deixa mudar tipo, título e
+  descrição; salvar atualiza a issue no GitHub ou no Linear (a label de tipo é trocada, as outras ficam). Card sendo
+  planejado ou executado não muda; com plano esperando aprovação, o card avisa para pedir revisão.
+- **Revisão do plano pelo planejador:** com o plano esperando aprovação, escreva o que mudar em **Pedir revisão ao
+  planejador**; o Claude refaz a sugestão a partir do plano atual e do pedido (e das revisões anteriores). Se a
+  revisão falhar ou for cancelada, o plano anterior continua. O planejador agora lê a issue inteira, não só o começo.
 - **Quadro no escritório:** o quadro kanban da parede de cada sala mostra post-its com os cards do projeto (a fazer,
   em execução, prontos), a gaveta da sala ganha o botão **Tarefas** (abre o quadro naquele projeto) e os agentes que
   trabalham no worktree de um card aparecem na sala do repositório. Avisos quando um card precisa de você (pergunta

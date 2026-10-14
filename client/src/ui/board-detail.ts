@@ -1,7 +1,7 @@
 // Detalhe de um card do quadro (ui/board.ts): descrição, link para a issue e o trabalho do Promp IA com o card —
 // Planejar com IA, acompanhar o planejamento, editar o plano (IA, título e instruções de cada ação; remover ações),
 // aprovar ou descartar. Quem fala com o servidor é o quadro; aqui só a apresentação e as edições locais.
-import { AGENT_IDS, type ActionRun, type ActionState, type ActionType, type AgentId, type AgentQuota, type BoardCard, type PlanAction, type PlanEdit } from '../../../shared/board';
+import { AGENT_IDS, CARD_BODY_MAX, CARD_TITLE_MAX, REVISION_MAX, type ActionRun, type ActionState, type ActionType, type CardDetails, type CardEdit, type CardKind, type AgentId, type AgentQuota, type BoardCard, type PlanAction, type PlanEdit } from '../../../shared/board';
 import { tr } from '../../../shared/i18n';
 import { cardKey, kindLabel } from './board-model';
 import { h, iconButton, setHidden, setText } from './dom';
@@ -12,6 +12,11 @@ export interface CardDetailActions {
   approve(card: BoardCard, edit: PlanEdit | undefined): Promise<string | undefined>;
   discard(card: BoardCard): Promise<string | undefined>;
   retry(card: BoardCard): Promise<string | undefined>;
+  /** Pede ao planejador para revisar o plano conforme o pedido (com as edições locais salvas antes, se houver). */
+  revise(card: BoardCard, feedback: string, edit: PlanEdit | undefined): Promise<string | undefined>;
+  /** Texto completo da issue (ou a mensagem de erro). */
+  details(card: BoardCard): Promise<CardDetails | string>;
+  edit(card: BoardCard, edit: CardEdit): Promise<string | undefined>;
   answer(card: BoardCard, questionId: string, text: string): Promise<string | undefined>;
   close(): void;
 }
@@ -63,6 +68,8 @@ export class CardDetail {
   /** Plano sendo editado (cópia do do servidor); undefined = sem edições. */
   private draft: PlanAction[] | undefined;
   private busy = false;
+  /** Editando o card (texto completo carregado da fonte). */
+  private editing: CardDetails | null = null;
   private readonly head: HTMLElement;
   private readonly content: HTMLElement;
   private readonly error: HTMLElement;
@@ -102,14 +109,17 @@ export class CardDetail {
     if (!same || planChanged || card.work?.stage !== 'approval') this.draft = undefined;
     // Durante a edição (plano ou resposta a uma pergunta), não redesenha por cima do que a pessoa está digitando.
     const typing = document.activeElement instanceof HTMLElement && this.el.contains(document.activeElement) && /^(TEXTAREA|INPUT|SELECT)$/.test(document.activeElement.tagName);
-    if (same && (this.draft || typing) && !planChanged) {
+    if (same && (this.draft || typing || this.editing) && !planChanged) {
       this.card = card;
       this.agents = agents;
       return;
     }
     this.card = card;
     this.agents = agents;
-    if (!same) setHidden(this.error, true);
+    if (!same) {
+      setHidden(this.error, true);
+      this.editing = null;
+    }
     this.render();
     setHidden(this.el, false);
   }
@@ -130,10 +140,15 @@ export class CardDetail {
         { class: 'ui-board-card__top' },
         h('a', { class: 'ui-board__ref', text: `${c.ref} ↗`, attrs: { href: c.url, target: '_blank', rel: 'noopener noreferrer', title: tr('Abrir na fonte') } }),
         h('span', { class: `ui-board__kind ui-board__kind--${c.kind}`, text: kindLabel(c.kind) }),
+        this.canEdit() && !this.editing ? h('button', { class: 'ui-btn ui-board-card__edit', type: 'button', text: tr('Editar'), on: { click: () => void this.startEdit() } }) : null,
         close,
       ),
       h('h3', { class: 'ui-board-card__title', text: c.title }),
     );
+    if (this.editing) {
+      this.content.replaceChildren(this.renderEdit(this.editing));
+      return;
+    }
     const parts: (HTMLElement | null)[] = [c.body ? h('p', { class: 'ui-board-card__body', text: c.body }) : null];
     const w = c.work;
     if (!w || w.stage === 'failed') parts.push(this.renderStart());
@@ -158,12 +173,93 @@ export class CardDetail {
     );
   }
 
-  private renderPlanning(): HTMLElement {
+  /** Card sendo planejado ou executado não muda (as instruções já foram dadas). */
+  private canEdit(): boolean {
+    const st = this.card?.work?.stage;
+    return !!this.card?.projectId && (!st || st === 'approval' || st === 'failed' || st === 'review' || st === 'done');
+  }
+
+  private async startEdit(): Promise<void> {
+    const c = this.card;
+    if (!c || this.busy) return;
+    this.busy = true;
+    try {
+      const d = await this.actions.details(c);
+      if (typeof d === 'string') {
+        setText(this.error, d);
+        setHidden(this.error, false);
+      } else if (this.card === c) this.editing = d;
+    } finally {
+      this.busy = false;
+      this.render();
+    }
+  }
+
+  private renderEdit(d: CardDetails): HTMLElement {
     const c = this.card!;
+    let kind: CardKind = d.kind;
+    const kinds = (['issue', 'feature', 'fix'] as const).map((k) =>
+      h('button', {
+        class: 'ui-seg__opt',
+        type: 'button',
+        role: 'radio',
+        text: kindLabel(k),
+        attrs: { 'aria-checked': k === kind },
+        on: {
+          click: () => {
+            kind = k;
+            for (const b of kinds) b.setAttribute('aria-checked', String(b.textContent === kindLabel(k)));
+          },
+        },
+      }),
+    );
+    const title = h('input', { class: 'ui-rename__input', type: 'text', attrs: { maxlength: CARD_TITLE_MAX, 'aria-label': tr('Título') } });
+    title.value = d.title;
+    const body = h('textarea', { class: 'ui-rename__input ui-board-new__body', attrs: { rows: 10, maxlength: CARD_BODY_MAX, 'aria-label': tr('Descrição') } });
+    body.value = d.body;
+    const save = () => {
+      const t = title.value.trim();
+      if (!t) {
+        setText(this.error, tr('Escreva um título.'));
+        setHidden(this.error, false);
+        return;
+      }
+      void this.run(async () => {
+        const err = await this.actions.edit(c, { kind, title: t, body: body.value });
+        if (!err) this.editing = null;
+        return err;
+      });
+    };
     return h(
       'section',
       { class: 'ui-board-card__section' },
-      h('p', { class: 'ui-board-card__planning', text: tr('Planejando… o Claude está lendo o repositório (leva de 1 a 4 minutos).') }),
+      h('h4', { text: tr('Editar card') }),
+      h('p', { class: 'ui-board-new__hint', text: tr('As mudanças vão para a issue em {0}.', [c.source === 'github' ? 'GitHub' : 'Linear']) }),
+      h('div', { class: 'ui-seg ui-board-new__kinds', role: 'radiogroup', attrs: { 'aria-label': tr('Tipo do card') } }, ...kinds),
+      h('label', { class: 'ui-spawn__label', text: tr('Título') }),
+      title,
+      h('label', { class: 'ui-spawn__label', text: tr('Descrição') }),
+      body,
+      h(
+        'div',
+        { class: 'ui-board-new__foot' },
+        this.button(tr('Cancelar'), '', () => {
+          this.editing = null;
+          this.render();
+        }),
+        this.button(tr('Salvar'), 'allow', save),
+      ),
+    );
+  }
+
+  private renderPlanning(): HTMLElement {
+    const c = this.card!;
+    const revising = c.work?.revising;
+    return h(
+      'section',
+      { class: 'ui-board-card__section' },
+      h('p', { class: 'ui-board-card__planning', text: revising ? tr('Revisando o plano… o Claude está refazendo a sugestão com o seu pedido.') : tr('Planejando… o Claude está lendo o repositório (leva de 1 a 4 minutos).') }),
+      revising ? h('p', { class: 'ui-board-new__hint', text: tr('Seu pedido: {0}', [revising]) }) : null,
       h('div', { class: 'ui-board-new__foot' }, this.button(tr('Cancelar'), '', () => this.run(() => this.actions.discard(c)))),
     );
   }
@@ -178,13 +274,35 @@ export class CardDetail {
       'section',
       { class: 'ui-board-card__section' },
       h('h4', { text: editable ? tr('Plano (aguardando sua aprovação)') : tr('Plano aprovado') }),
+      editable && c.work!.error ? h('p', { class: 'ui-board-new__error', text: c.work!.error }) : null,
+      editable && plan.revisions?.length
+        ? h('p', { class: 'ui-board-new__hint', text: tr('Revisado {0}× a seu pedido (último: "{1}").', [plan.revisions.length, plan.revisions[plan.revisions.length - 1]]) })
+        : null,
       editable ? null : this.renderRunHead(),
       plan.summary ? h('p', { class: 'ui-board-card__summary', text: plan.summary }) : null,
       plan.notes.length ? h('ul', { class: 'ui-board-card__notes' }, ...plan.notes.map((n) => h('li', { text: n }))) : null,
       h('ol', { class: 'ui-board-card__actions' }, ...list.map((a, i) => this.renderAction(a, i, byId, editable && list.length > 1, editable))),
     );
     if (editable) {
+      const feedback = h('textarea', {
+        class: 'ui-rename__input',
+        attrs: { rows: 3, maxlength: REVISION_MAX, placeholder: tr('Ex.: junte as ações 2 e 3; use o Codex nos testes; inclua atualizar a documentação'), 'aria-label': tr('O que mudar no plano') },
+      });
       section.append(
+        h(
+          'div',
+          { class: 'ui-board-card__revise' },
+          h('label', { class: 'ui-spawn__label', text: tr('Pedir revisão ao planejador') }),
+          feedback,
+          h(
+            'div',
+            { class: 'ui-board-new__foot' },
+            this.button(tr('Revisar plano'), '', () => {
+              const t = feedback.value.trim();
+              if (t) void this.run(() => this.actions.revise(c, t, this.draft ? { actions: this.draft, summary: plan.summary } : undefined));
+            }),
+          ),
+        ),
         h(
           'div',
           { class: 'ui-board-new__foot' },
