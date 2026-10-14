@@ -289,24 +289,25 @@ export class BoardRunner {
     }
   }
 
-  private async ensureWorktree(project: BoardProject, card: BoardCard, name: string): Promise<{ id: string; path: string; branch: string }> {
+  private async ensureWorktree(project: BoardProject, card: BoardCard, name: string): Promise<{ id: string; path: string; branch: string; repoPath?: string }> {
+    const withRepo = (w: { id: string; path: string; branch: string }) => ({ ...w, ...(project.path ? { repoPath: project.path } : {}) });
     const existing = await this.findWorktree(name);
-    if (existing) return existing;
+    if (existing) return withRepo(existing);
     const issue = card.source === 'github' ? ['--issue', card.ref.replace(/^#/, '')] : ['--linear-issue', card.ref];
     try {
       const r = orcaResult<{ worktree?: { id: string; path: string; branch: string } }>(
         await this.orca(['worktree', 'create', '--name', name, '--repo', `path:${project.path}`, '--no-parent', '--setup', 'skip', ...issue, '--json'], 120_000),
       );
-      if (r.worktree?.path) return { id: r.worktree.id, path: r.worktree.path, branch: r.worktree.branch };
+      if (r.worktree?.path) return withRepo({ id: r.worktree.id, path: r.worktree.path, branch: r.worktree.branch });
     } catch (err) {
       // A CLI às vezes falha depois de criar: confere antes de desistir.
       const again = await this.findWorktree(name);
-      if (again) return again;
+      if (again) return withRepo(again);
       throw err;
     }
     const found = await this.findWorktree(name);
     if (!found) throw new CliError(tr('o Orca não devolveu o worktree criado'));
-    return found;
+    return withRepo(found);
   }
 
   private async findWorktree(name: string): Promise<{ id: string; path: string; branch: string } | undefined> {

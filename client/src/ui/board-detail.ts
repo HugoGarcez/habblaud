@@ -3,7 +3,7 @@
 // aprovar ou descartar. Quem fala com o servidor é o quadro; aqui só a apresentação e as edições locais.
 import { AGENT_IDS, type ActionRun, type ActionState, type ActionType, type AgentId, type AgentQuota, type BoardCard, type PlanAction, type PlanEdit } from '../../../shared/board';
 import { tr } from '../../../shared/i18n';
-import { kindLabel } from './board-model';
+import { cardKey, kindLabel } from './board-model';
 import { h, iconButton, setHidden, setText } from './dom';
 import { ICONS } from './icons';
 
@@ -86,8 +86,9 @@ export class CardDetail {
     });
   }
 
+  /** Chave do card aberto (cardKey). */
   get cardId(): string | null {
-    return this.card?.id ?? null;
+    return this.card ? cardKey(this.card) : null;
   }
 
   get isOpen(): boolean {
@@ -96,7 +97,7 @@ export class CardDetail {
 
   /** Mostra (ou atualiza) o card. Edições locais do plano ficam enquanto o card continua esperando aprovação. */
   show(card: BoardCard, agents: AgentQuota[]): void {
-    const same = this.card?.id === card.id;
+    const same = !!this.card && cardKey(this.card) === cardKey(card);
     const planChanged = this.card?.work?.plan?.createdAt !== card.work?.plan?.createdAt || this.card?.work?.stage !== card.work?.stage;
     if (!same || planChanged || card.work?.stage !== 'approval') this.draft = undefined;
     // Durante a edição (plano ou resposta a uma pergunta), não redesenha por cima do que a pessoa está digitando.
@@ -144,11 +145,13 @@ export class CardDetail {
   private renderStart(): HTMLElement {
     const c = this.card!;
     const done = c.column === 'done';
-    const btn = this.button(tr('Planejar com IA'), 'allow', () => this.run(() => this.actions.plan(c)), done);
+    const loose = !c.projectId;
+    const btn = this.button(tr('Planejar com IA'), 'allow', () => this.run(() => this.actions.plan(c)), done || loose);
     return h(
       'section',
       { class: 'ui-board-card__section' },
       c.work?.error ? h('p', { class: 'ui-board-new__error', text: c.work.error }) : null,
+      loose ? h('p', { class: 'ui-board-new__error', text: tr('Este card é de um time do Linear sem projeto do Orca: escolha o Linear como fonte de um projeto para planejar e executar.') }) : null,
       h('p', { class: 'ui-board-new__hint', text: tr('Um Claude lê o repositório (sem mudar nada), quebra o card em ações e escolhe a IA de cada uma pelas cotas abaixo. Você revisa e aprova.') }),
       this.renderQuotas(),
       h('div', { class: 'ui-board-new__foot' }, btn),

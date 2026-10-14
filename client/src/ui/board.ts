@@ -1,12 +1,14 @@
-// Quadro de tarefas (botão "Tarefas" da barra superior; atalho K): o kanban de cada projeto do Orca, com as issues
-// do GitHub ou do Linear nas colunas Backlog → Planejando → Aguardando aprovação → Em execução → Revisão → Concluído.
-// Escolher o projeto e a fonte, filtrar, abrir a issue na fonte e criar cards novos (viram issue: ui/board-new.ts). Os dados vêm de
-// GET /api/board e GET /api/board/projects/:id (server/board/), relidos a cada 30 s com a janela aberta.
-import type { BoardCard, BoardIndex, BoardProject, BoardSource, BoardView, CardStage, NewCard, PlanEdit } from '../../../shared/board';
+// Quadro de tarefas (botão "Tarefas" da barra superior; atalho K; botão do quadro na sala): o kanban dos projetos do
+// Orca, com as issues do GitHub ou do Linear nas colunas Backlog → Planejando → Aguardando aprovação → Em execução →
+// Revisão → Concluído. Sem filtro, mostra os cards de TODOS os projetos e de todos os times do Linear
+// (GET /api/board/all); escolher um projeto filtra (GET /api/board/projects/:id) e deixa trocar a fonte dele.
+// Filtrar por texto, abrir o detalhe do card (ui/board-detail.ts: planejar, aprovar, acompanhar a execução) e criar
+// cards novos (ui/board-new.ts). Relido a cada 30 s com a janela aberta (mais rápido com card planejando ou rodando).
+import type { AgentQuota, BoardAllView, BoardCard, BoardIndex, BoardProject, BoardSource, BoardView, CardStage, NewCard, PlanEdit } from '../../../shared/board';
 import { tr } from '../../../shared/i18n';
-import { columnLabel, groupCards, kindLabel, matchesFilter, pickProject } from './board-model';
+import { cardKey, columnLabel, groupCards, kindLabel, matchesFilter, projectForPath } from './board-model';
 import { CardDetail } from './board-detail';
-import { NewCardForm } from './board-new';
+import { NewCardForm, type CardTarget } from './board-new';
 import type { UiContext } from './context';
 import { h, iconButton, setHidden, setText } from './dom';
 import { ICONS } from './icons';
@@ -17,23 +19,6 @@ const REFRESH_MS = 30_000;
 const PLANNING_REFRESH_MS = 4_000;
 /** Com algum card em execução. */
 const RUNNING_REFRESH_MS = 8_000;
-const LAST_PROJECT_KEY = 'habblaud.board.project';
-
-function readLast(): string | null {
-  try {
-    return localStorage.getItem(LAST_PROJECT_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function writeLast(id: string): void {
-  try {
-    localStorage.setItem(LAST_PROJECT_KEY, id);
-  } catch {
-    // navegação privada / armazenamento bloqueado
-  }
-}
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, { credentials: 'same-origin', cache: 'no-store', ...init });
@@ -63,6 +48,25 @@ function stageLabel(s: CardStage): string {
   }
 }
 
+/** O que está na tela: um projeto (com a fonte dele) ou todos. */
+interface Shown {
+  cards: BoardCard[];
+  agents: AgentQuota[];
+  fetchedAt: number;
+  /** Só com um projeto. */
+  project?: BoardProject;
+  error?: string;
+  /** Só com todos: fontes que não responderam. */
+  errors?: { name: string; error: string }[];
+}
+
+/** Para onde vão os cards de um projeto ("GitHub · dono/repo"); undefined = sem fonte utilizável. */
+function destinationOf(p: BoardProject): string | undefined {
+  if (p.source === 'github' && p.github) return `GitHub · ${p.github}`;
+  if (p.source === 'linear' && p.linearTeam) return `Linear · ${p.linearTeam}`;
+  return undefined;
+}
+
 export class BoardPanel {
   readonly el: HTMLDialogElement;
   private readonly projectSel: HTMLSelectElement;
@@ -80,9 +84,14 @@ export class BoardPanel {
   /** Card recém-criado (destacado até a próxima troca de projeto). */
   private fresh: string | null = null;
   private index: BoardIndex | null = null;
-  private view: BoardView | null = null;
+  private view: Shown | null = null;
+  /** Projeto filtrado; null = todos. */
   private projectId: string | null = null;
   private wanted: string | null = null;
+  /** Card a abrir quando os dados chegarem (aviso clicado). */
+  private wantedCard: string | null = null;
+  /** Pasta da sala: abre no projeto dela quando a lista de projetos chegar. */
+  private wantedPath: string | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private loadSeq = 0;
   private opener: HTMLElement | null = null;
@@ -91,7 +100,7 @@ export class BoardPanel {
     private readonly ctx: UiContext,
     private readonly button: HTMLElement,
   ) {
-    this.projectSel = h('select', { class: 'ui-day__select ui-board__project', attrs: { 'aria-label': tr('Projeto do Orca') }, on: { change: () => this.pick(this.projectSel.value) } });
+    this.projectSel = h('select', { class: 'ui-day__select ui-board__project', attrs: { 'aria-label': tr('Projeto do Orca') }, on: { change: () => this.pick(this.projectSel.value || null) } });
     this.sourceSel = h(
       'select',
       { class: 'ui-day__select ui-board__source', attrs: { 'aria-label': tr('De onde vêm as tarefas') }, on: { change: () => void this.saveSource() } },
@@ -112,7 +121,7 @@ export class BoardPanel {
     this.retry = h('button', { class: 'ui-link-btn', type: 'button', text: tr('Tentar de novo'), hidden: true, on: { click: () => void this.load(true) } });
     this.status = h('p', { class: 'ui-board__status', attrs: { 'aria-live': 'polite' } }, this.statusText, ' ', this.retry);
     this.columns = h('div', { class: 'ui-board__columns' });
-    this.form = new NewCardForm({ submit: (card) => this.createCard(card) });
+    this.form = new NewCardForm({ submit: (card, projectId) => this.createCard(card, projectId) });
     this.detail = new CardDetail({
       plan: (c) => this.cardAction(c, 'plan', 'POST'),
       approve: async (c, edit) => (edit ? ((await this.cardAction(c, 'plan', 'PUT', edit)) ?? this.cardAction(c, 'approve', 'POST')) : this.cardAction(c, 'approve', 'POST')),
@@ -146,16 +155,30 @@ export class BoardPanel {
     return this.el.open;
   }
 
-  /** Abre no projeto pedido (ex.: o da sala), ou no último aberto. */
-  open(projectId?: string): void {
+  /**
+   * Abre em todos os projetos ou no projeto pedido (ex.: o da sala). `cardId` abre também o detalhe desse card (um
+   * aviso clicado).
+   */
+  open(projectId?: string, cardId?: string): void {
     this.wanted = projectId ?? null;
+    this.wantedCard = cardId ?? null;
+    this.projectId = this.wanted;
+    this.view = null;
+    this.closeDetail();
     if (!this.el.open) {
       this.opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       this.el.showModal();
       this.button.setAttribute('aria-expanded', 'true');
       this.timer = setInterval(() => void this.load(false), REFRESH_MS);
     }
-    void this.load(true, true);
+    this.renderCards();
+    void this.load(false, true);
+  }
+
+  /** Abre no projeto da pasta (a sala); sem projeto para ela, em todos. */
+  openForPath(path: string): void {
+    this.open();
+    this.wantedPath = path;
   }
 
   close(): void {
@@ -177,13 +200,13 @@ export class BoardPanel {
     this.opener?.focus();
   }
 
-  private pick(id: string): void {
+  private pick(id: string | null): void {
     this.projectId = id;
     this.fresh = null;
     this.form.close();
     this.closeDetail();
-    writeLast(id);
     this.view = null;
+    this.renderControls();
     this.renderCards();
     void this.load(false);
   }
@@ -191,33 +214,41 @@ export class BoardPanel {
   /** `withIndex`: relê também a lista de projetos (ao abrir). */
   private async load(refresh: boolean, withIndex = false): Promise<void> {
     const seq = ++this.loadSeq;
-    this.setStatus(tr('Carregando…'));
+    if (!this.view) this.setStatus(tr('Carregando…'));
     try {
       if (withIndex || !this.index) {
         this.index = await api<BoardIndex>('/api/board');
         if (seq !== this.loadSeq) return;
-        const p = pickProject(this.index.projects, this.wanted, this.projectId ?? readLast());
-        this.projectId = p?.id ?? null;
+        if (this.wantedPath) {
+          this.projectId = projectForPath(this.index.projects, this.wantedPath)?.id ?? null;
+          this.wantedPath = null;
+        }
+        if (this.projectId && !this.index.projects.some((p) => p.id === this.projectId)) this.projectId = null;
         this.renderControls();
       }
-      if (!this.projectId) {
-        this.view = null;
-        this.renderCards();
-        this.setStatus(tr('Nenhum projeto no Orca. Adicione um repositório no Orca para ver o quadro.'));
-        return;
+      const q = refresh ? '?refresh=1' : '';
+      let shown: Shown;
+      if (this.projectId) {
+        const v = await api<BoardView>(`/api/board/projects/${encodeURIComponent(this.projectId)}${q}`);
+        shown = { cards: v.cards, agents: v.agents, fetchedAt: v.fetchedAt, project: v.project, ...(v.error ? { error: v.error } : {}) };
+        this.mergeProject(v.project);
+      } else {
+        const v = await api<BoardAllView>(`/api/board/all${q}`);
+        shown = { cards: v.cards, agents: v.agents, fetchedAt: v.fetchedAt, errors: v.errors };
+        if (this.index) this.index.projects = v.projects;
       }
-      const view = await api<BoardView>(`/api/board/projects/${encodeURIComponent(this.projectId)}${refresh ? '?refresh=1' : ''}`);
       if (seq !== this.loadSeq) return;
-      this.view = view;
-      this.mergeProject(view.project);
+      this.view = shown;
       this.renderControls();
       this.renderCards();
       this.syncDetail();
       this.scheduleFast();
-      if (view.error) this.setStatus(view.error, true);
-      else {
-        const when = ago(view.fetchedAt, this.ctx.now()) || tr('agora');
-        this.setStatus(view.cards.length === 1 ? tr('1 card · atualizado {0}', [when]) : tr('{0} cards · atualizado {1}', [view.cards.length, when]));
+      this.renderStatus();
+      if (this.wantedCard) {
+        const key = this.wantedCard;
+        this.wantedCard = null;
+        const card = shown.cards.find((c) => c.id === key || cardKey(c) === key);
+        if (card) this.openDetail(cardKey(card));
       }
     } catch (err) {
       if (seq !== this.loadSeq) return;
@@ -225,8 +256,21 @@ export class BoardPanel {
     }
   }
 
-  private openDetail(id: string): void {
-    const card = this.view?.cards.find((c) => c.id === id);
+  private renderStatus(): void {
+    const v = this.view;
+    if (!v) return;
+    if (v.error) return this.setStatus(v.error, true);
+    const when = ago(v.fetchedAt, this.ctx.now()) || tr('agora');
+    let text = v.cards.length === 1 ? tr('1 card · atualizado {0}', [when]) : tr('{0} cards · atualizado {1}', [v.cards.length, when]);
+    if (!this.projectId) text = `${tr('Todos os projetos')} · ${text}`;
+    const errs = v.errors ?? [];
+    if (errs.length) text += ` · ${tr('sem resposta: {0}', [errs.map((e) => e.name).join(', ')])}`;
+    this.setStatus(text, false);
+    this.status.title = errs.map((e) => `${e.name}: ${e.error}`).join('\n');
+  }
+
+  private openDetail(key: string): void {
+    const card = this.view?.cards.find((c) => cardKey(c) === key);
     if (!card) return;
     this.form.close();
     this.detail.show(card, this.view?.agents ?? []);
@@ -237,18 +281,18 @@ export class BoardPanel {
 
   private closeDetail(): void {
     if (!this.detail.isOpen) return;
-    const id = this.detail.cardId;
+    const key = this.detail.cardId;
     this.detail.hide();
     this.el.classList.remove('has-detail');
     this.renderCards();
-    if (id) (this.columns.querySelector(`[data-card="${CSS.escape(id)}"]`) as HTMLElement | null)?.focus();
+    if (key) (this.columns.querySelector(`[data-card="${CSS.escape(key)}"]`) as HTMLElement | null)?.focus();
   }
 
   /** Card aberto no detalhe com os dados novos (ou fecha, se ele sumiu da lista). */
   private syncDetail(): void {
-    const id = this.detail.cardId;
-    if (!id) return;
-    const card = this.view?.cards.find((c) => c.id === id);
+    const key = this.detail.cardId;
+    if (!key) return;
+    const card = this.view?.cards.find((c) => cardKey(c) === key);
     if (card) this.detail.show(card, this.view?.agents ?? []);
     else this.closeDetail();
   }
@@ -262,18 +306,19 @@ export class BoardPanel {
     else if (stages.has('queued') || stages.has('running')) this.fastTimer = setTimeout(() => void this.load(false), RUNNING_REFRESH_MS);
   }
 
-  /** Planejar, editar, aprovar ou descartar: devolve o erro, ou undefined (e o quadro já mostra o card novo). */
+  /** Planejar, editar, aprovar, descartar, tentar de novo, responder: devolve o erro, ou undefined. */
   private async cardAction(card: BoardCard, verb: 'plan' | 'approve' | 'discard' | 'retry' | 'answer', method: 'POST' | 'PUT', body?: PlanEdit | { questionId: string; text: string }): Promise<string | undefined> {
-    const projectId = this.projectId;
-    if (!projectId) return tr('Escolha um projeto.');
+    const projectId = card.projectId ?? this.projectId;
+    if (!projectId) return tr('Este card não está ligado a um projeto do Orca.');
     try {
       const updated = await api<BoardCard>(`/api/board/projects/${encodeURIComponent(projectId)}/cards/${encodeURIComponent(card.id)}/${verb}`, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body ?? {}),
       });
-      if (this.projectId === projectId && this.view) {
-        this.view = { ...this.view, cards: this.view.cards.map((c) => (c.id === updated.id ? updated : c)) };
+      const merged: BoardCard = { ...updated, projectId, projectName: card.projectName };
+      if (this.view) {
+        this.view = { ...this.view, cards: this.view.cards.map((c) => (cardKey(c) === cardKey(merged) ? merged : c)) };
         this.renderCards();
         this.syncDetail();
         this.scheduleFast();
@@ -284,33 +329,34 @@ export class BoardPanel {
     }
   }
 
-  /** Para onde vão os cards deste projeto; undefined = sem fonte utilizável (o botão fica desligado). */
-  private destination(): string | undefined {
-    const p = this.index?.projects.find((x) => x.id === this.projectId);
-    if (!p || this.view?.error) return undefined;
-    if (p.source === 'github' && p.github) return `GitHub · ${p.github}`;
-    if (p.source === 'linear' && p.linearTeam) return `Linear · ${p.linearTeam}`;
-    return undefined;
+  /** Projetos que podem receber um card novo (com fonte funcionando). */
+  private targets(): CardTarget[] {
+    const projects = (this.index?.projects ?? []).filter((p) => (this.projectId ? p.id === this.projectId : true));
+    if (this.projectId && this.view?.error) return [];
+    return projects.flatMap((p) => {
+      const where = destinationOf(p);
+      return where ? [{ id: p.id, label: this.projectId ? where : `${p.name} · ${where}` }] : [];
+    });
   }
 
   private toggleForm(): void {
     if (this.form.isOpen) return this.form.close();
-    const where = this.destination();
-    if (where) this.form.open(where);
+    const targets = this.targets();
+    if (targets.length) this.form.open(targets, this.projectId ?? undefined);
   }
 
-  private async createCard(card: NewCard): Promise<string | undefined> {
-    const projectId = this.projectId;
-    if (!projectId) return tr('Escolha um projeto.');
+  private async createCard(card: NewCard, projectId: string): Promise<string | undefined> {
     try {
       const created = await api<BoardCard>(`/api/board/projects/${encodeURIComponent(projectId)}/cards`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(card),
       });
-      if (this.projectId === projectId && this.view) {
-        this.view = { ...this.view, cards: [created, ...this.view.cards.filter((c) => c.id !== created.id)] };
-        this.fresh = created.id;
+      const project = this.index?.projects.find((p) => p.id === projectId);
+      const withProject: BoardCard = { ...created, projectId, projectName: project?.name };
+      if (this.view && (!this.projectId || this.projectId === projectId)) {
+        this.view = { ...this.view, cards: [withProject, ...this.view.cards.filter((c) => cardKey(c) !== cardKey(withProject))] };
+        this.fresh = cardKey(withProject);
         this.filter.value = '';
         this.renderCards();
       }
@@ -349,9 +395,11 @@ export class BoardPanel {
 
   private renderControls(): void {
     const projects = this.index?.projects ?? [];
-    this.projectSel.replaceChildren(...projects.map((p) => h('option', { text: p.github ? `${p.name} · ${p.github}` : p.name, attrs: { value: p.id } })));
-    if (this.projectId) this.projectSel.value = this.projectId;
-    setHidden(this.projectSel, !projects.length);
+    this.projectSel.replaceChildren(
+      h('option', { text: tr('Todos os projetos'), attrs: { value: '' } }),
+      ...projects.map((p) => h('option', { text: p.github ? `${p.name} · ${p.github}` : p.name, attrs: { value: p.id } })),
+    );
+    this.projectSel.value = this.projectId ?? '';
     const project = projects.find((p) => p.id === this.projectId);
     this.sourceSel.value = project?.source ?? '';
     setHidden(this.sourceSel, !project);
@@ -367,10 +415,10 @@ export class BoardPanel {
   }
 
   private renderNewButton(): void {
-    const where = this.destination();
-    this.newBtn.disabled = !where;
-    this.newBtn.title = where ? tr('Cria uma issue em {0}', [where]) : tr('Escolha uma fonte que esteja funcionando para criar cards');
-    if (!where) this.form.close();
+    const targets = this.targets();
+    this.newBtn.disabled = !targets.length;
+    this.newBtn.title = targets.length ? tr('Cria uma issue no projeto escolhido') : tr('Escolha uma fonte que esteja funcionando para criar cards');
+    if (!targets.length) this.form.close();
   }
 
   private renderCards(): void {
@@ -391,15 +439,17 @@ export class BoardPanel {
   }
 
   private cardEl(c: BoardCard): HTMLElement {
+    const key = cardKey(c);
     const updated = ago(c.updatedAt, this.ctx.now());
     const stage = c.work?.stage;
-    const selected = this.detail.cardId === c.id;
+    const selected = this.detail.cardId === key;
+    const where = this.projectId ? null : (c.projectName ?? tr('Linear (sem projeto)'));
     return h(
       'li',
-      { class: `ui-board__card ui-board__card--${c.kind}${c.id === this.fresh ? ' is-fresh' : ''}${selected ? ' is-selected' : ''}` },
+      { class: `ui-board__card ui-board__card--${c.kind}${key === this.fresh ? ' is-fresh' : ''}${selected ? ' is-selected' : ''}` },
       h(
         'button',
-        { class: 'ui-board__card-link', type: 'button', attrs: { 'data-card': c.id, 'aria-pressed': selected, title: c.body || c.title }, on: { click: () => this.openDetail(c.id) } },
+        { class: 'ui-board__card-link', type: 'button', attrs: { 'data-card': key, 'aria-pressed': selected, title: c.body || c.title }, on: { click: () => this.openDetail(key) } },
         h(
           'span',
           { class: 'ui-board__card-top' },
@@ -407,6 +457,7 @@ export class BoardPanel {
           h('span', { class: `ui-board__kind ui-board__kind--${c.kind}`, text: kindLabel(c.kind) }),
           stage ? h('span', { class: `ui-board__stage ui-board__stage--${stage}`, text: stageLabel(stage) }) : null,
         ),
+        where ? h('span', { class: 'ui-board__project-chip', text: where }) : null,
         h('span', { class: 'ui-board__title', text: c.title }),
         c.labels.length || updated
           ? h(
@@ -422,6 +473,7 @@ export class BoardPanel {
 
   private setStatus(text: string, error = false): void {
     setText(this.statusText, text);
+    this.status.title = '';
     this.status.classList.toggle('is-error', error);
     setHidden(this.retry, !error);
   }

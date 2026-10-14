@@ -149,7 +149,7 @@ describe('runner', () => {
     expect(store.coordinator('p')).toBe('term_c');
     const run = work(store).run!;
     expect(run.runId).toBe('run_1');
-    expect(run.worktree).toEqual({ id: 'r::/wt/promp-7', path: '/wt/promp-7', branch: 'refs/heads/me/promp-7' });
+    expect(run.worktree).toEqual({ id: 'r::/wt/promp-7', path: '/wt/promp-7', branch: 'refs/heads/me/promp-7', repoPath: '/repo' });
     const creates = state.calls.filter((c) => c[2] === 'task-create');
     expect(creates).toHaveLength(2);
     expect(creates[1][creates[1].indexOf('--deps') + 1]).toBe('["task_1"]');

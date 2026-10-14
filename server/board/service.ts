@@ -9,7 +9,7 @@
 // Planejar (planner.ts + router.ts): o card vai para Planejando, o planejador roda em segundo plano e o plano cai em
 // Aguardando aprovação; a pessoa edita, aprova (o plano vira comentário na issue e o card entra na fila de execução)
 // ou descarta. Planejamento que falha volta o card à coluna da fonte, com o erro.
-import { stageColumn, type AgentId, type BoardCard, type BoardIndex, type BoardProject, type BoardProjectConfig, type BoardView, type CardPlan, type CardWork, type LinearTeam, type NewCard, type PlanEdit } from '../../shared/board';
+import { BOARD_COLUMNS, stageColumn, type AgentId, type BoardAllView, type BoardAttention, type BoardColumn, type BoardSummary, type BoardCard, type BoardIndex, type BoardProject, type BoardProjectConfig, type BoardView, type CardPlan, type CardWork, type LinearTeam, type NewCard, type PlanEdit } from '../../shared/board';
 import { tr } from '../../shared/i18n';
 import type { AccountInfo } from '../../shared/types';
 import { errMsg, log } from '../log';
@@ -27,6 +27,8 @@ export const MAX_PLANNERS = 2;
 export const PROJECTS_TTL_MS = 60_000;
 export const TEAMS_TTL_MS = 5 * 60_000;
 export const VIEW_TTL_MS = 20_000;
+/** De quanto em quanto tempo os cards de todos os projetos são relidos (para o resumo nas salas). */
+export const SUMMARY_REFRESH_MS = 2 * 60_000;
 
 export interface BoardServiceOptions {
   store: BoardStore;
@@ -138,7 +140,88 @@ export class BoardService {
     const raw = await this.sourceView(projectId, refresh);
     if (!raw) return undefined;
     const works = this.opts.store.works(projectId);
-    return { ...raw, cards: raw.cards.map((c) => this.decorate(c, works[c.id])), agents: this.agents() };
+    return { ...raw, cards: raw.cards.map((c) => ({ ...this.decorate(c, works[c.id]), projectId, projectName: raw.project.name })), agents: this.agents() };
+  }
+
+  /**
+   * Todos os cards: os de cada projeto com fonte e os dos times do Linear que nenhum projeto usa (sem projeto: só
+   * dá para ver e abrir). Um card do Linear que aparece em mais de um projeto (mesmo time) fica só no primeiro.
+   */
+  async allView(refresh = false): Promise<BoardAllView> {
+    const index = await this.index();
+    const projects = index.projects.filter((p) => p.source);
+    const errors: BoardAllView['errors'] = [];
+    const cards: BoardCard[] = [];
+    const seen = new Set<string>();
+    const views = await Promise.all(projects.map((p) => this.view(p.id, refresh).catch(() => undefined)));
+    views.forEach((v, i) => {
+      if (!v) return;
+      if (v.error) errors.push({ name: projects[i].name, error: v.error });
+      for (const c of v.cards) {
+        const key = c.source === 'linear' ? c.id : `${projects[i].id}|${c.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        cards.push(c);
+      }
+    });
+    const usedTeams = new Set(projects.filter((p) => p.source === 'linear').map((p) => p.linearTeam));
+    for (const team of index.linearTeams.filter((t) => !usedTeams.has(t.key))) {
+      try {
+        const loose = await this.teamCards(team.key, refresh);
+        for (const c of loose) if (!seen.has(c.id)) cards.push(c);
+      } catch (err) {
+        errors.push({ name: `Linear ${team.key}`, error: describeError(err, 'linear') });
+      }
+    }
+    cards.sort((a, b) => b.updatedAt - a.updatedAt);
+    return { projects: index.projects, cards, agents: this.agents(), fetchedAt: this.now(), errors };
+  }
+
+  private teamCache = new Map<string, Cached<BoardCard[]>>();
+
+  private async teamCards(team: string, refresh: boolean): Promise<BoardCard[]> {
+    const c = this.teamCache.get(team);
+    if (!refresh && c && this.now() - c.at < VIEW_TTL_MS) return c.value;
+    const value = await retryOnce(() => listLinear(this.exec, this.opts.orca, team, this.now()));
+    this.teamCache.set(team, { at: this.now(), value });
+    return value;
+  }
+
+  /** Resumo para o snapshot: contagem por coluna em cada sala (pasta do repositório) e os cards que precisam de você. */
+  summary(): BoardSummary {
+    const rooms: BoardSummary['rooms'] = {};
+    const paths = new Map((this.projectsCache?.value ?? []).map((p) => [p.id, p.path]));
+    for (const [projectId, cached] of this.views) {
+      const path = paths.get(projectId);
+      if (!path) continue;
+      const works = this.opts.store.works(projectId);
+      const counts: Partial<Record<BoardColumn, number>> = {};
+      for (const c of cached.value.cards) {
+        const col = this.decorate(c, works[c.id]).column;
+        counts[col] = (counts[col] ?? 0) + 1;
+      }
+      rooms[path] = Object.fromEntries(BOARD_COLUMNS.filter((k) => counts[k]).map((k) => [k, counts[k]]));
+    }
+    const attention: BoardAttention[] = [];
+    for (const { projectId, cardId, work } of this.opts.store.allWorks()) {
+      const base = { projectId, cardId, ref: work.ref ?? cardId, title: work.title ?? '' };
+      const q = work.run?.questions.at(-1);
+      if (q) attention.push({ ...base, reason: 'question', at: q.at });
+      else if (work.stage === 'approval') attention.push({ ...base, reason: 'approval', at: work.updatedAt });
+      else if (work.stage === 'blocked') attention.push({ ...base, reason: 'blocked', at: work.updatedAt });
+      else if (work.stage === 'review') attention.push({ ...base, reason: 'review', at: work.run?.finishedAt ?? work.updatedAt });
+    }
+    attention.sort((a, b) => b.at - a.at);
+    return { rooms, attention };
+  }
+
+  /** Sala de uma pasta: o worktree de um card do quadro conta como a sala do repositório dele. */
+  roomPathFor(cwd: string): string | undefined {
+    for (const { work } of this.opts.store.allWorks()) {
+      const wt = work.run?.worktree;
+      if (wt?.repoPath && (cwd === wt.path || cwd.startsWith(`${wt.path}/`))) return wt.repoPath;
+    }
+    return undefined;
   }
 
   private decorate(card: BoardCard, work: CardWork | undefined): BoardCard {
@@ -146,13 +229,24 @@ export class BoardService {
     return { ...card, column: stageColumn(work.stage, card.column), work };
   }
 
-  /** Liga a execução (as rodadas do runner). */
+  private summaryTimer: NodeJS.Timeout | null = null;
+
+  /** Liga a execução (as rodadas do runner) e a releitura periódica dos cards de todos os projetos (resumo nas salas). */
   start(): void {
     this.runner.start();
+    const refresh = () =>
+      void this.allView()
+        .then(() => this.opts.onChange?.())
+        .catch(() => undefined);
+    refresh();
+    this.summaryTimer = setInterval(refresh, SUMMARY_REFRESH_MS);
+    this.summaryTimer.unref?.();
   }
 
   stop(): void {
     this.runner.stop();
+    if (this.summaryTimer) clearInterval(this.summaryTimer);
+    this.summaryTimer = null;
   }
 
   /** Projeto e card atuais (da fonte, com cache). */
@@ -167,6 +261,8 @@ export class BoardService {
   }
 
   private setWork(projectId: string, cardId: string, work: CardWork | undefined): void {
+    const prev = this.opts.store.work(projectId, cardId);
+    if (work && prev) work = { ...work, ref: work.ref ?? prev.ref, title: work.title ?? prev.title };
     this.opts.store.setWork(projectId, cardId, work);
     this.opts.onChange?.();
   }
@@ -187,7 +283,7 @@ export class BoardService {
       return { error: tr('Nenhuma conta do Claude com cota para planejar agora.'), status: 409 };
     }
     if (this.planning.size >= MAX_PLANNERS) return { error: tr('Já há {0} planejamentos em andamento; espere um terminar.', [MAX_PLANNERS]), status: 409 };
-    const work: CardWork = { stage: 'planning', updatedAt: this.now() };
+    const work: CardWork = { stage: 'planning', ref: card.ref, title: card.title, updatedAt: this.now() };
     this.setWork(projectId, cardId, work);
     const key = `${projectId}|${cardId}`;
     this.planning.add(key);

@@ -221,7 +221,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
   help = new HelpDialog();
   const day = new DayLauncher(ctx, (el) => root.append(el));
   topbar.addPanelButton(day.button);
-  const board = new BoardLauncher(ctx, (el) => root.append(el));
+  const board = new BoardLauncher(ctx, (el) => root.append(el), (n) => toasts.push(n));
   topbar.addPanelButton(board.button);
   // Botão direito numa sala (lista lateral ou escritório): renomear.
   const renamer = new RoomRenamer(ctx);

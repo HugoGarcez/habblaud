@@ -340,6 +340,8 @@ export interface OfficeSnapshot {
   accounts: AccountInfo[];
   meta: {
     demo: boolean;
+    /** Quadro de tarefas: contagens por sala e cards que precisam de você (ausente = quadro desligado). */
+    board?: import('./board').BoardSummary;
     sources: SourceInfo[];
     startedAt: number;
     version: string;
@@ -404,6 +406,8 @@ export interface Notice {
   text: string;
   agentId?: string;
   roomId?: string;
+  /** Aviso do quadro de tarefas: clicar abre o card (só na página; o servidor não manda). */
+  board?: { projectId: string; card: string };
   at: number;
 }
 

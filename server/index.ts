@@ -77,7 +77,7 @@ const roomAliases = new RoomAliases(join(config.dataDir, 'rooms.json'));
 roomAliases.load();
 
 // Office, contas e fontes de agentes se referenciam (avisos de mudança / fontes): ligação tardia.
-const late: { office?: Office; agents?: SourceSet; permissions?: PermissionRegistry; messages?: MessageRegistry; orca?: OrcaWatcher; ptys?: PtyManager; ptyOff?: string } = {};
+const late: { office?: Office; agents?: SourceSet; permissions?: PermissionRegistry; messages?: MessageRegistry; orca?: OrcaWatcher; board?: BoardService; ptys?: PtyManager; ptyOff?: string } = {};
 // Versão nova: consulta a release mais recente no GitHub a cada 6 h (HABBLAUD_UPDATE_CHECK=0 desliga).
 const updates = new UpdateChecker({
   current: config.version,
@@ -97,6 +97,8 @@ const accounts = new AccountsService({
 const office = new Office({
   names,
   roomAlias: (path) => roomAliases.get(path),
+  roomPath: (cwd) => late.board?.roomPathFor(cwd),
+  board: () => late.board?.summary(),
   version: config.version,
   // No modo dev o Vite serve o cliente direto do código-fonte: não há build para comparar.
   build: config.dev ? undefined : createBuildReader(config.rootDir),
@@ -160,8 +162,10 @@ const board = orcaBin
       // As contas como a barra superior mostra (uso com a janela vencida já zerada).
       accounts: () => hub.current().accounts,
       maxWorkers: Number(process.env.HABBLAUD_BOARD_MAX_WORKERS) > 0 ? Number(process.env.HABBLAUD_BOARD_MAX_WORKERS) : undefined,
+      onChange: () => office.markDirty(),
     })
   : undefined;
+late.board = board;
 late.agents = agents;
 // Página que pode responder pelo escritório: Host local na porta local; na remota, só com permissions liberado.
 const hub = new Hub(office, {

@@ -43,17 +43,12 @@ export function matchesFilter(card: BoardCard, filter: string): boolean {
   const norm = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
   const q = norm(filter.trim());
   if (!q) return true;
-  return [card.title, card.ref, ...card.labels].some((s) => norm(s).includes(q));
+  return [card.title, card.ref, card.projectName ?? '', ...card.labels].some((s) => norm(s).includes(q));
 }
 
-/**
- * Projeto a abrir: o pedido (ex.: o da sala clicada), senão o último aberto, senão o primeiro com fonte configurada,
- * senão o primeiro.
- */
-export function pickProject(projects: readonly BoardProject[], wanted?: string | null, last?: string | null): BoardProject | undefined {
-  return (
-    projects.find((p) => p.id === wanted) ?? projects.find((p) => p.id === last) ?? projects.find((p) => p.source !== null) ?? projects[0]
-  );
+/** Chave única de um card no quadro (o mesmo "github:1" existe em repositórios diferentes). */
+export function cardKey(card: Pick<BoardCard, 'id' | 'projectId'>): string {
+  return `${card.projectId ?? ''}|${card.id}`;
 }
 
 /** Projeto de uma pasta (a da sala): o de mesmo caminho ou o que contém a pasta (worktree dentro do repositório). */

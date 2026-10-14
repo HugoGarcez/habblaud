@@ -33,6 +33,13 @@ do meio (0.**3**.0).
   para Revisão; PR aceito, Concluído. Ação que falha trava o card: tentar de novo ou cancelar (o worktree fica). Um
   terminal "Promp IA · coordenador" por projeto aparece no Orca: é por ele que o Promp IA fala com a orquestração.
 - Com a máquina carregada, o quadro usa a última lista de projetos e times enquanto o Orca responde.
+- **Todos os projetos por padrão:** sem filtro, o quadro mostra os cards de todos os projetos do Orca e dos times do
+  Linear que nenhum projeto usa (esses só para ver e abrir), cada um com o nome do projeto. Escolher um projeto
+  filtra e deixa trocar a fonte dele; o "+ Novo card" pede o projeto.
+- **Quadro no escritório:** o quadro kanban da parede de cada sala mostra post-its com os cards do projeto (a fazer,
+  em execução, prontos), a gaveta da sala ganha o botão **Tarefas** (abre o quadro naquele projeto) e os agentes que
+  trabalham no worktree de um card aparecem na sala do repositório. Avisos quando um card precisa de você (pergunta
+  de agente, plano pronto, card travado) ou quando um PR é aberto; clicar abre o card.
 
 ## [0.11.1] - 2026-10-13
 

@@ -20,8 +20,14 @@ function kindHint(k: CardKind): string {
 }
 
 export interface NewCardFormOptions {
-  /** Cria a issue; devolve a mensagem de erro, ou undefined se deu certo. */
-  submit(card: NewCard): Promise<string | undefined>;
+  /** Cria a issue no projeto; devolve a mensagem de erro, ou undefined se deu certo. */
+  submit(card: NewCard, projectId: string): Promise<string | undefined>;
+}
+
+/** Projeto que pode receber o card: id e para onde vai ("Loja · GitHub · dono/repo"). */
+export interface CardTarget {
+  id: string;
+  label: string;
 }
 
 export class NewCardForm {
@@ -29,7 +35,7 @@ export class NewCardForm {
   private kind: CardKind = 'issue';
   private readonly kindBtns: HTMLButtonElement[];
   private readonly hint: HTMLElement;
-  private readonly target: HTMLElement;
+  private readonly target: HTMLSelectElement;
   private readonly title: HTMLInputElement;
   private readonly body: HTMLTextAreaElement;
   private readonly error: HTMLElement;
@@ -41,7 +47,7 @@ export class NewCardForm {
       h('button', { class: 'ui-seg__opt', type: 'button', role: 'radio', text: kindLabel(k), attrs: { 'data-kind': k }, on: { click: () => this.setKind(k) } }),
     );
     this.hint = h('p', { class: 'ui-board-new__hint' });
-    this.target = h('p', { class: 'ui-board-new__target' });
+    this.target = h('select', { class: 'ui-day__select ui-board-new__target', attrs: { 'aria-label': tr('Projeto do card') } });
     this.title = h('input', {
       class: 'ui-rename__input',
       type: 'text',
@@ -65,7 +71,7 @@ export class NewCardForm {
       h('label', { class: 'ui-spawn__label', attrs: { for: 'ui-board-new-body' }, text: tr('Descrição') }),
       this.body,
       this.error,
-      h('div', { class: 'ui-board-new__foot' }, this.target, cancel, this.createBtn),
+      h('div', { class: 'ui-board-new__foot' }, h('span', { class: 'ui-board-new__hint', text: tr('Vai para:') }), this.target, cancel, this.createBtn),
     );
     this.el.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -87,9 +93,11 @@ export class NewCardForm {
     return !this.el.hidden;
   }
 
-  /** `where`: para onde a issue vai ("GitHub · dono/repo", "Linear · PRO"). */
-  open(where: string): void {
-    setText(this.target, tr('Vai para: {0}', [where]));
+  /** `targets`: projetos que podem receber o card (com uma só opção, o seletor fica travado nela). */
+  open(targets: readonly CardTarget[], selected?: string): void {
+    this.target.replaceChildren(...targets.map((t) => h('option', { text: t.label, attrs: { value: t.id } })));
+    if (selected && targets.some((t) => t.id === selected)) this.target.value = selected;
+    this.target.disabled = targets.length < 2;
     setHidden(this.error, true);
     setHidden(this.el, false);
     this.title.focus();
@@ -117,7 +125,8 @@ export class NewCardForm {
     this.createBtn.disabled = true;
     setText(this.createBtn, tr('Criando…'));
     try {
-      const err = await this.opts.submit({ kind: this.kind, title, body: this.body.value });
+      if (!this.target.value) return this.showError(tr('Escolha um projeto.'));
+      const err = await this.opts.submit({ kind: this.kind, title, body: this.body.value }, this.target.value);
       if (err) return this.showError(err);
       this.title.value = '';
       this.body.value = '';

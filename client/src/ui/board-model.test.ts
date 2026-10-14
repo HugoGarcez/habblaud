@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BoardCard, BoardProject } from '../../../shared/board';
-import { groupCards, matchesFilter, pickProject, projectForPath } from './board-model';
+import { cardKey, groupCards, matchesFilter, projectForPath } from './board-model';
 
 function card(over: Partial<BoardCard>): BoardCard {
   return { id: 'github:1', source: 'github', ref: '#1', title: 'T', body: '', url: 'u', kind: 'issue', column: 'backlog', labels: [], state: 'open', updatedAt: 0, ...over };
@@ -29,12 +29,9 @@ describe('quadro (modelo)', () => {
     expect(matchesFilter(c, '  ')).toBe(true);
   });
 
-  it('projeto: o pedido, o último, o primeiro com fonte, o primeiro', () => {
-    expect(pickProject(projects, 'c', 'b')?.id).toBe('c');
-    expect(pickProject(projects, 'x', 'b')?.id).toBe('b');
-    expect(pickProject(projects, null, null)?.id).toBe('b');
-    expect(pickProject([projects[0]], null, null)?.id).toBe('a');
-    expect(pickProject([], null, null)).toBeUndefined();
+  it('chave do card inclui o projeto; filtro acha pelo nome do projeto', () => {
+    expect(cardKey(card({ id: 'github:1', projectId: 'a' }))).not.toBe(cardKey(card({ id: 'github:1', projectId: 'b' })));
+    expect(matchesFilter(card({ projectName: 'Loja' }), 'loja')).toBe(true);
   });
 
   it('projeto de uma pasta: exato ou o mais fundo que a contém', () => {

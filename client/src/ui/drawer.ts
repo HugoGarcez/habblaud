@@ -815,11 +815,20 @@ class RoomView {
   private feedSec: ReturnType<typeof section>;
   private newBtn: HTMLButtonElement;
   private newMsg: HTMLElement;
+  private boardBtn: HTMLButtonElement;
 
   constructor(
     private ctx: UiContext,
     private pty: PtyControl,
   ) {
+    this.boardBtn = h('button', {
+      class: 'ui-btn',
+      type: 'button',
+      text: tr('Tarefas'),
+      title: tr('Abre o quadro de tarefas do projeto desta sala'),
+      hidden: true,
+      on: { click: () => this.last && ctx.board?.openForPath(this.last.path) },
+    });
     this.newBtn = h('button', { class: 'ui-btn', type: 'button', text: tr('Nova sessão'), title: tr('Abre um Claude Code novo nesta pasta, num terminal interativo'), on: { click: () => this.newSession() } });
     this.newMsg = h('p', { class: 'ui-actions__msg is-error', role: 'status', hidden: true });
     this.swatch = h('span', { class: 'ui-room-hero__swatch', attrs: { 'aria-hidden': 'true' } });
@@ -881,7 +890,7 @@ class RoomView {
         h('div', { class: 'ui-hero__text' }, h('div', { class: 'ui-room-hero__title' }, this.name, this.renameBtn), h('span', { class: 'ui-copy-row' }, this.path, copyButton(() => this.last?.path ?? '', tr('Copiar caminho')))),
       ),
       this.gone,
-      h('div', { class: 'ui-status' }, accsEl, h('span', { class: 'ui-status__actions' }, this.newBtn, centerBtn)),
+      h('div', { class: 'ui-status' }, accsEl, h('span', { class: 'ui-status__actions' }, this.boardBtn, this.newBtn, centerBtn)),
       this.newMsg,
       this.agentsSec.el,
       this.tasksSec.el,
@@ -931,6 +940,7 @@ class RoomView {
     setHidden(this.gone, !!live);
     setHidden(this.renameBtn, !live || !canRenameRoom(this.ctx, r.id));
     setHidden(this.newBtn, !this.pty.enabled);
+    setHidden(this.boardBtn, !this.ctx.board?.available());
 
     const snap = this.ctx.store.snapshot;
     const agents = (snap?.agents ?? []).filter((a) => a.roomId === r.id);

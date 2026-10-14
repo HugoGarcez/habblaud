@@ -9603,3 +9603,17 @@ html.is-replay #world {
 .ui-board__stage--blocked { color: #ffb4a8; background: rgba(255, 110, 90, 0.15); }
 .ui-board__stage--review { color: #9fd8ff; background: rgba(0, 163, 217, 0.18); }
 .ui-board__stage--done { color: var(--ui-muted); }
+
+.ui-board__project-chip {
+  align-self: flex-start;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--ui-bg-hover);
+  color: var(--ui-muted);
+  font: 600 10.5px/1.6 var(--font-ui);
+}
+
+.ui-board-new__foot .ui-board-new__target {
+  margin-right: auto;
+  max-width: 360px;
+}

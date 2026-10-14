@@ -105,8 +105,8 @@ export interface CardQuestion {
 export interface CardRun {
   runId?: string;
   runRequest?: string;
-  /** Worktree do card (Orca), ligado à issue. */
-  worktree?: { id: string; path: string; branch: string };
+  /** Worktree do card (Orca), ligado à issue; `repoPath` = pasta do repositório (a sala do escritório). */
+  worktree?: { id: string; path: string; branch: string; repoPath?: string };
   /** Nome pedido ao Orca para o worktree (acha o worktree se a resposta se perder). */
   worktreeName?: string;
   actions: Record<string, ActionRun>;
@@ -122,6 +122,9 @@ export interface CardRun {
 
 export interface CardWork {
   stage: CardStage;
+  /** Como a fonte mostra o card ("#12", "PRO-3") e o título: para avisos sem buscar a fonte. */
+  ref?: string;
+  title?: string;
   plan?: CardPlan;
   /** Último erro (planejamento que falhou, ação que falhou...). */
   error?: string;
@@ -167,6 +170,39 @@ export interface BoardCard {
   updatedAt: number;
   /** O que o Promp IA está fazendo com o card (planejamento, aprovação...). */
   work?: CardWork;
+  /** Projeto do Orca do card (na visão de todos os projetos); ausente = time do Linear sem projeto ligado. */
+  projectId?: string;
+  projectName?: string;
+}
+
+/** GET /api/board/all: os cards de todos os projetos e de todos os times do Linear. */
+export interface BoardAllView {
+  projects: BoardProject[];
+  cards: BoardCard[];
+  agents: AgentQuota[];
+  fetchedAt: number;
+  /** Projetos (ou times) cuja fonte não respondeu. */
+  errors: { name: string; error: string }[];
+}
+
+/** Por que um card precisa de você (avisos e a sala). */
+export type AttentionReason = 'question' | 'approval' | 'blocked' | 'review';
+
+export interface BoardAttention {
+  projectId: string;
+  cardId: string;
+  ref: string;
+  title: string;
+  reason: AttentionReason;
+  /** Quando ficou assim (muda = aviso novo). */
+  at: number;
+}
+
+/** Resumo do quadro no snapshot: post-its no quadro de cada sala e avisos. */
+export interface BoardSummary {
+  /** Pasta do repositório (= caminho da sala) → quantos cards em cada coluna. */
+  rooms: Record<string, Partial<Record<BoardColumn, number>>>;
+  attention: BoardAttention[];
 }
 
 export interface BoardView {

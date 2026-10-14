@@ -2,6 +2,7 @@
 // exigiu JSON e Origin local nos POST.
 //
 //   GET  /api/board                                  200 BoardIndex (projetos do Orca, times do Linear)
+//   GET  /api/board/all[?refresh=1]                  200 BoardAllView (todos os projetos e times do Linear)
 //   GET  /api/board/projects/:id[?refresh=1]         200 BoardView | 404
 //   POST /api/board/projects/:id/config              {source, linearTeam?}: 200 BoardProject | 400 | 404
 //   POST /api/board/projects/:id/cards               {kind, title, body}: 201 BoardCard | 400 | 404 | 502 (fonte)
@@ -65,6 +66,11 @@ export function createBoardRoutes(board: BoardService): (req: IncomingMessage, r
     if (path === '/api/board') {
       if (!isRead) return methodNotAllowed(res, 'GET');
       board.index().then((i) => sendJson(res, 200, i), (err) => fail(res, err));
+      return;
+    }
+    if (path === '/api/board/all') {
+      if (!isRead) return methodNotAllowed(res, 'GET');
+      board.allView(url.searchParams.get('refresh') === '1').then((v) => sendJson(res, 200, v), (err) => fail(res, err));
       return;
     }
     const act = CARD_ACTION.exec(path);
