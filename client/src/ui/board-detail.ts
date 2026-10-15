@@ -1,7 +1,7 @@
 // Detalhe de um card do quadro (ui/board.ts): descrição, link para a issue e o trabalho do Promp IA com o card —
 // Planejar com IA, acompanhar o planejamento, editar o plano (IA, título e instruções de cada ação; remover ações),
 // aprovar ou descartar. Quem fala com o servidor é o quadro; aqui só a apresentação e as edições locais.
-import { AGENT_IDS, CARD_BODY_MAX, CARD_TITLE_MAX, REVISION_MAX, type ActionRun, type ActionState, type ActionType, type CardDetails, type CardEdit, type CardKind, type AgentId, type AgentQuota, type BoardCard, type PlanAction, type PlanEdit } from '../../../shared/board';
+import { AFTER_MERGE_MAX, AGENT_IDS, CARD_BODY_MAX, CARD_TITLE_MAX, REVISION_MAX, type ActionRun, type ActionState, type ActionType, type CardDetails, type CardEdit, type CardKind, type AgentId, type AgentQuota, type BoardCard, type PlanAction, type PlanEdit } from '../../../shared/board';
 import { tr } from '../../../shared/i18n';
 import { cardKey, kindLabel } from './board-model';
 import { h, iconButton, setHidden, setText } from './dom';
@@ -18,6 +18,10 @@ export interface CardDetailActions {
   details(card: BoardCard): Promise<CardDetails | string>;
   edit(card: BoardCard, edit: CardEdit): Promise<string | undefined>;
   answer(card: BoardCard, questionId: string, text: string): Promise<string | undefined>;
+  /** Merge do PR do card; `afterMerge` = comando a rodar na pasta do projeto depois (fica salvo no projeto). */
+  merge(card: BoardCard, afterMerge: string): Promise<string | undefined>;
+  /** Comando de depois do merge salvo no projeto do card. */
+  afterMerge(card: BoardCard): string;
   close(): void;
 }
 
@@ -330,6 +334,7 @@ export class CardDetail {
         foot.prepend(this.button(stage === 'queued' && !run?.runId ? tr('Tirar da fila') : tr('Cancelar execução'), '', () => this.run(() => this.actions.discard(c))));
       }
       if (stage === 'review' || stage === 'done') foot.append(this.button(tr('Tirar do quadro'), '', () => this.run(() => this.actions.discard(c))));
+      if (stage === 'review' && run?.pr) section.append(this.renderMerge(run.pr));
       if (foot.childElementCount) section.append(foot);
     }
     return section;
@@ -345,8 +350,56 @@ export class CardDetail {
     if (w.error) box.append(h('p', { class: 'ui-board-new__error', text: w.error }));
     for (const q of run?.questions ?? []) box.append(this.renderQuestion(q.id, q.text, q.options));
     if (run?.pr) box.append(h('p', {}, h('a', { class: 'ui-link-btn', text: tr('Abrir o PR ↗'), attrs: { href: run.pr.url, target: '_blank', rel: 'noopener noreferrer' } })));
+    const update = run?.merged?.update;
+    if (update) {
+      const text =
+        update.state === 'running'
+          ? tr('Atualizando o sistema do projeto: {0}…', [update.command])
+          : update.state === 'done'
+            ? tr('Sistema do projeto atualizado: {0}', [update.command])
+            : tr('O comando de depois do merge falhou: {0}', [update.command]);
+      box.append(h('p', { class: update.state === 'failed' ? 'ui-board-new__error' : 'ui-board-new__hint', text }));
+      if (update.output) box.append(h('details', { class: 'ui-board-card__details' }, h('summary', { text: tr('Saída do comando') }), h('pre', { class: 'ui-board-card__output', text: update.output })));
+    }
     if (run?.worktree) box.append(h('p', { class: 'ui-board-new__hint', text: tr('Worktree: {0} · branch {1}', [run.worktree.path, run.worktree.branch.replace(/^refs\/heads\//, '')]) }));
     return box.childElementCount ? box : null;
+  }
+
+  /** Aprovar o PR: merge no GitHub e atualização do projeto (com confirmação: o merge não se desfaz por aqui). */
+  private renderMerge(pr: { url: string; number?: number }): HTMLElement {
+    const c = this.card!;
+    const command = h('input', {
+      class: 'ui-rename__input',
+      type: 'text',
+      attrs: { id: 'ui-board-after-merge', maxlength: AFTER_MERGE_MAX, placeholder: tr('Ex.: npm install && npm run build'), autocomplete: 'off', spellcheck: 'false' },
+    });
+    command.value = this.actions.afterMerge(c);
+    const label = pr.number ? tr('Aprovar e fazer merge do PR #{0}', [pr.number]) : tr('Aprovar e fazer merge do PR');
+    let armed: ReturnType<typeof setTimeout> | null = null;
+    const btn = this.button(label, 'allow', () => {
+      if (!armed) {
+        setText(btn, tr('Confirmar o merge'));
+        armed = setTimeout(() => {
+          armed = null;
+          setText(btn, label);
+        }, 6_000);
+        return;
+      }
+      clearTimeout(armed);
+      armed = null;
+      void this.run(() => this.actions.merge(c, command.value.trim()));
+    });
+    return h(
+      'div',
+      { class: 'ui-board-card__merge' },
+      h('label', { class: 'ui-spawn__label', attrs: { for: 'ui-board-after-merge' }, text: tr('Depois do merge, rodar na pasta do projeto (opcional)') }),
+      command,
+      h('p', {
+        class: 'ui-board-new__hint',
+        text: tr('O merge é feito no GitHub; o branch e o worktree do card são apagados e a pasta do projeto é atualizada (se estiver no branch principal, sem mudanças). O comando fica salvo para os próximos cards do projeto.'),
+      }),
+      h('div', { class: 'ui-board-new__foot' }, btn),
+    );
   }
 
   private renderQuestion(id: string, text: string, options?: string[]): HTMLElement {

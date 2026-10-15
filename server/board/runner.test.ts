@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentQuota, BoardCard, BoardProject, CardPlan } from '../../shared/board';
 import { setQuiet } from '../log';
 import { tempDir } from '../test/fixtures';
-import { CliError, type Exec } from './cli';
+import { CliError, type Exec, type Shell } from './cli';
 import { BoardRunner, taskSpec, workerSummary, worktreeName } from './runner';
 import { BoardStore } from './store';
 
@@ -44,6 +44,9 @@ function fakeOrca() {
     worktreeCreated: false,
     gitStatus: ' M a.ts',
     replies: [] as string[][],
+    /** Resposta do `gh pr view` do PR do card (sem ela: PR não existe). */
+    pr: undefined as { state: string; mergeable?: string; baseRefName?: string; headRefName?: string } | undefined,
+    head: 'main',
   };
   const exec: Exec = async (bin, args) => {
     state.calls.push([bin, ...args]);
@@ -59,10 +62,15 @@ function fakeOrca() {
       if (sub === 'status') return state.gitStatus;
       if (sub === 'symbolic-ref') return 'origin/main\n';
       if (sub === 'rev-list') return state.gitStatus ? '1\n' : '0\n';
+      if (sub === 'rev-parse') return `${state.head}\n`;
       return '';
     }
     if (bin === 'gh') {
-      if (args[0] === 'pr' && args[1] === 'view') throw new CliError('no pull requests found');
+      if (args[0] === 'pr' && args[1] === 'view') {
+        if (state.pr) return JSON.stringify(state.pr);
+        throw new CliError('no pull requests found');
+      }
+      if (args[0] === 'pr' && args[1] === 'merge') state.pr = { ...state.pr!, state: 'MERGED' };
       if (args[0] === 'pr' && args[1] === 'create') return 'https://github.com/o/loja/pull/9\n';
       return '';
     }
@@ -111,14 +119,14 @@ function fakeOrca() {
   return { state, exec, complete };
 }
 
-function setup(opts: { quotas?: Partial<Record<string, boolean>>; maxWorkers?: number } = {}) {
+function setup(opts: { quotas?: Partial<Record<string, boolean>>; maxWorkers?: number; shell?: Shell; saved?: string[][] } = {}) {
   const tmp = tempDir();
   cleanups.push(tmp.cleanup);
   const store = new BoardStore(join(tmp.dir, 'board.json'));
   const orca = fakeOrca();
   const agents = (): AgentQuota[] =>
     (['claude', 'codex', 'antigravity', 'opencode'] as const).map((a) => ({ agent: a, name: a, installed: true, available: opts.quotas?.[a] ?? true, strengths: '', reason: opts.quotas?.[a] === false ? 'sem cota agora' : undefined }));
-  const runner = new BoardRunner({ store, exec: orca.exec, orca: 'orca', gh: 'gh', git: 'git', now: () => NOW, lookup: async () => ({ project, card }), agents, maxWorkers: opts.maxWorkers });
+  const runner = new BoardRunner({ store, exec: orca.exec, orca: 'orca', gh: 'gh', git: 'git', now: () => NOW, lookup: async () => ({ project, card }), agents, maxWorkers: opts.maxWorkers, shell: opts.shell, saveAfterMerge: (p, c) => opts.saved?.push([p, c]) });
   store.setWork('p', card.id, { stage: 'queued', plan, updatedAt: NOW });
   return { store, runner, ...orca };
 }
@@ -307,6 +315,42 @@ describe('runner', () => {
     expect(work(store).stage).toBe('review');
     expect(work(store).run!.pr).toBeUndefined();
     expect(state.calls.some((c) => c[0] === 'gh')).toBe(false);
+  });
+
+  it('merge pelo quadro: gh pr merge, limpeza, repositório local atualizado e o comando do projeto', async () => {
+    const commands: string[] = [];
+    const saved: string[][] = [];
+    const { store, runner, state } = setup({ shell: async (cmd) => (commands.push(cmd), { ok: true, output: 'build ok' }), saved });
+    store.setWork('p', card.id, { stage: 'review', plan, updatedAt: NOW, run: { runId: 'run_1', worktree: { id: 'w', path: '/wt/promp-7', branch: 'refs/heads/me/promp-7' }, actions: {}, questions: [], answered: [], startedAt: NOW, log: [], pr: { url: 'https://github.com/o/loja/pull/9', number: 9 } } });
+    state.gitStatus = '';
+    state.pr = { state: 'OPEN', mergeable: 'MERGEABLE', baseRefName: 'main', headRefName: 'me/promp-7' };
+    expect(await runner.merge('p', card.id, ' npm run build ')).toBeUndefined();
+    expect(work(store).stage).toBe('done');
+    expect(saved).toEqual([['p', 'npm run build']]);
+    await settle();
+    const calls = state.calls.map((c) => c.join(' '));
+    expect(calls).toContain('gh pr merge https://github.com/o/loja/pull/9 --squash');
+    expect(calls).toContain('gh api -X DELETE repos/o/loja/git/refs/heads/me/promp-7');
+    expect(calls).toContain('orca worktree rm --worktree path:/wt/promp-7 --json');
+    expect(calls).toContain('git -C /repo merge --ff-only origin/main');
+    expect(commands).toEqual(['npm run build']);
+    expect(work(store).run!.merged?.update).toEqual(expect.objectContaining({ state: 'done', output: 'build ok' }));
+    expect(await runner.merge('p', card.id)).toMatch(/não tem PR/);
+  });
+
+  it('merge: conflito não faz merge; repositório local em outro branch não roda o comando', async () => {
+    const commands: string[] = [];
+    const { store, runner, state } = setup({ shell: async (cmd) => (commands.push(cmd), { ok: true, output: '' }) });
+    store.setWork('p', card.id, { stage: 'review', plan, updatedAt: NOW, run: { actions: {}, questions: [], answered: [], startedAt: NOW, log: [], pr: { url: 'https://github.com/o/loja/pull/9' } } });
+    state.pr = { state: 'OPEN', mergeable: 'CONFLICTING', baseRefName: 'main' };
+    expect(await runner.merge('p', card.id, 'make')).toMatch(/conflitos/);
+    expect(work(store).stage).toBe('review');
+    state.pr = { state: 'OPEN', mergeable: 'MERGEABLE', baseRefName: 'main' };
+    state.head = 'outro';
+    expect(await runner.merge('p', card.id, 'make')).toBeUndefined();
+    await settle();
+    expect(commands).toEqual([]);
+    expect(work(store).run!.log.map((l) => l.text).join('\n')).toMatch(/branch outro[\s\S]*não rodou/);
   });
 
   it('cancelar para os workers, marca as Tasks e tira o card do quadro', async () => {

@@ -14,10 +14,11 @@
 //   POST /api/board/projects/:id/cards/:card/discard {}: 200 BoardCard (de volta à coluna da fonte; cancela a execução)
 //   POST /api/board/projects/:id/cards/:card/retry   {}: 200 BoardCard (card travado volta a rodar) | 409
 //   POST /api/board/projects/:id/cards/:card/answer  {questionId, text}: 200 BoardCard | 400 | 409
+//   POST /api/board/projects/:id/cards/:card/merge   {afterMerge?}: 200 BoardCard (merge do PR; card Concluído) | 409
 //
 // `:id` é o id do projeto no Orca com encodeURIComponent ("github%3Adono%2Frepo").
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { CARD_BODY_MAX, CARD_TITLE_MAX, REVISION_MAX, type BoardProjectConfig, type NewCard } from '../../shared/board';
+import { AFTER_MERGE_MAX, CARD_BODY_MAX, CARD_TITLE_MAX, REVISION_MAX, type BoardProjectConfig, type MergeRequest, type NewCard } from '../../shared/board';
 import { tr } from '../../shared/i18n';
 import { HttpError, readJson, sendJson } from '../http/app';
 import { errMsg, log } from '../log';
@@ -25,7 +26,7 @@ import type { BoardResult, BoardService } from './service';
 
 const PROJECT = /^\/api\/board\/projects\/([^/]+)(\/config|\/cards)?$/;
 const TEAM = /^[A-Za-z0-9_-]{1,32}$/;
-const CARD_ACTION = /^\/api\/board\/projects\/([^/]+)\/cards\/([^/]+)\/(plan|approve|discard|retry|answer|details)$/;
+const CARD_ACTION = /^\/api\/board\/projects\/([^/]+)\/cards\/([^/]+)\/(plan|approve|discard|retry|answer|merge|details)$/;
 const CARD = /^\/api\/board\/projects\/([^/]+)\/cards\/([^/]+)$/;
 
 function methodNotAllowed(res: ServerResponse, allow: string): void {
@@ -133,6 +134,11 @@ export function createBoardRoutes(board: BoardService): (req: IncomingMessage, r
           }
           else if (verb === 'approve') reply(await board.approve(pid, cid));
           else if (verb === 'retry') reply(await board.retry(pid, cid));
+          else if (verb === 'merge') {
+            const am = (body as MergeRequest | null)?.afterMerge;
+            if (am !== undefined && typeof am !== 'string') throw new HttpError(400, tr('esperado {afterMerge?: string}'));
+            reply(await board.merge(pid, cid, am?.trim().slice(0, AFTER_MERGE_MAX)));
+          }
           else if (verb === 'answer') {
             const b = body as { questionId?: unknown; text?: unknown } | null;
             const text = typeof b?.text === 'string' ? b.text.trim().slice(0, 4_000) : '';

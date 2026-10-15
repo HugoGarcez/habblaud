@@ -162,6 +162,7 @@ const board = orcaBin
       // As contas como a barra superior mostra (uso com a janela vencida já zerada).
       accounts: () => hub.current().accounts,
       maxWorkers: Number(process.env.HABBLAUD_BOARD_MAX_WORKERS) > 0 ? Number(process.env.HABBLAUD_BOARD_MAX_WORKERS) : undefined,
+      mergeMethod: (['squash', 'merge', 'rebase'] as const).find((m) => m === process.env.HABBLAUD_BOARD_MERGE?.trim()),
       onChange: () => office.markDirty(),
     })
   : undefined;

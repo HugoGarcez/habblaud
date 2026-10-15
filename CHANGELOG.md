@@ -46,6 +46,11 @@ do meio (0.**3**.0).
   em execução, prontos), a gaveta da sala ganha o botão **Tarefas** (abre o quadro naquele projeto) e os agentes que
   trabalham no worktree de um card aparecem na sala do repositório. Avisos quando um card precisa de você (pergunta
   de agente, plano pronto, card travado) ou quando um PR é aberto; clicar abre o card.
+- **Aprovar e fazer merge pelo quadro:** o card em Revisão ganha **Aprovar e fazer merge do PR** (com confirmação).
+  O Promp IA faz o merge no GitHub (squash; `HABBLAUD_BOARD_MERGE=merge|rebase` muda), apaga o branch e o worktree do
+  card, marca a issue do Linear como Done e atualiza a pasta do projeto (fast-forward, só se ela está no branch
+  principal e sem mudanças). Opcional: um comando para rodar na pasta do projeto depois do merge (ex.: build e
+  reinício), salvo por projeto; o card mostra o andamento e a saída. Conflito ou PR fechado: o card avisa e não muda.
 - **Perguntas que expiram:** quando o agente que perguntou já terminou (seguiu sem a resposta), a pergunta sai do
   card sozinha, em vez de ficar presa e dar erro do Orca ("Dispatch is inactive") ao responder.
 

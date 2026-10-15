@@ -9594,6 +9594,24 @@ html.is-replay #world {
   font-size: 11.5px;
 }
 
+.ui-board-card__merge {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--ui-line);
+}
+
+.ui-board-card__output {
+  max-height: 220px;
+  margin: 6px 0 0;
+  overflow: auto;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ui-muted);
+}
+
 .ui-board__action-state--waiting { color: var(--ui-muted); }
 .ui-board__action-state--starting,
 .ui-board__action-state--running { color: #b9f2d2; background: rgba(27, 173, 105, 0.2); }

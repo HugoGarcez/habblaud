@@ -11,25 +11,31 @@
 //      tempo e a cota da IA; perguntas dos workers (`orchestration inbox`, tipo question/escalation) aparecem no card e
 //      a resposta vai por `orchestration reply`;
 //   5. todas as Tasks concluídas: commit, push e PR (`gh pr create`, "Closes #N"; no Linear, o PR é anexado à issue),
-//      os workers são liberados e o card vai para Revisão. PR aceito = Concluído.
+//      os workers são liberados e o card vai para Revisão. PR aceito = Concluído;
+//   6. "Aprovar e fazer merge" (página): `gh pr merge`, apaga o branch e o worktree do card, atualiza o repositório
+//      local (fast-forward, só se ele está no branch base e sem mudanças) e roda o comando de depois do merge do
+//      projeto (ex.: build e reinício), se houver.
 // Task que falha deixa o card travado ("blocked"): tentar de novo (`worker-start --retry-of`) ou cancelar.
 //
 // A CLI do Orca às vezes responde erro mesmo tendo feito a ação ("runtime_unavailable"): toda mutação da orquestração
 // leva um `--retry-request` gravado antes (repetir devolve o resultado da primeira vez), e o worktree é procurado
 // pelo nome antes de criar de novo. O estado fica em board.json: depois de reiniciar, a rodada continua de onde parou.
 import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
 import type { ActionRun, BoardCard, BoardProject, CardRun, CardWork, PlanAction } from '../../shared/board';
 import { tr } from '../../shared/i18n';
 import { errMsg, log } from '../log';
 import { AGENT_NAMES } from './agents';
 import type { AgentQuota } from '../../shared/board';
-import { CliError, orcaResult, type Exec } from './cli';
+import { CliError, orcaResult, runShell, type Exec, type Shell } from './cli';
 import type { BoardStore } from './store';
 
 export const TICK_MS = 8_000;
 export const REVIEW_CHECK_MS = 5 * 60_000;
 export const DEFAULT_MAX_WORKERS = 3;
 export const WORKER_START_TIMEOUT_MS = 5 * 60_000;
+export const AFTER_MERGE_TIMEOUT_MS = 20 * 60_000;
+export type MergeMethod = 'squash' | 'merge' | 'rebase';
 const LOG_MAX = 40;
 const COORDINATOR_TITLE = 'Promp IA · coordenador';
 
@@ -44,6 +50,11 @@ export interface RunnerDeps {
   lookup(projectId: string, cardId: string): Promise<{ project: BoardProject; card: BoardCard } | undefined>;
   agents(): AgentQuota[];
   maxWorkers?: number;
+  /** Como o quadro faz o merge do PR (HABBLAUD_BOARD_MERGE; padrão squash). */
+  mergeMethod?: MergeMethod;
+  /** Grava o comando de depois do merge no projeto. */
+  saveAfterMerge?(projectId: string, command: string): void;
+  shell?: Shell;
   onChange?: () => void;
 }
 
@@ -620,6 +631,118 @@ export class BoardRunner {
         this.note(w.run!, tr('PR aceito.'));
         return { ...w, stage: 'done' };
       }, ['review']);
+    }
+  }
+
+  // ---- 6: merge pelo quadro ----
+
+  /** Aprova o PR do card: merge no GitHub, limpeza do branch e do worktree, repositório local atualizado. */
+  async merge(projectId: string, cardId: string, afterMerge?: string): Promise<string | undefined> {
+    const key = `${projectId}|${cardId}`;
+    const work = this.work(projectId, cardId);
+    const run = work?.run;
+    if (work?.stage !== 'review' || !run?.pr) return tr('Este card não tem PR esperando revisão.');
+    if (this.busy.has(key)) return tr('O merge deste card já está em andamento.');
+    const found = await this.d.lookup(projectId, cardId);
+    if (!found?.project.github || !this.d.gh) return tr('O merge pelo quadro precisa do GitHub (gh) no projeto.');
+    const { project, card } = found;
+    const command = afterMerge?.trim();
+    if (afterMerge !== undefined) this.d.saveAfterMerge?.(projectId, command ?? '');
+    this.busy.add(key);
+    try {
+      const pr = JSON.parse(await this.d.exec(this.d.gh, ['pr', 'view', run.pr.url, '--json', 'state,mergeable,baseRefName,headRefName'])) as {
+        state: string;
+        mergeable?: string;
+        baseRefName?: string;
+        headRefName?: string;
+      };
+      if (pr.state === 'CLOSED') return tr('O PR foi fechado sem merge no GitHub.');
+      if (pr.state === 'OPEN') {
+        if (pr.mergeable === 'CONFLICTING') return tr('O PR tem conflitos com {0}: resolva no GitHub e tente de novo.', [pr.baseRefName ?? 'main']);
+        const method = this.d.mergeMethod ?? 'squash';
+        // Fora de qualquer repositório: o gh não mexe em branch local nenhum (o do card está no worktree).
+        await this.d.exec(this.d.gh, ['pr', 'merge', run.pr.url, `--${method}`], { timeoutMs: 120_000, cwd: tmpdir() });
+      }
+      const base = pr.baseRefName || (await this.baseBranch(project));
+      const branch = pr.headRefName || (run.worktree ? stripRef(run.worktree.branch) : '');
+      this.save(projectId, cardId, (w) => {
+        this.note(w.run!, pr.state === 'MERGED' ? tr('O PR já estava com merge no GitHub.') : tr('Merge do PR feito em {0}.', [base]));
+        w.run!.merged = { at: this.now() };
+        return { ...w, stage: 'done', error: undefined };
+      }, ['review']);
+      void this.afterMerge(projectId, cardId, project, card, base, branch, command);
+      return undefined;
+    } catch (err) {
+      return tr('O GitHub não aceitou o merge: {0}', [err instanceof CliError ? err.message : errMsg(err)]);
+    } finally {
+      this.busy.delete(key);
+    }
+  }
+
+  /** Depois do merge: limpeza, repositório local e o comando do projeto. Cada passo que falha só vira nota. */
+  private async afterMerge(projectId: string, cardId: string, project: BoardProject, card: BoardCard, base: string, branch: string, command?: string): Promise<void> {
+    const notes: string[] = [];
+    const run = this.work(projectId, cardId)?.run;
+    if (branch && project.github) {
+      await this.d
+        .exec(this.d.gh!, ['api', '-X', 'DELETE', `repos/${project.github}/git/refs/heads/${branch}`])
+        .then(() => notes.push(tr('Branch {0} apagado no GitHub.', [branch])))
+        .catch(() => undefined);
+    }
+    if (run?.worktree) {
+      await this.orca(['worktree', 'rm', '--worktree', `path:${run.worktree.path}`, '--json'])
+        .then((o) => orcaResult(o))
+        .then(() => notes.push(tr('Worktree do card removido.')))
+        .catch((err) => notes.push(tr('O worktree ficou ({0}).', [err instanceof CliError ? err.message : errMsg(err)])));
+      if (branch && project.path) await this.git(project.path, ['branch', '-D', branch]).catch(() => undefined);
+    }
+    if (card.source === 'linear') {
+      await this.orca(['linear', 'status', 'set', card.ref, '--to', 'Done', '--json'])
+        .then((o) => orcaResult(o))
+        .then(() => notes.push(tr('Issue {0} marcada como Done no Linear.', [card.ref])))
+        .catch(() => undefined);
+    }
+    const updated = project.path ? await this.updateLocal(project.path, base, notes) : false;
+    this.save(projectId, cardId, (w) => {
+      for (const n of notes) this.note(w.run!, n);
+      if (command && updated) w.run!.merged = { ...w.run!.merged!, update: { command, state: 'running', at: this.now() } };
+      return w;
+    });
+    if (!command || !project.path) return;
+    if (!updated) {
+      this.save(projectId, cardId, (w) => {
+        this.note(w.run!, tr('O comando de depois do merge não rodou: o repositório local não foi atualizado.'));
+        return w;
+      });
+      return;
+    }
+    const res = await (this.d.shell ?? runShell)(command, { cwd: project.path, timeoutMs: AFTER_MERGE_TIMEOUT_MS });
+    this.save(projectId, cardId, (w) => {
+      w.run!.merged = { ...w.run!.merged!, update: { command, state: res.ok ? 'done' : 'failed', output: res.output, at: this.now() } };
+      this.note(w.run!, res.ok ? tr('Sistema do projeto atualizado ({0}).', [command]) : tr('O comando de depois do merge falhou ({0}).', [command]));
+      return w;
+    });
+  }
+
+  /** Traz o merge para a pasta do projeto: fast-forward do branch base, só se é o branch atual e não há mudanças. */
+  private async updateLocal(path: string, base: string, notes: string[]): Promise<boolean> {
+    try {
+      await this.git(path, ['fetch', 'origin', base], 120_000);
+      const current = (await this.git(path, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+      if (current !== base) {
+        notes.push(tr('Repositório local não atualizado: está no branch {0}, não em {1}.', [current, base]));
+        return false;
+      }
+      if ((await this.git(path, ['status', '--porcelain', '--untracked-files=no'])).trim()) {
+        notes.push(tr('Repositório local não atualizado: tem mudanças não salvas em {0}.', [path]));
+        return false;
+      }
+      await this.git(path, ['merge', '--ff-only', `origin/${base}`]);
+      notes.push(tr('Repositório local atualizado ({0}).', [base]));
+      return true;
+    } catch (err) {
+      notes.push(tr('Repositório local não atualizado: {0}', [err instanceof CliError ? err.message : errMsg(err)]));
+      return false;
     }
   }
 

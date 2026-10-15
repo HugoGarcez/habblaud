@@ -37,6 +37,24 @@ export const execCli: Exec = (bin, args, opts = {}) =>
     child.stdin?.end();
   });
 
+/** Saída de um comando do usuário (o de depois do merge): o fim do stdout e do stderr juntos. */
+export type Shell = (command: string, opts: { cwd: string; timeoutMs: number }) => Promise<{ ok: boolean; output: string }>;
+
+export const SHELL_OUTPUT_MAX = 4_000;
+
+/** Roda `command` no shell de login do usuário (o PATH dele, com nvm, brew…), na pasta pedida. */
+export const runShell: Shell = (command, opts) =>
+  new Promise((resolve) => {
+    const shell = process.env.SHELL || '/bin/sh';
+    const child = execFile(shell, ['-lc', command], { cwd: opts.cwd, timeout: opts.timeoutMs, maxBuffer: 32 * 1024 * 1024 }, (err, stdout, stderr) => {
+      const output = `${stdout}${stderr ? `\n${stderr}` : ''}`.trim().slice(-SHELL_OUTPUT_MAX);
+      if (!err) return resolve({ ok: true, output });
+      const killed = (err as { killed?: boolean }).killed;
+      resolve({ ok: false, output: killed ? `${output}\n(${Math.round(opts.timeoutMs / 60_000)} min sem terminar: parado)`.trim() : output || err.message });
+    });
+    child.stdin?.end();
+  });
+
 /** Roda de novo uma vez depois de `delayMs` se falhar (a CLI do Orca às vezes falha quando chamada junto com outra). */
 export async function retryOnce<T>(fn: () => Promise<T>, delayMs = 400): Promise<T> {
   try {

@@ -35,7 +35,11 @@ export class BoardStore {
       const projects: Record<string, BoardProjectConfig> = {};
       for (const [id, c] of Object.entries(raw.projects ?? {})) {
         if (!c || !isSource(c.source)) continue;
-        projects[id] = { source: c.source, ...(typeof c.linearTeam === 'string' && c.linearTeam ? { linearTeam: c.linearTeam } : {}) };
+        projects[id] = {
+          source: c.source,
+          ...(typeof c.linearTeam === 'string' && c.linearTeam ? { linearTeam: c.linearTeam } : {}),
+          ...(typeof c.afterMerge === 'string' && c.afterMerge ? { afterMerge: c.afterMerge } : {}),
+        };
       }
       const cards: BoardFile['cards'] = {};
       for (const [pid, byCard] of Object.entries(raw.cards ?? {})) {

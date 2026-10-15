@@ -4,7 +4,7 @@
 // (GET /api/board/all); escolher um projeto filtra (GET /api/board/projects/:id) e deixa trocar a fonte dele.
 // Filtrar por texto, abrir o detalhe do card (ui/board-detail.ts: planejar, aprovar, acompanhar a execução) e criar
 // cards novos (ui/board-new.ts). Relido a cada 30 s com a janela aberta (mais rápido com card planejando ou rodando).
-import type { AgentQuota, BoardAllView, BoardCard, BoardIndex, BoardProject, BoardSource, BoardView, CardDetails, CardEdit, CardStage, NewCard, PlanEdit } from '../../../shared/board';
+import type { AgentQuota, BoardAllView, BoardCard, BoardIndex, BoardProject, BoardSource, BoardView, CardDetails, CardEdit, CardStage, MergeRequest, NewCard, PlanEdit } from '../../../shared/board';
 import { tr } from '../../../shared/i18n';
 import { cardKey, columnLabel, groupCards, kindLabel, matchesFilter, projectForPath } from './board-model';
 import { CardDetail } from './board-detail';
@@ -128,6 +128,8 @@ export class BoardPanel {
       discard: (c) => this.cardAction(c, 'discard', 'POST'),
       retry: (c) => this.cardAction(c, 'retry', 'POST'),
       answer: (c, questionId, text) => this.cardAction(c, 'answer', 'POST', { questionId, text }),
+      merge: (c, afterMerge) => this.mergeCard(c, afterMerge),
+      afterMerge: (c) => this.index?.projects.find((p) => p.id === (c.projectId ?? this.projectId))?.afterMerge ?? '',
       revise: async (c, feedback, edit) => (edit ? ((await this.cardAction(c, 'plan', 'PUT', edit)) ?? this.cardAction(c, 'plan', 'POST', { feedback })) : this.cardAction(c, 'plan', 'POST', { feedback })),
       details: (c) => this.cardDetails(c),
       edit: (c, edit) => this.editCard(c, edit),
@@ -306,11 +308,21 @@ export class BoardPanel {
     const stages = new Set(this.view?.cards.map((c) => c.work?.stage));
     if (!this.el.open) return;
     if (stages.has('planning')) this.fastTimer = setTimeout(() => void this.load(false), PLANNING_REFRESH_MS);
-    else if (stages.has('queued') || stages.has('running')) this.fastTimer = setTimeout(() => void this.load(false), RUNNING_REFRESH_MS);
+    else if (stages.has('queued') || stages.has('running') || this.view?.cards.some((c) => c.work?.run?.merged?.update?.state === 'running')) this.fastTimer = setTimeout(() => void this.load(false), RUNNING_REFRESH_MS);
   }
 
   /** Planejar, editar, aprovar, descartar, tentar de novo, responder: devolve o erro, ou undefined. */
-  private async cardAction(card: BoardCard, verb: 'plan' | 'approve' | 'discard' | 'retry' | 'answer', method: 'POST' | 'PUT', body?: PlanEdit | { questionId: string; text: string } | { feedback: string }): Promise<string | undefined> {
+  /** Merge do PR; o comando de depois do merge fica no projeto (e na lista local, para o próximo card). */
+  private async mergeCard(card: BoardCard, afterMerge: string): Promise<string | undefined> {
+    const err = await this.cardAction(card, 'merge', 'POST', { afterMerge });
+    if (err) return err;
+    const pid = card.projectId ?? this.projectId;
+    if (this.index) this.index.projects = this.index.projects.map((p) => (p.id === pid ? { ...p, afterMerge: afterMerge || undefined } : p));
+    this.ctx.announce(tr('Merge feito: {0}', [card.ref]));
+    return undefined;
+  }
+
+  private async cardAction(card: BoardCard, verb: 'plan' | 'approve' | 'discard' | 'retry' | 'answer' | 'merge', method: 'POST' | 'PUT', body?: PlanEdit | { questionId: string; text: string } | { feedback: string } | MergeRequest): Promise<string | undefined> {
     const projectId = card.projectId ?? this.projectId;
     if (!projectId) return tr('Este card não está ligado a um projeto do Orca.');
     try {

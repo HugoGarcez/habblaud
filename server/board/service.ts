@@ -18,7 +18,7 @@ import { CliError, execCli, orcaResult, retryOnce, type Exec } from './cli';
 import { DEFAULT_PLANNER_MODEL, plannerPrompt, runPlanner, type PlanRevision } from './planner';
 import { commentIssue, createGithub, issueDetails, updateIssue, createLinear, listGithub, listLinear, listLinearTeams } from './providers';
 import { route } from './router';
-import { BoardRunner, DEFAULT_MAX_WORKERS } from './runner';
+import { BoardRunner, DEFAULT_MAX_WORKERS, type MergeMethod } from './runner';
 import type { BoardStore } from './store';
 
 /** Planejamentos ao mesmo tempo (cada um é um Claude Code rodando). */
@@ -51,6 +51,8 @@ export interface BoardServiceOptions {
   onChange?: () => void;
   /** Workers ao mesmo tempo no quadro todo (HABBLAUD_BOARD_MAX_WORKERS). */
   maxWorkers?: number;
+  /** Como fazer o merge dos PRs (HABBLAUD_BOARD_MERGE: squash, merge ou rebase). */
+  mergeMethod?: MergeMethod;
 }
 
 export type BoardResult<T> = { ok: T } | { error: string; status: 400 | 404 | 409 | 502 };
@@ -119,10 +121,18 @@ export class BoardService {
       lookup: (p, c) => this.lookup(p, c),
       agents: () => this.agents(),
       maxWorkers: opts.maxWorkers ?? DEFAULT_MAX_WORKERS,
+      mergeMethod: opts.mergeMethod,
+      saveAfterMerge: (p, command) => this.saveAfterMerge(p, command),
       onChange: opts.onChange,
     });
     // Planejamento que estava rodando quando o servidor parou: não volta sozinho.
     for (const { projectId, cardId, work } of opts.store.allWorks()) {
+      const update = work.run?.merged?.update;
+      if (update?.state === 'running') {
+        // O comando de depois do merge pode ser justamente o que reinicia o Promp IA.
+        const merged = { ...work.run!.merged!, update: { ...update, state: 'failed' as const, output: tr('O Promp IA reiniciou enquanto o comando rodava (se o comando reinicia o próprio Promp IA, isso é o esperado).'), at: this.now() } };
+        opts.store.setWork(projectId, cardId, { ...work, run: { ...work.run!, merged } });
+      }
       if (work.stage !== 'planning') continue;
       if (work.revising && work.plan) opts.store.setWork(projectId, cardId, { ...work, stage: 'approval', revising: undefined, error: tr('A revisão foi interrompida (o Promp IA reiniciou); o plano anterior continua.'), updatedAt: this.now() });
       else opts.store.setWork(projectId, cardId, { stage: 'failed', error: tr('O planejamento foi interrompido (o Promp IA reiniciou). Planeje de novo.'), updatedAt: this.now() });
@@ -424,6 +434,20 @@ export class BoardService {
     return this.current(projectId, cardId);
   }
 
+  /** Aprova o PR do card: merge e atualização do projeto. */
+  async merge(projectId: string, cardId: string, afterMerge?: string): Promise<BoardResult<BoardCard>> {
+    const err = await this.runner.merge(projectId, cardId, afterMerge);
+    if (err) return { error: err, status: 409 };
+    return this.current(projectId, cardId);
+  }
+
+  private saveAfterMerge(projectId: string, command: string): void {
+    const project = this.projectsCache?.value.find((p) => p.id === projectId);
+    const cur = this.opts.store.config(projectId) ?? (project ? this.withConfig(project, this.teamsCache?.value ?? []) : undefined);
+    if (!cur) return;
+    this.opts.store.setConfig(projectId, { source: cur.source, ...(cur.linearTeam ? { linearTeam: cur.linearTeam } : {}), ...(command ? { afterMerge: command } : {}) });
+  }
+
   /** Tenta de novo um card travado. */
   async retry(projectId: string, cardId: string): Promise<BoardResult<BoardCard>> {
     const err = await this.runner.retry(projectId, cardId);
@@ -488,14 +512,16 @@ export class BoardService {
   async setConfig(projectId: string, config: BoardProjectConfig): Promise<BoardProject | undefined> {
     const raw = (await this.rawProjects()).find((p) => p.id === projectId);
     if (!raw) return undefined;
-    this.opts.store.setConfig(projectId, config);
+    // O comando de depois do merge não vem do seletor de fonte: fica o que estava.
+    const afterMerge = config.afterMerge ?? this.opts.store.config(projectId)?.afterMerge;
+    this.opts.store.setConfig(projectId, { source: config.source, ...(config.linearTeam ? { linearTeam: config.linearTeam } : {}), ...(afterMerge ? { afterMerge } : {}) });
     this.views.delete(projectId);
     return this.withConfig(raw, (await this.linearTeams()) ?? []);
   }
 
-  private withConfig(p: Omit<BoardProject, 'source' | 'linearTeam'>, teams: LinearTeam[]): BoardProject {
+  private withConfig(p: Omit<BoardProject, 'source' | 'linearTeam' | 'afterMerge'>, teams: LinearTeam[]): BoardProject {
     const saved = this.opts.store.config(p.id);
-    if (saved) return { ...p, source: saved.source, ...(saved.linearTeam ? { linearTeam: saved.linearTeam } : {}) };
+    if (saved) return { ...p, source: saved.source, ...(saved.linearTeam ? { linearTeam: saved.linearTeam } : {}), ...(saved.afterMerge ? { afterMerge: saved.afterMerge } : {}) };
     if (p.github) return { ...p, source: 'github' };
     if (teams.length === 1) return { ...p, source: 'linear', linearTeam: teams[0].key };
     return { ...p, source: null };

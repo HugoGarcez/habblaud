@@ -27,6 +27,8 @@ export interface BoardProject {
   source: BoardSource | null;
   /** Time do Linear (key, ex.: "PRO") quando a fonte é o Linear. */
   linearTeam?: string;
+  /** Comando que roda na pasta do projeto depois do merge de um PR pelo quadro (ex.: build e reinício). */
+  afterMerge?: string;
 }
 
 /** IAs que o Orca sabe pôr para trabalhar (`orca orchestration worker-start --agent`). */
@@ -116,6 +118,8 @@ export interface CardRun {
   /** Perguntas já respondidas (não voltam). */
   answered: string[];
   pr?: { url: string; number?: number };
+  /** Merge feito pelo quadro; `update` = o comando de depois do merge (rodando, ok ou falhou, com o fim da saída). */
+  merged?: { at: number; update?: { command: string; state: 'running' | 'done' | 'failed'; output?: string; at: number } };
   startedAt: number;
   finishedAt?: number;
   /** Últimos acontecimentos, para a página. */
@@ -284,7 +288,15 @@ export interface PlanEdit {
 export interface BoardProjectConfig {
   source: BoardSource | null;
   linearTeam?: string;
+  afterMerge?: string;
 }
+
+/** POST /api/board/projects/:id/cards/:card/merge: o comando de depois do merge (vazio = nenhum; fica salvo no projeto). */
+export interface MergeRequest {
+  afterMerge?: string;
+}
+
+export const AFTER_MERGE_MAX = 1_000;
 
 /** Labels do GitHub que fixam a coluna de uma issue aberta (o Promp IA as põe nas fases seguintes). */
 export const GITHUB_COLUMN_LABELS: Readonly<Record<string, BoardColumn>> = {
