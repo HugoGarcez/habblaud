@@ -227,8 +227,19 @@ describe('runner', () => {
     expect(work(store).stage).toBe('running');
   });
 
-  it('IA sem cota espera; limite de workers vale para o quadro', async () => {
+  it('IA sem cota na hora de começar dá lugar à equivalente; a troca fica no plano', async () => {
     const { store, runner, state } = setup({ quotas: { codex: false } });
+    await runner.tick();
+    await runner.tick();
+    await settle();
+    const start = state.calls.find((c) => c[2] === 'worker-start')!;
+    expect(start[start.indexOf('--agent') + 1]).toBe('claude');
+    expect(work(store).plan!.actions[0].agent).toBe('claude');
+    expect(work(store).plan!.notes.join('\n')).toMatch(/Codex sem cota agora; vai com Claude/);
+  });
+
+  it('nenhuma IA disponível espera; limite de workers vale para o quadro', async () => {
+    const { store, runner, state } = setup({ quotas: { codex: false, claude: false, opencode: false, antigravity: false } });
     await runner.tick();
     await runner.tick();
     expect(state.calls.some((c) => c[2] === 'worker-start')).toBe(false);

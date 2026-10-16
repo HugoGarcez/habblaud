@@ -28,6 +28,7 @@ import { errMsg, log } from '../log';
 import { AGENT_NAMES } from './agents';
 import type { AgentQuota } from '../../shared/board';
 import { CliError, orcaResult, runShell, type Exec, type Shell } from './cli';
+import { pickAgent, substitute, swapNote } from './router';
 import type { BoardStore } from './store';
 
 export const TICK_MS = 8_000;
@@ -49,6 +50,8 @@ export interface RunnerDeps {
   /** Projeto e card atuais (da fonte). */
   lookup(projectId: string, cardId: string): Promise<{ project: BoardProject; card: BoardCard } | undefined>;
   agents(): AgentQuota[];
+  /** Relê as cotas no Orca (se as guardadas estão velhas) antes de escolher as IAs. */
+  refreshAgents?(): Promise<void>;
   maxWorkers?: number;
   /** Como o quadro faz o merge do PR (HABBLAUD_BOARD_MERGE; padrão squash). */
   mergeMethod?: MergeMethod;
@@ -242,6 +245,16 @@ export class BoardRunner {
     const work = this.work(projectId, cardId);
     if (!found || !work?.plan || work.stage !== 'queued') return;
     const { project, card } = found;
+    // Antes de criar as tarefas: IA que ficou sem cota (ou que o Orca não consegue usar) desde o plano dá lugar à
+    // equivalente disponível.
+    if (!work.run?.runId) {
+      await this.d.refreshAgents?.().catch(() => undefined);
+      const swap = substitute(work.plan.actions, this.d.agents());
+      if (swap.notes.length) {
+        this.save(projectId, cardId, (w) => ({ ...w, plan: { ...w.plan!, actions: swap.actions, notes: [...w.plan!.notes, ...swap.notes] } }), ['queued']);
+        return this.prepare(projectId, cardId);
+      }
+    }
     const plan = work.plan;
     const run: CardRun = work.run ?? {
       actions: Object.fromEntries(plan.actions.map((a) => [a.id, { state: 'waiting' } as ActionRun])),
@@ -397,13 +410,27 @@ export class BoardRunner {
       if (!this.busy.has(key)) void this.guard(key, () => this.finish(projectId, cardId));
       return;
     }
-    // Tasks prontas: um worker cada, com vaga e cota.
-    const quotas = new Map(this.d.agents().map((q) => [q.agent, q]));
+    // Tasks prontas: um worker cada, com vaga e cota (a IA sem cota agora dá lugar à equivalente disponível).
+    if (work.plan.actions.some((x) => run.actions[x.id].state === 'waiting' && byTask.get(run.actions[x.id].taskId ?? '')?.status === 'ready')) {
+      await this.d.refreshAgents?.().catch(() => undefined);
+    }
+    const all = this.d.agents();
+    const quotas = new Map(all.map((q) => [q.agent, q]));
+    let planChanged = false;
     const max = this.d.maxWorkers ?? DEFAULT_MAX_WORKERS;
     for (const action of work.plan.actions) {
       const a = run.actions[action.id];
       const t = a.taskId ? byTask.get(a.taskId) : undefined;
       if (a.state !== 'waiting' || t?.status !== 'ready') continue;
+      const alt = pickAgent(action, all);
+      if (alt && alt !== action.agent) {
+        const text = swapNote(action, alt, all);
+        this.note(run, text);
+        work.plan.notes = [...work.plan.notes, text];
+        action.agent = alt;
+        planChanged = true;
+        changed = true;
+      }
       const q = quotas.get(action.agent);
       if (!q?.available) {
         const why = tr('esperando {0} ({1})', [AGENT_NAMES[action.agent], q?.reason ?? tr('indisponível')]);
@@ -426,11 +453,12 @@ export class BoardRunner {
       a.startRequest = randomUUID();
       a.startedAt = this.now();
       this.note(run, tr('Começando "{0}" com {1}.', [action.title, AGENT_NAMES[action.agent]]));
-      this.save(projectId, cardId, (w) => ({ ...w, run }), ['running']);
+      this.save(projectId, cardId, (w) => ({ ...w, run, ...(planChanged ? { plan: work.plan } : {}) }), ['running']);
       changed = false;
+      planChanged = false;
       void this.startWorker(projectId, cardId, action, a.startRequest);
     }
-    if (changed) this.save(projectId, cardId, (w) => ({ ...w, run }), ['running']);
+    if (changed) this.save(projectId, cardId, (w) => ({ ...w, run, ...(planChanged ? { plan: work.plan } : {}) }), ['running']);
   }
 
   private async startWorker(projectId: string, cardId: string, action: PlanAction, requestId: string, retryOf?: string): Promise<void> {
@@ -801,6 +829,9 @@ export class BoardRunner {
       return undefined;
     }
     const retries: { action: PlanAction; requestId: string; retryOf?: string }[] = [];
+    // A falha pode ter sido a cota: quem tenta de novo é uma IA disponível agora (a equivalente, se precisar).
+    await this.d.refreshAgents?.().catch(() => undefined);
+    const quotas = this.d.agents();
     this.save(
       projectId,
       cardId,
@@ -808,6 +839,13 @@ export class BoardRunner {
         for (const action of w.plan!.actions) {
           const a = w.run!.actions[action.id];
           if (a.state !== 'failed') continue;
+          const alt = pickAgent(action, quotas);
+          if (alt && alt !== action.agent) {
+            const text = swapNote(action, alt, quotas);
+            this.note(w.run!, text);
+            w.plan!.notes = [...w.plan!.notes, text];
+            action.agent = alt;
+          }
           const retryOf = a.dispatchId;
           Object.assign(a, { state: 'starting', error: undefined, startRequest: randomUUID(), startedAt: this.now() });
           retries.push({ action, requestId: a.startRequest!, retryOf });

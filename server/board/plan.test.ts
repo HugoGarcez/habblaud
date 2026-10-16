@@ -2,7 +2,7 @@
 // planejador (`claude -p` falso: argumentos, conta, saída) e o fluxo do serviço (Planejando → Aguardando aprovação →
 // na fila; falha; edição; descarte; reinício). CLIs falsas; dados sintéticos.
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentQuota } from '../../shared/board';
 import type { AccountInfo } from '../../shared/types';
 import { setQuiet } from '../log';
@@ -228,6 +228,8 @@ describe('fluxo do serviço', () => {
     const { board } = setup(() => new Promise((r) => (release = r)));
     await board.plan('p', 'github:1');
     await board.discard('p', 'github:1');
+    // O planejador começa depois de reler as cotas do Orca.
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
     release(planJson);
     await settle();
     expect((await board.view('p'))!.cards[0].work).toBeUndefined();

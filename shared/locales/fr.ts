@@ -2762,6 +2762,8 @@ export const FR: Readonly<Record<string, string>> = {
   "Um agente pergunta:": "Un agent demande :",
   "Um agente perguntou algo: responda no card.": "Un agent a posé une question : répondez dans la carte.",
   "Você respondeu: {0}": "Vous avez répondu : {0}",
+  "o Orca não consegue usar: {0}": "Orca ne peut pas l’utiliser : {0}",
+  "sem login": "non connecté",
   "Aprovar e fazer merge do PR #{0}": "Approuver et fusionner la PR #{0}",
   "Aprovar e fazer merge do PR": "Approuver et fusionner la PR",
   "Atualizando o sistema do projeto: {0}…": "Mise à jour du système du projet : {0}…",

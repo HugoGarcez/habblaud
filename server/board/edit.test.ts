@@ -1,7 +1,7 @@
 // Editar card (issue na fonte: título, descrição e troca da label de tipo) e revisão do plano pelo planejador (plano
 // anterior + pedido no prompt; falha mantém o plano anterior; cancelar volta a ele). CLIs falsas; dados sintéticos.
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CardPlan } from '../../shared/board';
 import { setQuiet } from '../log';
 import { tempDir } from '../test/fixtures';
@@ -118,6 +118,8 @@ describe('revisão do plano', () => {
     await b.board.plan('p', 'github:1', 'mude');
     await b.board.discard('p', 'github:1');
     expect(b.store.work('p', 'github:1')).toMatchObject({ stage: 'approval', plan: { summary: 'S' } });
+    // O planejador começa depois de reler as cotas do Orca.
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
     release(JSON.stringify({ structured_output: { summary: 'tarde', actions: plan.actions } }));
     await settle();
     expect(b.store.work('p', 'github:1')?.plan?.summary).toBe('S');

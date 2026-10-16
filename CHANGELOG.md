@@ -51,6 +51,11 @@ do meio (0.**3**.0).
   card, marca a issue do Linear como Done e atualiza a pasta do projeto (fast-forward, só se ela está no branch
   principal e sem mudanças). Opcional: um comando para rodar na pasta do projeto depois do merge (ex.: build e
   reinício), salvo por projeto; o card mostra o andamento e a saída. Conflito ou PR fechado: o card avisa e não muda.
+- **Cotas conferidas no Orca antes de distribuir:** o quadro lê as cotas que o próprio Orca mede (`orca account
+  list`) junto com as do escritório (vale o maior uso) e tira as IAs que o Orca não consegue usar (sem login). A
+  conferência é refeita antes de planejar, antes de criar as subtarefas, antes de começar cada worker e ao tentar de
+  novo: IA sem cota ou indisponível é trocada pela equivalente do tipo da ação (ex.: análise do Antigravity vai para
+  o Claude), com a troca anotada no plano. Só espera quando nenhuma IA serve.
 - **Perguntas que expiram:** quando o agente que perguntou já terminou (seguiu sem a resposta), a pergunta sai do
   card sozinha, em vez de ficar presa e dar erro do Orca ("Dispatch is inactive") ao responder.
 

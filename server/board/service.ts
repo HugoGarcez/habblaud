@@ -18,6 +18,7 @@ import { CliError, execCli, orcaResult, retryOnce, type Exec } from './cli';
 import { DEFAULT_PLANNER_MODEL, plannerPrompt, runPlanner, type PlanRevision } from './planner';
 import { commentIssue, createGithub, issueDetails, updateIssue, createLinear, listGithub, listLinear, listLinearTeams } from './providers';
 import { route } from './router';
+import { fetchOrcaLimits, type OrcaLimits } from './orca-limits';
 import { BoardRunner, DEFAULT_MAX_WORKERS, type MergeMethod } from './runner';
 import type { BoardStore } from './store';
 
@@ -29,6 +30,7 @@ export const TEAMS_TTL_MS = 5 * 60_000;
 export const VIEW_TTL_MS = 20_000;
 /** De quanto em quanto tempo os cards de todos os projetos são relidos (para o resumo nas salas). */
 export const SUMMARY_REFRESH_MS = 2 * 60_000;
+export const LIMITS_TTL_MS = 60_000;
 
 export interface BoardServiceOptions {
   store: BoardStore;
@@ -106,6 +108,9 @@ export class BoardService {
   private projectsLoading?: Promise<Omit<BoardProject, 'source' | 'linearTeam'>[]>;
   private teamsLoading?: Promise<LinearTeam[] | null>;
   private planning = new Set<string>();
+  /** Cotas medidas pelo Orca (`orca account list`); relidas a cada LIMITS_TTL_MS quando alguém precisa. */
+  private orcaLimits?: Cached<OrcaLimits>;
+  private limitsLoading?: Promise<void>;
   readonly runner: BoardRunner;
 
   constructor(private readonly opts: BoardServiceOptions) {
@@ -120,6 +125,7 @@ export class BoardService {
       now: this.now,
       lookup: (p, c) => this.lookup(p, c),
       agents: () => this.agents(),
+      refreshAgents: () => this.refreshAgents(),
       maxWorkers: opts.maxWorkers ?? DEFAULT_MAX_WORKERS,
       mergeMethod: opts.mergeMethod,
       saveAfterMerge: (p, command) => this.saveAfterMerge(p, command),
@@ -140,7 +146,22 @@ export class BoardService {
   }
 
   agents() {
-    return agentQuotas(this.opts.accounts?.() ?? [], this.opts.installed ?? new Set());
+    return agentQuotas(this.opts.accounts?.() ?? [], this.opts.installed ?? new Set(), this.orcaLimits?.value);
+  }
+
+  /**
+   * Relê as cotas no Orca se as guardadas passaram de LIMITS_TTL_MS (antes de planejar, de criar as tarefas e de
+   * começar workers). Falha = ficam as anteriores (e as contas do escritório).
+   */
+  refreshAgents(): Promise<void> {
+    if (this.orcaLimits && this.now() - this.orcaLimits.at < LIMITS_TTL_MS) return Promise.resolve();
+    this.limitsLoading ??= fetchOrcaLimits(this.exec, this.opts.orca)
+      .then((value) => {
+        this.orcaLimits = { at: this.now(), value };
+      })
+      .catch((err) => log.warnOnce(`board-limits:${errMsg(err)}`, `Quadro: cotas do Orca indisponíveis (${errMsg(err)}); valem as do escritório.`))
+      .finally(() => (this.limitsLoading = undefined));
+    return this.limitsLoading;
   }
 
   async index(): Promise<BoardIndex> {
@@ -247,7 +268,7 @@ export class BoardService {
   start(): void {
     this.runner.start();
     const refresh = () =>
-      void this.allView()
+      void Promise.all([this.allView(), this.refreshAgents()])
         .then(() => this.opts.onChange?.())
         .catch(() => undefined);
     refresh();
@@ -316,6 +337,7 @@ export class BoardService {
   private async runPlan(project: BoardProject, card: BoardCard, configDir: string | undefined, revision?: PlanRevision): Promise<void> {
     const model = this.opts.plannerModel || DEFAULT_PLANNER_MODEL;
     try {
+      await this.refreshAgents();
       const quotas = this.agents();
       // O card guarda só o começo da descrição: o planejador lê a issue inteira (se a fonte responder).
       const full = await issueDetails(this.exec, { gh: this.opts.gh, orca: this.opts.orca }, { source: card.source, repo: project.github, ref: card.ref }).catch(() => undefined);

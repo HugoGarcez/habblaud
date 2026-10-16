@@ -5,10 +5,12 @@
 //   antigravity cartões "orca:antigravity…" (cotas do `agy /usage`)
 //   opencode    sem números de uso (só precisa estar instalado)
 // Uma IA está disponível quando a CLI existe e a conta com mais folga tem 5 h abaixo de 90% e semana abaixo de 95%
-// (e não está "sem cota").
+// (e não está "sem cota"). As cotas que o Orca mede (orca-limits.ts) entram junto: vale o maior uso, e a IA que o
+// Orca diz não conseguir usar (sem login) fica indisponível.
 import type { AccountInfo } from '../../shared/types';
 import { AGENT_IDS, type AgentId, type AgentQuota } from '../../shared/board';
 import { tr } from '../../shared/i18n';
+import type { OrcaLimits } from './orca-limits';
 
 export const FIVE_HOUR_LIMIT = 90;
 export const SEVEN_DAY_LIMIT = 95;
@@ -61,7 +63,7 @@ function blocked(a: AccountInfo): boolean {
  * Situação de cada IA. `installed`: as CLIs presentes neste computador. Sem conta com números, a IA instalada conta
  * como disponível (não dá para saber a cota).
  */
-export function agentQuotas(accounts: readonly AccountInfo[], installed: ReadonlySet<AgentId>): AgentQuota[] {
+export function agentQuotas(accounts: readonly AccountInfo[], installed: ReadonlySet<AgentId>, orca: OrcaLimits = {}): AgentQuota[] {
   return AGENT_IDS.map((agent) => {
     const mine = accounts.filter((a) => agentOfAccount(a) === agent && a.usage);
     // A conta com mais folga (sem números conta como folga desconhecida, depois das com números).
@@ -72,8 +74,18 @@ export function agentQuotas(accounts: readonly AccountInfo[], installed: Readonl
       if (best.usage.sevenDay) q.sevenDay = Math.round(best.usage.sevenDay.utilization);
       if (best.usageStatus === 'stale') q.stale = true;
     }
+    // O Orca (quem roda os workers) também mede: vale o maior uso dos dois.
+    const o = orca[agent];
+    if (o?.status === 'ok') {
+      if (o.fiveHour !== undefined) q.fiveHour = Math.max(q.fiveHour ?? 0, o.fiveHour);
+      if (o.sevenDay !== undefined) q.sevenDay = Math.max(q.sevenDay ?? 0, o.sevenDay);
+      if (o.fiveHour !== undefined || o.sevenDay !== undefined) delete q.stale;
+    }
+    const full = (q.fiveHour ?? 0) >= 100 || (q.sevenDay ?? 0) >= 100;
     if (!q.installed) q.reason = tr('não instalada neste computador');
-    else if (best && blocked(best)) q.reason = best.usage?.noQuota ? tr('sem cota agora') : tr('cota quase no fim');
+    else if (o?.status === 'unavailable') q.reason = tr('o Orca não consegue usar: {0}', [o.error ?? tr('sem login')]);
+    else if (best?.usage?.noQuota || full) q.reason = tr('sem cota agora');
+    else if ((best && blocked(best)) || (q.fiveHour ?? 0) >= FIVE_HOUR_LIMIT || (q.sevenDay ?? 0) >= SEVEN_DAY_LIMIT) q.reason = tr('cota quase no fim');
     q.available = q.installed && !q.reason;
     return q;
   });
