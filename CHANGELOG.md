@@ -12,6 +12,12 @@ do meio (0.**3**.0).
 
 ### Adicionado
 
+- **Quadro de tarefas:** o PR de cada card vai para o branch em que a pasta do projeto está (o que roda nesta
+  máquina), se ele existe no origin, em vez de sempre o padrão; o worktree do card também parte dele. Assim o merge
+  pelo quadro atualiza a pasta e roda o comando de depois do merge.
+- **Quadro de tarefas:** o comando de depois do merge roda destacado do Promp IA e é retomado depois de um reinício:
+  um comando que reinicia o próprio sistema (como o deploy do Promp IA) termina com a saída e o resultado no card.
+
 - **Quadro de tarefas:** worker que falha porque o Orca não consegue usar a IA (sem login nela, como "Antigravity
   isn't signed in") não trava mais o card: a IA fica fora da escolha por 30 minutos e a ação tenta de novo, sozinha,
   com a equivalente disponível (a troca fica nas notas do plano).

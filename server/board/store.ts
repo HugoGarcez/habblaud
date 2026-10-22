@@ -2,7 +2,7 @@
 // o Promp IA está fazendo com cada card (CardWork: planejamento, plano, aprovação).
 // Gravação atômica (arquivo temporário + rename), como o names.json.
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { CARD_STAGES, type BoardProjectConfig, type BoardSource, type CardWork } from '../../shared/board';
 import { errMsg, log } from '../log';
 
@@ -28,6 +28,13 @@ export class BoardStore {
   private data: BoardFile = { version: 1, projects: {}, cards: {}, coordinators: {} };
 
   constructor(private readonly file: string) {}
+
+  /** Arquivo de saída de um comando do quadro (fica ao lado do board.json, em board-logs/). */
+  logFile(name: string): string {
+    const dir = join(dirname(this.file), 'board-logs');
+    mkdirSync(dir, { recursive: true });
+    return join(dir, name);
+  }
 
   load(): void {
     try {

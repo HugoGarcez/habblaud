@@ -27,7 +27,7 @@ import { tr } from '../../shared/i18n';
 import { errMsg, log } from '../log';
 import { AGENT_NAMES } from './agents';
 import type { AgentId, AgentQuota } from '../../shared/board';
-import { CliError, orcaResult, runShell, type Exec, type Shell } from './cli';
+import { CliError, orcaResult, readDetached, runDetachedShell, waitDetached, type Exec, type Shell } from './cli';
 import { pickAgent, substitute, swapNote } from './router';
 import type { BoardStore } from './store';
 
@@ -297,8 +297,9 @@ export class BoardRunner {
       }
       if (!run.worktree) {
         run.worktreeName ??= worktreeName(card);
+        run.base ??= await this.baseBranch(project);
         persist();
-        run.worktree = await this.ensureWorktree(project, card, run.worktreeName);
+        run.worktree = await this.ensureWorktree(project, card, run.worktreeName, run.base);
         this.note(run, tr('Worktree {0} (branch {1}).', [run.worktree.path, run.worktree.branch]));
         persist();
       }
@@ -321,14 +322,14 @@ export class BoardRunner {
     }
   }
 
-  private async ensureWorktree(project: BoardProject, card: BoardCard, name: string): Promise<{ id: string; path: string; branch: string; repoPath?: string }> {
+  private async ensureWorktree(project: BoardProject, card: BoardCard, name: string, base?: string): Promise<{ id: string; path: string; branch: string; repoPath?: string }> {
     const withRepo = (w: { id: string; path: string; branch: string }) => ({ ...w, ...(project.path ? { repoPath: project.path } : {}) });
     const existing = await this.findWorktree(name);
     if (existing) return withRepo(existing);
     const issue = card.source === 'github' ? ['--issue', card.ref.replace(/^#/, '')] : ['--linear-issue', card.ref];
     try {
       const r = orcaResult<{ worktree?: { id: string; path: string; branch: string } }>(
-        await this.orca(['worktree', 'create', '--name', name, '--repo', `path:${project.path}`, '--no-parent', '--setup', 'skip', ...issue, '--json'], 120_000),
+        await this.orca(['worktree', 'create', '--name', name, '--repo', `path:${project.path}`, '--no-parent', '--setup', 'skip', ...issue, ...(base ? ['--base-branch', base] : []), '--json'], 120_000),
       );
       if (r.worktree?.path) return withRepo({ id: r.worktree.id, path: r.worktree.path, branch: r.worktree.branch });
     } catch (err) {
@@ -664,7 +665,8 @@ export class BoardRunner {
         await this.git(wt, ['commit', '-m', `${card.title}\n\n${closing}\n\n${tr('Plano executado pelo Promp IA.')}`]);
         this.note(run, tr('Commit feito no branch {0}.', [branch]));
       }
-      const base = await this.baseBranch(project);
+      // Run de antes do base no card: o padrão do origin, como era.
+      const base = run.base ?? (await this.defaultBranch(project));
       const ahead = Number((await this.git(wt, ['rev-list', '--count', `origin/${base}..HEAD`]).catch(() => '1')).trim()) || 0;
       if (!ahead) {
         this.note(run, tr('As ações terminaram sem mudar arquivos: nada para o PR.'));
@@ -689,8 +691,21 @@ export class BoardRunner {
     }
   }
 
-  /** Branch padrão do origin ("main"). */
+  /**
+   * Branch onde o trabalho do card entra: o branch em que a pasta do projeto está (é o que roda nesta máquina), se ele
+   * existe no origin; senão, o padrão do origin ("main").
+   */
   private async baseBranch(project: BoardProject): Promise<string> {
+    const current = (await this.git(project.path!, ['rev-parse', '--abbrev-ref', 'HEAD']).catch(() => '')).trim();
+    if (current && current !== 'HEAD') {
+      const remote = await this.git(project.path!, ['ls-remote', '--heads', 'origin', current], 30_000).catch(() => '');
+      if (remote.trim()) return current;
+    }
+    return this.defaultBranch(project);
+  }
+
+  /** Branch padrão do origin ("main"). */
+  private async defaultBranch(project: BoardProject): Promise<string> {
     const ref = (await this.git(project.path!, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']).catch(() => 'origin/main')).trim();
     return ref.replace(/^origin\//, '') || 'main';
   }
@@ -773,7 +788,7 @@ export class BoardRunner {
         // Fora de qualquer repositório: o gh não mexe em branch local nenhum (o do card está no worktree).
         await this.d.exec(this.d.gh, ['pr', 'merge', run.pr.url, `--${method}`], { timeoutMs: 120_000, cwd: tmpdir() });
       }
-      const base = pr.baseRefName || (await this.baseBranch(project));
+      const base = pr.baseRefName || (await this.defaultBranch(project));
       const branch = pr.headRefName || (run.worktree ? stripRef(run.worktree.branch) : '');
       this.save(projectId, cardId, (w) => {
         this.note(w.run!, pr.state === 'MERGED' ? tr('O PR já estava com merge no GitHub.') : tr('Merge do PR feito em {0}.', [base]));
@@ -814,9 +829,10 @@ export class BoardRunner {
         .catch(() => undefined);
     }
     const updated = project.path ? await this.updateLocal(project.path, base, notes) : false;
+    const logFile = this.d.store.logFile(`after-merge-${slugFile(projectId)}-${slugFile(cardId)}.log`);
     this.save(projectId, cardId, (w) => {
       for (const n of notes) this.note(w.run!, n);
-      if (command && updated) w.run!.merged = { ...w.run!.merged!, update: { command, state: 'running', at: this.now() } };
+      if (command && updated) w.run!.merged = { ...w.run!.merged!, update: { command, state: 'running', at: this.now(), log: logFile } };
       return w;
     });
     if (!command || !project.path) return;
@@ -827,12 +843,41 @@ export class BoardRunner {
       });
       return;
     }
-    const res = await (this.d.shell ?? runShell)(command, { cwd: project.path, timeoutMs: AFTER_MERGE_TIMEOUT_MS });
+    const onStart = (pid: number) =>
+      this.save(projectId, cardId, (w) => {
+        if (w.run?.merged?.update) w.run.merged.update.pid = pid;
+        return w;
+      });
+    const res = await (this.d.shell ?? runDetachedShell)(command, { cwd: project.path, timeoutMs: AFTER_MERGE_TIMEOUT_MS, log: logFile, onStart });
+    this.updateDone(projectId, cardId, command, res);
+  }
+
+  private updateDone(projectId: string, cardId: string, command: string, res: { ok: boolean; output: string }): void {
     this.save(projectId, cardId, (w) => {
-      w.run!.merged = { ...w.run!.merged!, update: { command, state: res.ok ? 'done' : 'failed', output: res.output, at: this.now() } };
+      const prev = w.run!.merged!.update;
+      w.run!.merged = { ...w.run!.merged!, update: { command, state: res.ok ? 'done' : 'failed', output: res.output, at: this.now(), ...(prev?.log ? { log: prev.log } : {}) } };
       this.note(w.run!, res.ok ? tr('Sistema do projeto atualizado ({0}).', [command]) : tr('O comando de depois do merge falhou ({0}).', [command]));
       return w;
     });
+  }
+
+  /**
+   * Depois de um reinício: o comando de depois do merge que estava rodando seguiu destacado (muitas vezes foi ele que
+   * reiniciou o Promp IA); volta a acompanhar pela saída dele.
+   */
+  resumeUpdates(): void {
+    for (const { projectId, cardId, work } of this.d.store.allWorks()) {
+      const update = work.run?.merged?.update;
+      if (update?.state !== 'running') continue;
+      if (!update.log) {
+        this.updateDone(projectId, cardId, update.command, { ok: false, output: tr('O Promp IA reiniciou enquanto o comando rodava (se o comando reinicia o próprio Promp IA, isso é o esperado).') });
+        continue;
+      }
+      const left = Math.max(AFTER_MERGE_TIMEOUT_MS - (this.now() - update.at), 5_000);
+      const now = readDetached(update.log);
+      if (now.done) this.updateDone(projectId, cardId, update.command, now);
+      else void waitDetached(update.log, left, update.pid).then((res) => this.updateDone(projectId, cardId, update.command, res));
+    }
   }
 
   /** Traz o merge para a pasta do projeto: fast-forward do branch base, só se é o branch atual e não há mudanças. */
@@ -992,6 +1037,10 @@ function taskCreateArgs(from: string, runId: string, project: BoardProject, card
     '--deps',
     JSON.stringify(deps),
   ];
+}
+
+function slugFile(s: string): string {
+  return s.replace(/[^a-zA-Z0-9]+/g, '_');
 }
 
 function coordinatorKey(projectId: string, cardId: string): string {

@@ -136,14 +136,10 @@ export class BoardService {
       saveAfterMerge: (p, command) => this.saveAfterMerge(p, command),
       onChange: opts.onChange,
     });
+    // Comando de depois do merge que rodava quando o servidor parou (muitas vezes foi ele que reiniciou): segue.
+    this.runner.resumeUpdates();
     // Planejamento que estava rodando quando o servidor parou: não volta sozinho.
     for (const { projectId, cardId, work } of opts.store.allWorks()) {
-      const update = work.run?.merged?.update;
-      if (update?.state === 'running') {
-        // O comando de depois do merge pode ser justamente o que reinicia o Promp IA.
-        const merged = { ...work.run!.merged!, update: { ...update, state: 'failed' as const, output: tr('O Promp IA reiniciou enquanto o comando rodava (se o comando reinicia o próprio Promp IA, isso é o esperado).'), at: this.now() } };
-        opts.store.setWork(projectId, cardId, { ...work, run: { ...work.run!, merged } });
-      }
       if (work.stage !== 'planning') continue;
       if (work.revising && work.plan) opts.store.setWork(projectId, cardId, { ...work, stage: 'approval', revising: undefined, error: tr('A revisão foi interrompida (o Promp IA reiniciou); o plano anterior continua.'), updatedAt: this.now() });
       else opts.store.setWork(projectId, cardId, { stage: 'failed', error: tr('O planejamento foi interrompido (o Promp IA reiniciou). Planeje de novo.'), updatedAt: this.now() });

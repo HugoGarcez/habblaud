@@ -6,7 +6,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentQuota, BoardCard, BoardProject, CardPlan } from '../../shared/board';
 import { setQuiet } from '../log';
 import { tempDir } from '../test/fixtures';
-import { CliError, type Exec, type Shell } from './cli';
+import { writeFileSync } from 'node:fs';
+import { CliError, runDetachedShell, type Exec, type Shell } from './cli';
 import { BoardRunner, taskSpec, workerSummary, worktreeName } from './runner';
 import { BoardStore } from './store';
 
@@ -47,6 +48,8 @@ function fakeOrca() {
     /** Resposta do `gh pr view` do PR do card (sem ela: PR não existe). */
     pr: undefined as { state: string; mergeable?: string; baseRefName?: string; headRefName?: string } | undefined,
     head: 'main',
+    /** Branches que existem no origin (`git ls-remote --heads`). */
+    remoteHeads: ['main'] as string[],
     /** `lastError` do `worker-show` (worker que falhou sem relatório). */
     workerError: undefined as string | undefined,
     /** Segura o `worker-start` (o Orca leva dezenas de segundos para abrir o worker). */
@@ -70,6 +73,7 @@ function fakeOrca() {
       if (sub === 'symbolic-ref') return 'origin/main\n';
       if (sub === 'rev-list') return state.gitStatus ? '1\n' : '0\n';
       if (sub === 'rev-parse') return `${state.head}\n`;
+      if (sub === 'ls-remote') return state.remoteHeads.includes(args[5]) ? `abc\trefs/heads/${args[5]}\n` : '';
       return '';
     }
     if (bin === 'gh') {
@@ -502,6 +506,57 @@ describe('runner', () => {
     expect(commands).toEqual(['npm run build']);
     expect(work(store).run!.merged?.update).toEqual(expect.objectContaining({ state: 'done', output: 'build ok' }));
     expect(await runner.merge('p', card.id)).toMatch(/não tem PR/);
+  });
+
+  it('base do PR: o branch em que a pasta do projeto está, se existe no origin', async () => {
+    const { store, runner, state, complete } = setup();
+    state.head = 'feat/x';
+    state.remoteHeads = ['main', 'feat/x'];
+    await runner.tick();
+    expect(work(store).run!.base).toBe('feat/x');
+    const wt = state.calls.find((c) => c[1] === 'worktree' && c[2] === 'create')!;
+    expect(wt).toEqual(expect.arrayContaining(['--base-branch', 'feat/x']));
+    await runner.tick();
+    await settle();
+    complete('task_1');
+    await runner.tick();
+    await settle();
+    complete('task_2');
+    await runner.tick();
+    await settle();
+    await settle();
+    const pr = state.calls.find((c) => c[0] === 'gh' && c[2] === 'create')!;
+    expect(pr).toEqual(expect.arrayContaining(['--base', 'feat/x']));
+  });
+
+  it('base do PR: branch local que não existe no origin cai no padrão', async () => {
+    const { store, runner, state } = setup();
+    state.head = 'so-local';
+    await runner.tick();
+    expect(work(store).run!.base).toBe('main');
+  });
+
+  it('comando de depois do merge que reinicia o Promp IA: retomado pela saída depois do reinício', async () => {
+    const { store, runner } = setup();
+    const log = store.logFile('teste.log');
+    writeFileSync(log, 'build ok\n__PROMP_EXIT__0\n');
+    store.setWork('p', card.id, { stage: 'done', plan, updatedAt: NOW, run: { actions: {}, questions: [], answered: [], startedAt: NOW, log: [], merged: { at: NOW, update: { command: 'deploy', state: 'running', at: NOW, log } } } });
+    runner.resumeUpdates();
+    expect(work(store).run!.merged!.update).toEqual(expect.objectContaining({ state: 'done', output: 'build ok', log }));
+    store.setWork('p', card.id, { stage: 'done', plan, updatedAt: NOW, run: { actions: {}, questions: [], answered: [], startedAt: NOW, log: [], merged: { at: NOW, update: { command: 'deploy', state: 'running', at: NOW } } } });
+    runner.resumeUpdates();
+    expect(work(store).run!.merged!.update!.state).toBe('failed');
+  });
+
+  it('comando destacado: saída, código de saída e exit no meio do comando', async () => {
+    const tmp = tempDir();
+    cleanups.push(tmp.cleanup);
+    const log = join(tmp.dir, 'out.log');
+    let pid = 0;
+    const ok = await runDetachedShell('echo oi', { cwd: tmp.dir, timeoutMs: 10_000, log, onStart: (p) => (pid = p) });
+    expect(ok).toEqual({ ok: true, output: 'oi' });
+    expect(pid).toBeGreaterThan(0);
+    expect(await runDetachedShell('echo erro >&2; exit 3', { cwd: tmp.dir, timeoutMs: 10_000, log })).toEqual({ ok: false, output: 'erro' });
   });
 
   it('merge: conflito não faz merge; repositório local em outro branch não roda o comando', async () => {

@@ -1,7 +1,7 @@
 // Chamadas às CLIs que o quadro usa (orca e gh): sem shell (execFile), com prazo e o stdout em JSON. Uma função
 // `Exec` só, para os testes trocarem por uma falsa.
-import { execFile } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { execFile, spawn } from 'node:child_process';
+import { closeSync, existsSync, openSync, readFileSync, writeFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 
 export type Exec = (bin: string, args: string[], opts?: { timeoutMs?: number; cwd?: string; env?: NodeJS.ProcessEnv }) => Promise<string>;
@@ -38,7 +38,7 @@ export const execCli: Exec = (bin, args, opts = {}) =>
   });
 
 /** Saída de um comando do usuário (o de depois do merge): o fim do stdout e do stderr juntos. */
-export type Shell = (command: string, opts: { cwd: string; timeoutMs: number }) => Promise<{ ok: boolean; output: string }>;
+export type Shell = (command: string, opts: { cwd: string; timeoutMs: number; log?: string; onStart?: (pid: number) => void }) => Promise<{ ok: boolean; output: string }>;
 
 export const SHELL_OUTPUT_MAX = 4_000;
 
@@ -54,6 +54,60 @@ export const runShell: Shell = (command, opts) =>
     });
     child.stdin?.end();
   });
+
+const EXIT_MARK = '__PROMP_EXIT__';
+
+/**
+ * Roda `command` no shell de login do usuário, destacado do Promp IA: segue rodando se o Promp IA reiniciar (o comando
+ * de depois do merge costuma reiniciar o próprio sistema). Saída e código de saída vão para `opts.log`; quem reinicia
+ * acompanha de novo com `waitDetached`.
+ */
+export const runDetachedShell: Shell = async (command, opts) => {
+  if (!opts.log) return runShell(command, opts);
+  writeFileSync(opts.log, '');
+  const fd = openSync(opts.log, 'a');
+  const shell = process.env.SHELL || '/bin/sh';
+  // Subshell: um `exit` no comando não pula a marca do código de saída.
+  const script = `(\n${command}\n)\nprintf '\\n${EXIT_MARK}%s\\n' "$?"`;
+  const child = spawn(shell, ['-lc', script], { cwd: opts.cwd, detached: true, stdio: ['ignore', fd, fd] });
+  closeSync(fd);
+  child.unref();
+  if (child.pid) opts.onStart?.(child.pid);
+  return waitDetached(opts.log, opts.timeoutMs, child.pid);
+};
+
+/** Saída do comando destacado; `ok` só quando terminou. */
+export function readDetached(log: string): { done: boolean; ok: boolean; output: string } {
+  let text = '';
+  try {
+    text = readFileSync(log, 'utf8');
+  } catch {
+    return { done: false, ok: false, output: '' };
+  }
+  const m = text.match(new RegExp(`\\n?${EXIT_MARK}(\\d+)\\s*$`));
+  const output = (m ? text.slice(0, m.index) : text).trim().slice(-SHELL_OUTPUT_MAX);
+  return { done: !!m, ok: m?.[1] === '0', output };
+}
+
+/** Espera o comando destacado terminar (ou o prazo; aí para o grupo de processos dele, se o pid é conhecido). */
+export async function waitDetached(log: string, timeoutMs: number, pid?: number, pollMs = 2_000): Promise<{ ok: boolean; output: string }> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const r = readDetached(log);
+    if (r.done) return { ok: r.ok, output: r.output };
+    if (Date.now() >= deadline) {
+      if (pid) {
+        try {
+          process.kill(-pid, 'SIGTERM');
+        } catch {
+          // já terminou
+        }
+      }
+      return { ok: false, output: `${r.output}\n(${Math.round(timeoutMs / 60_000)} min sem terminar: parado)`.trim() };
+    }
+    await new Promise((res) => setTimeout(res, pollMs));
+  }
+}
 
 /** Roda de novo uma vez depois de `delayMs` se falhar (a CLI do Orca às vezes falha quando chamada junto com outra). */
 export async function retryOnce<T>(fn: () => Promise<T>, delayMs = 400): Promise<T> {

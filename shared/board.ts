@@ -113,13 +113,19 @@ export interface CardRun {
   worktree?: { id: string; path: string; branch: string; repoPath?: string };
   /** Nome pedido ao Orca para o worktree (acha o worktree se a resposta se perder). */
   worktreeName?: string;
+  /** Branch do PR (o da pasta do projeto quando o card começou, se existe no origin; senão o padrão). */
+  base?: string;
   actions: Record<string, ActionRun>;
   questions: CardQuestion[];
   /** Perguntas já respondidas (não voltam). */
   answered: string[];
   pr?: { url: string; number?: number };
   /** Merge feito pelo quadro; `update` = o comando de depois do merge (rodando, ok ou falhou, com o fim da saída). */
-  merged?: { at: number; update?: { command: string; state: 'running' | 'done' | 'failed'; output?: string; at: number } };
+  merged?: {
+    at: number;
+    /** Comando de depois do merge: roda destacado (sobrevive ao reinício do Promp IA); `log` e `pid` para retomar. */
+    update?: { command: string; state: 'running' | 'done' | 'failed'; output?: string; at: number; log?: string; pid?: number };
+  };
   startedAt: number;
   finishedAt?: number;
   /** Últimos acontecimentos, para a página. */
