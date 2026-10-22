@@ -393,6 +393,31 @@ describe('runner', () => {
     expect(work(store).plan!.actions[0].agent).toBe('claude');
   });
 
+  it('Task que o Orca não repete mais: a ação e as que dependem dela vão para Tasks novas', async () => {
+    const { store, runner, state } = setup();
+    await runner.tick();
+    await runner.tick();
+    await settle();
+    state.tasks[0].status = 'failed';
+    state.tasks[0].result = 'testes quebraram';
+    await runner.tick();
+    state.fail.set('orchestration worker-start', () => {
+      throw new CliError('Task task_1 failed 3 times, so Orca will not retry it again (last error: x).', 'refused');
+    });
+    await runner.retry('p', card.id);
+    await settle();
+    const creates = state.calls.filter((c) => c[2] === 'task-create');
+    expect(creates).toHaveLength(4);
+    expect(creates[3][creates[3].indexOf('--deps') + 1]).toBe('["task_3"]');
+    const last = state.calls.filter((c) => c[2] === 'worker-start').pop()!;
+    expect(last).toEqual(expect.arrayContaining(['--task', 'task_3']));
+    expect(last).not.toContain('--retry-of');
+    const run = work(store).run!;
+    expect(run.actions[plan.actions[0].id]).toMatchObject({ taskId: 'task_3', state: 'running' });
+    expect(run.actions[plan.actions[1].id].taskId).toBe('task_4');
+    expect(work(store).stage).toBe('running');
+  });
+
   it('falha comum (não de login) continua travando o card', async () => {
     const { store, runner, state } = setup();
     await runner.tick();

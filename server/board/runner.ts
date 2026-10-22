@@ -307,23 +307,7 @@ export class BoardRunner {
         a.createRequest ??= randomUUID();
         persist();
         const deps = action.deps.map((d) => run.actions[d]?.taskId).filter((x): x is string => !!x);
-        const r = await this.mutate<{ task: { id: string } }>(
-          [
-            'orchestration',
-            'task-create',
-            '--from',
-            from,
-            '--run',
-            run.runId,
-            '--task-title',
-            action.title.slice(0, 120),
-            '--spec',
-            taskSpec(project, card, action, i, plan.actions.length, { path: run.worktree.path, branch: stripRef(run.worktree.branch) }),
-            '--deps',
-            JSON.stringify(deps),
-          ],
-          a.createRequest,
-        );
+        const r = await this.mutate<{ task: { id: string } }>(taskCreateArgs(from, run.runId, project, card, plan.actions, i, run.worktree, deps), a.createRequest);
         a.taskId = r.task.id;
         persist();
       }
@@ -496,27 +480,37 @@ export class BoardRunner {
       const from = await this.coordinator(found?.project ?? ({ id: projectId } as BoardProject), cardId, run.runId);
       // O Orca só aceita repetir a partir do dispatch atual da Task; o guardado pode ser um anterior.
       if (retryOf) retryOf = (await this.currentDispatch(a.taskId)) ?? retryOf;
-      const r = await this.mutate<{ dispatch?: { id: string }; dispatchId?: string }>(
-        [
-          'orchestration',
-          'worker-start',
-          '--from',
-          from,
-          '--run',
-          run.runId,
-          '--task',
-          a.taskId,
-          '--worktree',
-          `path:${run.worktree.path}`,
-          '--agent',
-          action.agent,
-          ...(retryOf ? ['--retry-of', retryOf] : []),
-          '--timeout-ms',
-          String(WORKER_START_TIMEOUT_MS - 10_000),
-        ],
-        requestId,
-        WORKER_START_TIMEOUT_MS,
-      );
+      const start = (taskId: string, retry: string | undefined, req: string) =>
+        this.mutate<{ dispatch?: { id: string }; dispatchId?: string }>(
+          [
+            'orchestration',
+            'worker-start',
+            '--from',
+            from,
+            '--run',
+            run.runId!,
+            '--task',
+            taskId,
+            '--worktree',
+            `path:${run.worktree!.path}`,
+            '--agent',
+            action.agent,
+            ...(retry ? ['--retry-of', retry] : []),
+            '--timeout-ms',
+            String(WORKER_START_TIMEOUT_MS - 10_000),
+          ],
+          req,
+          WORKER_START_TIMEOUT_MS,
+        );
+      let r: { dispatch?: { id: string }; dispatchId?: string };
+      try {
+        r = await start(a.taskId, retryOf, requestId);
+      } catch (err) {
+        // Task que já falhou vezes demais: o Orca não a repete mais ("will not retry it again"); vai numa Task nova.
+        if (!retryOf || !found || !(err instanceof CliError) || !/will not retry it again/i.test(err.message)) throw err;
+        const taskId = await this.renewTasks(projectId, cardId, action.id, from, found.project, found.card);
+        r = await start(taskId, undefined, randomUUID());
+      }
       const dispatchId = r.dispatch?.id ?? r.dispatchId;
       this.save(
         projectId,
@@ -558,6 +552,32 @@ export class BoardRunner {
     const alt = pickAgent(action, this.d.agents());
     if (!alt || alt === action.agent) return;
     void this.retry(projectId, cardId);
+  }
+
+  /**
+   * Task nova para a ação (a antiga o Orca não repete mais), e para as ações que dependem dela e ainda não começaram
+   * (as Tasks delas esperam pela antiga). Devolve a Task nova da ação.
+   */
+  private async renewTasks(projectId: string, cardId: string, actionId: string, from: string, project: BoardProject, card: BoardCard): Promise<string> {
+    const work = this.work(projectId, cardId);
+    const plan = work?.plan;
+    const run = work?.run;
+    if (!plan || !run?.runId || !run.worktree) throw new CliError(tr('A execução deste card sumiu.'));
+    const renew = new Set([actionId]);
+    for (const x of plan.actions) if (x.deps.some((d) => renew.has(d)) && run.actions[x.id].state === 'waiting') renew.add(x.id);
+    const ids: Record<string, string> = {};
+    for (const [i, x] of plan.actions.entries()) {
+      if (!renew.has(x.id)) continue;
+      const deps = x.deps.map((d) => ids[d] ?? run.actions[d]?.taskId).filter((t): t is string => !!t);
+      const r = await this.mutate<{ task: { id: string } }>(taskCreateArgs(from, run.runId, project, card, plan.actions, i, run.worktree, deps), randomUUID());
+      ids[x.id] = r.task.id;
+    }
+    this.save(projectId, cardId, (w) => {
+      for (const [id, taskId] of Object.entries(ids)) w.run!.actions[id].taskId = taskId;
+      this.note(w.run!, tr('O Orca não repete mais a tarefa de "{0}"; seguiu numa tarefa nova.', [plan.actions.find((x) => x.id === actionId)?.title ?? actionId]));
+      return w;
+    });
+    return ids[actionId];
   }
 
   /** Dispatch atual da Task no Orca (o último aberto para ela). */
@@ -951,6 +971,24 @@ export class BoardRunner {
     this.d.store.setWork(projectId, cardId, undefined);
     this.d.onChange?.();
   }
+}
+
+function taskCreateArgs(from: string, runId: string, project: BoardProject, card: BoardCard, actions: readonly PlanAction[], i: number, worktree: { path: string; branch: string }, deps: string[]): string[] {
+  const action = actions[i];
+  return [
+    'orchestration',
+    'task-create',
+    '--from',
+    from,
+    '--run',
+    runId,
+    '--task-title',
+    action.title.slice(0, 120),
+    '--spec',
+    taskSpec(project, card, action, i, actions.length, { path: worktree.path, branch: stripRef(worktree.branch) }),
+    '--deps',
+    JSON.stringify(deps),
+  ];
 }
 
 function coordinatorKey(projectId: string, cardId: string): string {
