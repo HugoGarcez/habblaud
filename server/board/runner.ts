@@ -26,7 +26,7 @@ import type { ActionRun, BoardCard, BoardProject, CardRun, CardWork, PlanAction 
 import { tr } from '../../shared/i18n';
 import { errMsg, log } from '../log';
 import { AGENT_NAMES } from './agents';
-import type { AgentQuota } from '../../shared/board';
+import type { AgentId, AgentQuota } from '../../shared/board';
 import { CliError, orcaResult, runShell, type Exec, type Shell } from './cli';
 import { pickAgent, substitute, swapNote } from './router';
 import type { BoardStore } from './store';
@@ -38,6 +38,8 @@ export const WORKER_START_TIMEOUT_MS = 5 * 60_000;
 export const AFTER_MERGE_TIMEOUT_MS = 20 * 60_000;
 export type MergeMethod = 'squash' | 'merge' | 'rebase';
 const LOG_MAX = 40;
+/** Falha do worker que é da IA, não da tarefa (sem login no Orca): outra IA tenta no lugar. */
+const AGENT_LOGIN_ERROR = /notSignedIn|isn't signed in|is not signed in|not logged in|Failed to authenticate|OAuth session expired/i;
 const COORDINATOR_TITLE = 'Promp IA · coordenador';
 
 export interface RunnerDeps {
@@ -52,6 +54,8 @@ export interface RunnerDeps {
   agents(): AgentQuota[];
   /** Relê as cotas no Orca (se as guardadas estão velhas) antes de escolher as IAs. */
   refreshAgents?(): Promise<void>;
+  /** IA que o Orca não consegue abrir (ex.: sem login nele): fica indisponível por um tempo. */
+  agentFailed?(agent: AgentId, reason: string): void;
   maxWorkers?: number;
   /** Como o quadro faz o merge do PR (HABBLAUD_BOARD_MERGE; padrão squash). */
   mergeMethod?: MergeMethod;
@@ -420,6 +424,7 @@ export class BoardRunner {
     const failed = work.plan.actions.find((x) => run.actions[x.id].state === 'failed');
     if (failed) {
       this.save(projectId, cardId, (w) => ({ ...w, stage: 'blocked', run, error: tr('A ação "{0}" falhou: {1}', [failed.title, run.actions[failed.id].error ?? '']) }), ['running']);
+      this.swapFailedAgent(projectId, cardId, failed, run.actions[failed.id].error ?? '');
       return;
     }
     if (work.plan.actions.every((x) => run.actions[x.id].state === 'done')) {
@@ -537,9 +542,22 @@ export class BoardRunner {
         },
         ['running'],
       );
+      this.swapFailedAgent(projectId, cardId, action, msg);
     } finally {
       this.inflight.delete(requestId);
     }
+  }
+
+  /**
+   * Worker que falhou porque o Orca não consegue usar a IA (sem login nele): a IA fica indisponível por um tempo e a
+   * ação tenta de novo com a equivalente disponível. Sem alternativa, o card fica travado como está.
+   */
+  private swapFailedAgent(projectId: string, cardId: string, action: PlanAction, error: string): void {
+    if (!AGENT_LOGIN_ERROR.test(error)) return;
+    this.d.agentFailed?.(action.agent, tr('não está logado no Orca'));
+    const alt = pickAgent(action, this.d.agents());
+    if (!alt || alt === action.agent) return;
+    void this.retry(projectId, cardId);
   }
 
   /** Dispatch atual da Task no Orca (o último aberto para ela). */

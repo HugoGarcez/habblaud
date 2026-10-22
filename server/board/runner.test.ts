@@ -135,9 +135,10 @@ function setup(opts: { quotas?: Partial<Record<string, boolean>>; maxWorkers?: n
   cleanups.push(tmp.cleanup);
   const store = new BoardStore(join(tmp.dir, 'board.json'));
   const orca = fakeOrca();
+  const quotas: Partial<Record<string, boolean>> = { ...opts.quotas };
   const agents = (): AgentQuota[] =>
-    (['claude', 'codex', 'antigravity', 'opencode'] as const).map((a) => ({ agent: a, name: a, installed: true, available: opts.quotas?.[a] ?? true, strengths: '', reason: opts.quotas?.[a] === false ? 'sem cota agora' : undefined }));
-  const runner = new BoardRunner({ store, exec: orca.exec, orca: 'orca', gh: 'gh', git: 'git', now: () => NOW, lookup: async () => ({ project, card }), agents, maxWorkers: opts.maxWorkers, shell: opts.shell, saveAfterMerge: (p, c) => opts.saved?.push([p, c]) });
+    (['claude', 'codex', 'antigravity', 'opencode'] as const).map((a) => ({ agent: a, name: a, installed: true, available: quotas[a] ?? true, strengths: '', reason: quotas[a] === false ? 'sem cota agora' : undefined }));
+  const runner = new BoardRunner({ store, exec: orca.exec, orca: 'orca', gh: 'gh', git: 'git', now: () => NOW, lookup: async () => ({ project, card }), agents, maxWorkers: opts.maxWorkers, shell: opts.shell, saveAfterMerge: (p, c) => opts.saved?.push([p, c]), agentFailed: (a) => (quotas[a] = false) });
   store.setWork('p', card.id, { stage: 'queued', plan, updatedAt: NOW });
   return { store, runner, ...orca };
 }
@@ -344,7 +345,7 @@ describe('runner', () => {
     await runner.tick();
     await settle();
     state.tasks[0].status = 'failed';
-    state.workerError = "Antigravity isn't signed in.";
+    state.workerError = 'O terminal do worker fechou.';
     await runner.tick();
     expect(work(store).stage).toBe('blocked');
     let open!: () => void;
@@ -374,15 +375,46 @@ describe('runner', () => {
     expect(last).toEqual(expect.arrayContaining(['--retry-of', 'd_novo']));
   });
 
+  it('worker que falha por falta de login no Orca: a IA sai da escolha e a equivalente tenta no lugar', async () => {
+    const { store, runner, state } = setup();
+    await runner.tick();
+    await runner.tick();
+    await settle();
+    const first = state.calls.filter((c) => c[2] === 'worker-start').pop()!;
+    expect(first[first.indexOf('--agent') + 1]).toBe('codex');
+    state.tasks[0].status = 'failed';
+    state.workerError = "The dispatch preamble was not delivered (notSignedIn): Codex isn't signed in.";
+    await runner.tick();
+    await settle();
+    const last = state.calls.filter((c) => c[2] === 'worker-start').pop()!;
+    expect(last[last.indexOf('--agent') + 1]).toBe('claude');
+    expect(last).toEqual(expect.arrayContaining(['--retry-of']));
+    expect(work(store).stage).toBe('running');
+    expect(work(store).plan!.actions[0].agent).toBe('claude');
+  });
+
+  it('falha comum (não de login) continua travando o card', async () => {
+    const { store, runner, state } = setup();
+    await runner.tick();
+    await runner.tick();
+    await settle();
+    state.tasks[0].status = 'failed';
+    state.tasks[0].result = 'testes quebraram';
+    await runner.tick();
+    await settle();
+    expect(work(store).stage).toBe('blocked');
+    expect(state.calls.filter((c) => c[2] === 'worker-start')).toHaveLength(1);
+  });
+
   it('Task que falha sem relatório mostra o motivo do worker no Orca', async () => {
     const { store, runner, state } = setup();
     await runner.tick();
     await runner.tick();
     await settle();
     state.tasks[0].status = 'failed';
-    state.workerError = "Antigravity isn't signed in.";
+    state.workerError = 'O terminal do worker fechou.';
     await runner.tick();
-    expect(work(store).error).toMatch(/Implementar.*Antigravity isn't signed in/);
+    expect(work(store).error).toMatch(/Implementar.*O terminal do worker fechou/);
   });
 
   it('sem mudanças nos arquivos: vai para revisão sem PR', async () => {

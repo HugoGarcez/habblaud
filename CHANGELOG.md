@@ -10,6 +10,12 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Adicionado
+
+- **Quadro de tarefas:** worker que falha porque o Orca não consegue usar a IA (sem login nela, como "Antigravity
+  isn't signed in") não trava mais o card: a IA fica fora da escolha por 30 minutos e a ação tenta de novo, sozinha,
+  com a equivalente disponível (a troca fica nas notas do plano).
+
 ### Corrigido
 
 - **Quadro de tarefas:** dois cards do mesmo projeto em execução ao mesmo tempo travavam o primeiro ("worker-start

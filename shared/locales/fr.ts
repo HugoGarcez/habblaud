@@ -3522,4 +3522,5 @@ export const FR: Readonly<Record<string, string>> = {
   "Seu pedido: {0}": "Votre demande : {0}",
   "Só dá para pedir revisão de um plano que espera aprovação.": "Seul un plan en attente d’approbation peut être révisé.",
   "o Claude Code não está logado fora do Orca ({0}). Rode \"claude auth login\" num terminal e planeje de novo.": "Claude Code n’est pas connecté en dehors d’Orca ({0}). Lancez « claude auth login » dans un terminal et replanifiez.",
+  "não está logado no Orca": "n'est pas connecté dans Orca",
 };

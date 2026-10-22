@@ -31,6 +31,8 @@ export const VIEW_TTL_MS = 20_000;
 /** De quanto em quanto tempo os cards de todos os projetos são relidos (para o resumo nas salas). */
 export const SUMMARY_REFRESH_MS = 2 * 60_000;
 export const LIMITS_TTL_MS = 60_000;
+/** Quanto tempo a IA que falhou por falta de login no Orca fica fora da escolha. */
+export const AGENT_OFF_MS = 30 * 60_000;
 
 export interface BoardServiceOptions {
   store: BoardStore;
@@ -110,6 +112,8 @@ export class BoardService {
   private planning = new Set<string>();
   /** Cotas medidas pelo Orca (`orca account list`); relidas a cada LIMITS_TTL_MS quando alguém precisa. */
   private orcaLimits?: Cached<OrcaLimits>;
+  /** IAs que o Orca não conseguiu abrir há pouco (ver agentFailed). */
+  private agentOff = new Map<AgentId, { reason: string; at: number }>();
   private limitsLoading?: Promise<void>;
   readonly runner: BoardRunner;
 
@@ -126,6 +130,7 @@ export class BoardService {
       lookup: (p, c) => this.lookup(p, c),
       agents: () => this.agents(),
       refreshAgents: () => this.refreshAgents(),
+      agentFailed: (agent, reason) => this.agentFailed(agent, reason),
       maxWorkers: opts.maxWorkers ?? DEFAULT_MAX_WORKERS,
       mergeMethod: opts.mergeMethod,
       saveAfterMerge: (p, command) => this.saveAfterMerge(p, command),
@@ -146,7 +151,19 @@ export class BoardService {
   }
 
   agents() {
-    return agentQuotas(this.opts.accounts?.() ?? [], this.opts.installed ?? new Set(), this.orcaLimits?.value);
+    const quotas = agentQuotas(this.opts.accounts?.() ?? [], this.opts.installed ?? new Set(), this.orcaLimits?.value);
+    const now = this.now();
+    return quotas.map((q) => {
+      const off = this.agentOff.get(q.agent);
+      if (!off || now - off.at >= AGENT_OFF_MS) return q;
+      return { ...q, available: false, reason: off.reason };
+    });
+  }
+
+  /** IA que o Orca não conseguiu abrir (worker sem login): fora da escolha por AGENT_OFF_MS. */
+  agentFailed(agent: AgentId, reason: string): void {
+    this.agentOff.set(agent, { reason, at: this.now() });
+    this.opts.onChange?.();
   }
 
   /**
