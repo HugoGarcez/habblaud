@@ -351,8 +351,12 @@ export class BoardService {
       if (this.opts.store.work(project.id, card.id)?.stage !== 'planning') return;
       this.setWork(project.id, card.id, { stage: 'approval', plan, updatedAt: this.now() });
     } catch (err) {
-      const msg = err instanceof CliError ? err.message : errMsg(err);
-      log.warn(`Quadro: planejamento de ${card.ref} (${project.name}) falhou: ${msg}`);
+      const raw = err instanceof CliError ? err.message : errMsg(err);
+      // O Orca loga o Claude só nos terminais dele; o planejador roda fora deles, com o login da pasta do Claude Code.
+      const msg = /authenticat|oauth|not logged|log ?in|\/login/i.test(raw)
+        ? tr('o Claude Code não está logado fora do Orca ({0}). Rode "claude auth login" num terminal e planeje de novo.', [raw])
+        : raw;
+      log.warn(`Quadro: planejamento de ${card.ref} (${project.name}) falhou: ${raw}`);
       if (this.opts.store.work(project.id, card.id)?.stage !== 'planning') return;
       if (revision) this.setWork(project.id, card.id, { stage: 'approval', plan: revision.previous, error: tr('A revisão falhou ({0}); o plano anterior continua.', [msg]), updatedAt: this.now() });
       else this.setWork(project.id, card.id, { stage: 'failed', error: tr('O planejamento falhou: {0}', [msg]), updatedAt: this.now() });
