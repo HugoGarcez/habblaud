@@ -51,6 +51,8 @@ function fakeOrca() {
     workerError: undefined as string | undefined,
     /** Segura o `worker-start` (o Orca leva dezenas de segundos para abrir o worker). */
     startGate: undefined as Promise<void> | undefined,
+    /** Dispatch atual da Task segundo o `dispatch-show`. */
+    currentDispatch: undefined as string | undefined,
   };
   const exec: Exec = async (bin, args) => {
     state.calls.push([bin, ...args]);
@@ -106,6 +108,8 @@ function fakeOrca() {
       }
       case 'orchestration worker-list':
         return ok({ workers: [] });
+      case 'orchestration dispatch-show':
+        return ok({ dispatch: state.currentDispatch ? { id: state.currentDispatch } : null });
       case 'orchestration worker-show':
         return ok({ worker: { lastError: state.workerError ?? null } });
       case 'orchestration inbox':
@@ -353,6 +357,21 @@ describe('runner', () => {
     open();
     await settle();
     expect(work(store).run!.actions[plan.actions[0].id]).toMatchObject({ state: 'running', error: undefined });
+  });
+
+  it('tentar de novo repete a partir do dispatch atual da Task no Orca', async () => {
+    const { store, runner, state } = setup();
+    await runner.tick();
+    await runner.tick();
+    await settle();
+    state.tasks[0].status = 'failed';
+    await runner.tick();
+    state.tasks[0].status = 'ready';
+    state.currentDispatch = 'd_novo';
+    await runner.retry('p', card.id);
+    await settle();
+    const last = state.calls.filter((c) => c[2] === 'worker-start').pop()!;
+    expect(last).toEqual(expect.arrayContaining(['--retry-of', 'd_novo']));
   });
 
   it('Task que falha sem relatório mostra o motivo do worker no Orca', async () => {

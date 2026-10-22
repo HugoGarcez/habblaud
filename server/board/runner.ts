@@ -489,6 +489,8 @@ export class BoardRunner {
     const found = await this.d.lookup(projectId, cardId);
     try {
       const from = await this.coordinator(found?.project ?? ({ id: projectId } as BoardProject), cardId, run.runId);
+      // O Orca só aceita repetir a partir do dispatch atual da Task; o guardado pode ser um anterior.
+      if (retryOf) retryOf = (await this.currentDispatch(a.taskId)) ?? retryOf;
       const r = await this.mutate<{ dispatch?: { id: string }; dispatchId?: string }>(
         [
           'orchestration',
@@ -537,6 +539,15 @@ export class BoardRunner {
       );
     } finally {
       this.inflight.delete(requestId);
+    }
+  }
+
+  /** Dispatch atual da Task no Orca (o último aberto para ela). */
+  private async currentDispatch(taskId: string): Promise<string | undefined> {
+    try {
+      return orcaResult<{ dispatch?: { id?: string } | null }>(await this.orca(['orchestration', 'dispatch-show', '--task', taskId, '--json'])).dispatch?.id || undefined;
+    } catch {
+      return undefined;
     }
   }
 
