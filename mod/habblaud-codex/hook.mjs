@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Hook do Habblaud para o OpenAI Codex (CLI `codex` e o app desktop, que gravam no mesmo CODEX_HOME): mostra no
+// Hook do Promp IA para o OpenAI Codex (CLI `codex` e o app desktop, que gravam no mesmo CODEX_HOME): mostra no
 // escritório o que as sessões do Codex fazem e deixa aprovar ou recusar pelo escritório os pedidos de aprovação
 // (PermissionRequest). `npm run codex:install` acrescenta em <CODEX_HOME>/hooks.json, no FIM da lista de cada evento,
 // um grupo que roda:
@@ -17,7 +17,7 @@
 //    a conta (basename do CODEX_HOME, como o servidor calcula) e o caminho do CODEX_HOME;
 // 3. só no PermissionRequest: registra o pedido em POST /api/permissions (provider "codex") e espera a decisão em
 //    GET /api/permissions/:id/wait até a espera do arquivo (padrão 25 s, entre 5 e 120). Aprovado: imprime a decisão
-//    allow; recusado: deny com o motivo. Qualquer outra coisa ("responder no terminal", tempo esgotado, Habblaud fora
+//    allow; recusado: deny com o motivo. Qualquer outra coisa ("responder no terminal", tempo esgotado, Promp IA fora
 //    do ar ou sem página aberta): sai sem imprimir nada e o Codex segue a aprovação normal. Atenção: o Codex só mostra
 //    a aprovação no terminal DEPOIS que o hook termina (enquanto isso, o terminal mostra o statusMessage do hook).
 //
@@ -38,19 +38,19 @@ export const MIN_WAIT_S = 5;
 export const MAX_WAIT_S = 120;
 /** Arquivo de configuração, em ~/.habblaud (o instalador grava). */
 export const CONFIG_FILE = 'codex-hook.json';
-/** Eventos mandados ao Habblaud (o PermissionRequest também, antes de registrar o pedido). */
+/** Eventos mandados ao Promp IA (o PermissionRequest também, antes de registrar o pedido). */
 export const OBSERVED = new Set(['SessionStart', 'SessionEnd', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SubagentStart', 'SubagentStop', 'PermissionRequest']);
-/** Prazo do envio de um evento: o Habblaud responde na hora (e o hook não pode atrasar o Codex). */
+/** Prazo do envio de um evento: o Promp IA responde na hora (e o hook não pode atrasar o Codex). */
 const EVENT_TIMEOUT_MS = 1_500;
 /** O SessionEnd tem só 1 s no Codex (e roda sempre em primeiro plano). */
 const SESSION_END_TIMEOUT_MS = 600;
-/** Registrar o pedido: se o Habblaud não responder nisso, ele está fora do ar (ou travado). */
+/** Registrar o pedido: se o Promp IA não responder nisso, ele está fora do ar (ou travado). */
 const REGISTER_TIMEOUT_MS = 2_000;
 /** Espera máxima de cada long-poll (o servidor responde "pending" e o hook pergunta de novo). */
 const POLL_S = 25;
 const STDIN_TIMEOUT_MS = 5_000;
 const MAX_STDIN = 8 * 1024 * 1024;
-/** Textos do evento e dos argumentos mandados ao Habblaud (o servidor só mostra prévias). */
+/** Textos do evento e dos argumentos mandados ao Promp IA (o servidor só mostra prévias). */
 const MAX_STRING = 8_000;
 /** Corpo do pedido (o servidor recusa acima de 256 KB). */
 const MAX_BODY = 200_000;
@@ -134,7 +134,7 @@ export function eventBody(input, account, codexHome) {
   return body;
 }
 
-/** Corpo de POST /api/permissions: só o que o Habblaud usa (nada do transcript_path). */
+/** Corpo de POST /api/permissions: só o que o Promp IA usa (nada do transcript_path). */
 export function permissionBody(input, account, codexHome, timeoutMs) {
   const body = { provider: 'codex', account, codexHome, session_id: input.session_id, tool_name: input.tool_name, tool_input: {}, timeout_ms: timeoutMs };
   for (const k of ['agent_id', 'agent_type', 'cwd', 'turn_id']) if (typeof input[k] === 'string') body[k] = input[k];
@@ -142,13 +142,13 @@ export function permissionBody(input, account, codexHome, timeoutMs) {
   return body;
 }
 
-/** Saída do hook para uma decisão do Habblaud (undefined = sair sem decidir). Só allow e deny (+ message). */
+/** Saída do hook para uma decisão do Promp IA (undefined = sair sem decidir). Só allow e deny (+ message). */
 export function decisionOutput(result) {
   if (!result || result.status !== 'decided') return undefined;
   if (result.behavior === 'allow') return { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow' } } };
   if (result.behavior === 'deny') {
     const reason = typeof result.message === 'string' && result.message.trim() ? result.message.trim().slice(0, 1_000) : '';
-    const message = reason ? `Recusado pelo usuário no Habblaud: ${reason}` : 'Recusado pelo usuário no Habblaud.';
+    const message = reason ? `Recusado pelo usuário no Promp IA: ${reason}` : 'Recusado pelo usuário no Promp IA.';
     return { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'deny', message } } };
   }
   return undefined;
@@ -173,7 +173,7 @@ function readStdin() {
   });
 }
 
-/** Requisição ao Habblaud local; null = fora do ar, tempo esgotado ou resposta ilegível. */
+/** Requisição ao Promp IA local; null = fora do ar, tempo esgotado ou resposta ilegível. */
 async function call(base, method, path, body, timeoutMs) {
   try {
     const res = await fetch(`${base}${path}`, {
@@ -217,16 +217,16 @@ export async function run(env = process.env, stdinText) {
     const account = accountOf(codexHome);
     const base = `http://127.0.0.1:${cfg.port}`;
     const sent = await call(base, 'POST', '/api/codex/events', eventBody(input, account, codexHome), event === 'SessionEnd' ? SESSION_END_TIMEOUT_MS : EVENT_TIMEOUT_MS);
-    debug(`${event}: ${sent ? `${sent.status} ${JSON.stringify(sent.json ?? null)}` : 'Habblaud fora do ar'}`);
+    debug(`${event}: ${sent ? `${sent.status} ${JSON.stringify(sent.json ?? null)}` : 'Promp IA fora do ar'}`);
     if (event !== 'PermissionRequest' || typeof input.tool_name !== 'string' || !input.tool_name) return undefined;
-    // Sem resposta nem ao evento: o Habblaud está fora do ar (ou travado); a aprovação segue no terminal.
+    // Sem resposta nem ao evento: o Promp IA está fora do ar (ou travado); a aprovação segue no terminal.
     if (!sent) return undefined;
 
     // A espera conta desde o início do hook (o Codex só mostra a aprovação no terminal quando ele termina).
     const deadline = startedAt + cfg.waitMs;
     const reg = await call(base, 'POST', '/api/permissions', permissionBody(input, account, codexHome, Math.max(0, deadline - Date.now())), REGISTER_TIMEOUT_MS);
     if (!reg || reg.status !== 201 || typeof reg.json?.id !== 'string') {
-      debug(`sem desvio (${reg ? `${reg.status} ${JSON.stringify(reg.json ?? null)}` : 'Habblaud fora do ar'})`);
+      debug(`sem desvio (${reg ? `${reg.status} ${JSON.stringify(reg.json ?? null)}` : 'Promp IA fora do ar'})`);
       return undefined;
     }
     const id = encodeURIComponent(reg.json.id);

@@ -283,7 +283,7 @@ export function createWorldRoutes(service: WorldService, viewer?: WorldViewer, s
       account: true,
       run: async (req, res) => {
         if (!viewer) throw new BodyError(409, 'not_configured', tr('Habblaud World desligado: HABBLAUD_WORLD_URL recusada (veja o log do servidor)'));
-        if (!sameOriginRequest(req)) throw new BodyError(403, 'local_only', tr('a cena Mundo só abre pela própria página do Habblaud'));
+        if (!sameOriginRequest(req)) throw new BodyError(403, 'local_only', tr('a cena Mundo só abre pela própria página do Promp IA'));
         if (req.method === 'HEAD') {
           res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache' });
           return void res.end();
@@ -325,7 +325,7 @@ export function createWorldRoutes(service: WorldService, viewer?: WorldViewer, s
       method: 'GET',
       account: true,
       run: async (req, res) => {
-        if (!sameOriginRequest(req)) throw new BodyError(403, 'local_only', tr('os dados da conta só saem pela própria página do Habblaud'));
+        if (!sameOriginRequest(req)) throw new BodyError(403, 'local_only', tr('os dados da conta só saem pela própria página do Promp IA'));
         if (req.method === 'HEAD') {
           res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
           return void res.end();
@@ -383,7 +383,7 @@ export function createWorldRoutes(service: WorldService, viewer?: WorldViewer, s
     }
     if (route.account && !service.available) {
       req.resume();
-      return sendError(res, 403, 'terminal_off', tr('o Habblaud World só age pela conta com o Habblaud acessível apenas pelo próprio computador'));
+      return sendError(res, 403, 'terminal_off', tr('o Habblaud World só age pela conta com o Promp IA acessível apenas pelo próprio computador'));
     }
     if (route.account && !service.configured) {
       req.resume();

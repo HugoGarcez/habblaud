@@ -304,7 +304,7 @@ describe('mod-install.ts (funções puras)', () => {
       enabledPlugins: { [MOD_PLUGIN]: true },
     };
 
-    it('com os dois plugins instalados: devolve o statusline original e tira só o hook do Habblaud, numa gravação', () => {
+    it('com os dois plugins instalados: devolve o statusline original e tira só o hook do Promp IA, numa gravação', () => {
       const m = planMigration(settings, { modInstalled: true, permissionsInstalled: true, permissions: true });
       expect(m.settings).toEqual({
         model: 'opus',
@@ -634,23 +634,23 @@ describe('mod-install.ts (CLI falso, HOME falso)', () => {
     out = [];
     expect(await exec('status')).toBe(0);
     const text = out.join('\n');
-    expect(text).toContain('Claude Code 2.1.293 · Habblaud 0.2.0');
+    expect(text).toContain('Claude Code 2.1.293 · Promp IA 0.2.0');
     expect(text).toMatch(
       /• \.claude \(~\/\.claude\)\n {4}marketplace habblaud: esta pasta\n {4}habblaud: instalado, ligado, versão 0.2.0\n {4}habblaud-permissoes: não instalado\n {4}habblaud-mensagens: instalado, ligado, versão 0.2.0\n/,
     );
     expect(text).toContain('! tap de statusline antigo ainda instalado junto com o mod');
     expect(text).toContain('hook de permissão antigo instalado (jeito antigo');
     expect(text).toContain('último uso capturado há 5 min (pelo mod)');
-    expect(text).toContain('Habblaud em http://127.0.0.1:4747: fora do ar');
+    expect(text).toContain('Promp IA em http://127.0.0.1:4747: fora do ar');
     expect(text).not.toContain('Mensagens pelo escritório');
     out = [];
     await exec('status', {}, { permissions: true, messages: true });
-    expect(out.join('\n')).toContain('Habblaud em http://127.0.0.1:4747: no ar e respondendo pedidos de permissão');
+    expect(out.join('\n')).toContain('Promp IA em http://127.0.0.1:4747: no ar e respondendo pedidos de permissão');
     expect(out.join('\n')).toContain('Mensagens pelo escritório: ligadas (chegam às sessões abertas com o plugin habblaud-mensagens).');
     out = [];
     await exec('status', {}, { permissions: true, messages: false });
-    expect(out.at(-1)).toBe('Mensagens pelo escritório: desligadas no Habblaud (porta exposta na rede, HABBLAUD_TERMINAL=0 ou HABBLAUD_MENSAGENS=0).');
-    // Um Habblaud de antes das mensagens (sem o campo no /api/health): nada sobre elas.
+    expect(out.at(-1)).toBe('Mensagens pelo escritório: desligadas no Promp IA (porta exposta na rede, HABBLAUD_TERMINAL=0 ou HABBLAUD_MENSAGENS=0).');
+    // Um Promp IA de antes das mensagens (sem o campo no /api/health): nada sobre elas.
     out = [];
     await exec('status', {}, { permissions: true });
     expect(out.join('\n')).not.toContain('Mensagens pelo escritório');

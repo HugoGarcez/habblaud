@@ -71,6 +71,17 @@ export function discoverCodexDirs(env: NodeJS.ProcessEnv = process.env, home: st
   } catch {
     // $HOME ilegível (ex.: container sem home)
   }
+  // Contas do Codex que o Orca gerencia: <Application Support>/orca/codex-accounts/<id>/home (o Orca exporta
+  // CODEX_HOME com ela nos terminais dele).
+  const orca = join(home, 'Library', 'Application Support', 'orca', 'codex-accounts');
+  try {
+    for (const ent of readdirSync(orca, { withFileTypes: true })) {
+      const p = join(orca, ent.name, 'home');
+      if (ent.isDirectory() && isCodexHome(p)) found.push(p);
+    }
+  } catch {
+    // sem Orca
+  }
   const dirs = [...new Set(found.map((p) => expandHome(p, home)))];
   dirs.sort((a, b) => (a === main ? 0 : 1) - (b === main ? 0 : 1) || a.localeCompare(b));
   return dirs;

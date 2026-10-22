@@ -1,6 +1,6 @@
 // Novo agente pelo escritório. Do jeito que roda sozinho: uma sessão em segundo plano do Claude Code
 // (`claude --bg -n <nome> -- <pedido>`, na pasta escolhida), que começa na hora, aparece no escritório como qualquer
-// sessão e recebe mensagens e pedidos de permissão pelo Habblaud (`claude attach <id>` abre no terminal do Mac).
+// sessão e recebe mensagens e pedidos de permissão pelo Promp IA (`claude attach <id>` abre no terminal do Mac).
 // O Claude Code só faz isso numa pasta que já é confiável para ele (o aviso de confiança foi aceito no terminal); se
 // a pasta não é, ou o `claude` não está aqui, cai no link `claude://code/new?folder=<pasta>&q=<pedido>` (o do "New
 // Claude Code Session Here" do Finder), que abre a tela de sessão nova do app preenchida: aí ela começa quando a
@@ -88,11 +88,11 @@ export function spawnUrl(req: SpawnRequest): string {
   return `claude://code/new?${q.toString().replace(/\+/g, '%20')}`;
 }
 
-/** Nome da sessão em segundo plano: "Habblaud: " + começo da 1ª linha do pedido. */
+/** Nome da sessão em segundo plano: "Promp IA: " + começo da 1ª linha do pedido. */
 export function sessionName(prompt: string): string {
   const line = prompt.split('\n').map((l) => l.trim()).find(Boolean) ?? '';
   const cut = line.length > NAME_MAX ? `${line.slice(0, NAME_MAX - 1)}…` : line;
-  return cut ? `Habblaud: ${cut}` : 'Habblaud';
+  return cut ? `Promp IA: ${cut}` : 'Promp IA';
 }
 
 /** Argumentos do `claude`: o pedido depois de `--` (um pedido "doctor" ou "-x" continua sendo pedido). */
@@ -210,7 +210,7 @@ export class SpawnService {
     const req = parseSpawn(raw);
     if ('error' in req) return { error: 'invalid', reason: req.error };
     if (!this.available()) {
-      return { error: 'unavailable', reason: tr('o auxiliar do computador não está rodando: deixe npm run codex:bridge no ar (o Habblaud está no Docker)') };
+      return { error: 'unavailable', reason: tr('o auxiliar do computador não está rodando: deixe npm run codex:bridge no ar (o Promp IA está no Docker)') };
     }
     let open = 0;
     for (const e of this.entries.values()) if (e.info.status === 'queued' || e.info.status === 'sent') open++;

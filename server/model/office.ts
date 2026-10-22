@@ -56,6 +56,10 @@ export interface OfficeDeps {
   names: NameStore;
   /** Nome escolhido pelo usuário para a sala da pasta (model/room-aliases.ts), se houver. */
   roomAlias?: (path: string) => string | undefined;
+  /** Sala de uma pasta quando não é a própria (ex.: worktree de um card do quadro = sala do repositório). */
+  roomPath?: (cwd: string) => string | undefined;
+  /** Resumo do quadro de tarefas (meta.board do snapshot). */
+  board?: () => import('../../shared/board').BoardSummary | undefined;
   version: string;
   /** Build do cliente servido (ver OfficeSnapshot.meta.build); ausente no modo dev e nos testes. */
   build?: () => string | undefined;
@@ -322,7 +326,7 @@ export class Office {
       this.setStatus(p.id, p.status, p.waitingFor);
       return;
     }
-    const roomId = normalizeCwd(p.cwd);
+    const roomId = normalizeCwd(this.deps.roomPath?.(normalizeCwd(p.cwd)) ?? p.cwd);
     this.ensureRoom(roomId, now);
     const chosen = this.roomCharacter(roomId, p.id, p.sessionId);
     // A mesma sessão retomada noutro processo (ex.: "Assumir aqui") mantém o nome, mesmo com o processo antigo
@@ -1003,6 +1007,7 @@ export class Office {
         messages: this.deps.messages !== undefined,
         ...(ptys ? { pty: ptys.status } : {}),
         updates: this.deps.updates?.(),
+        ...(this.deps.board ? { board: this.deps.board() } : {}),
         ...(this.deps.world ? { world: this.deps.world() } : {}),
       },
     };

@@ -10,6 +10,68 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Adicionado
+
+- **Imagens nos cards do quadro:** o card novo e o pedido de revisão do plano aceitam até 5 imagens (PNG, JPEG, GIF
+  ou WebP, até 5 MB cada, conferidas pelo conteúdo do arquivo) para ilustrar a demanda ou a correção. Ficam em
+  `~/.habblaud/board-attachments/`, o planejador e os agentes de cada ação recebem os caminhos para abri-las, e
+  descartar o plano apaga as imagens das revisões. No formulário do card novo e no pedido de revisão, o botão
+  "Anexar imagens" (ou colar com Ctrl+V, ou arrastar) mostra as miniaturas, deixa remover cada uma e avisa na hora
+  quando passa do limite; o detalhe do card mostra as imagens do card e das revisões, e um clique abre em tamanho maior.
+
+## [1.0.4] - 2026-10-22
+
+Versão do fork (Promp IA) sobre a 1.0.3 do Habblaud.
+
+### Adicionado
+
+- **Quadro de tarefas (Tarefas, atalho K):** o kanban de cada projeto do Orca, com as issues do GitHub (repositório
+  do `origin`, pelo `gh`) ou do Linear (pelo `orca linear`) nas colunas Backlog, Planejando, Aguardando aprovação,
+  Em execução, Revisão e Concluído. Escolha a fonte de cada projeto no próprio quadro (fica em
+  `~/.habblaud/board.json`); filtro por título, número e labels; clique abre a issue. Só pelo próprio computador.
+  `HABBLAUD_BOARD=0` desliga.
+- **Novo card no quadro:** Issue, Funcionalidade ou Correção, com título e descrição, vira issue na fonte do projeto
+  (GitHub com a label `bug`/`enhancement`; Linear com `Bug`/`Feature`, quando existem) e entra no Backlog.
+- **Planejar com IA:** clique num card para ver o detalhe e planejar. Um Claude Code só de leitura (na conta do Claude
+  com mais folga, modelo `HABBLAUD_PLANNER_MODEL`, padrão sonnet) lê o repositório e quebra o card em até 8 ações,
+  escolhendo a IA de cada uma (Claude, Codex, Antigravity, OpenCode) pelo perfil e pelas cotas de 5 h e semanal. O
+  roteador troca a IA sem cota, ordena as ações que mudam arquivos e anota cada ajuste. Você troca a IA, edita
+  títulos e instruções, remove ações e aprova: o plano vira comentário na issue e o card entra na fila de execução.
+  Leva cerca de 1 minuto; até 2 planejamentos ao mesmo tempo.
+- **Execução pelos agentes do Orca:** o card aprovado ganha um worktree próprio no Orca (ligado à issue), um Run e
+  uma Task por ação (com as dependências). Cada Task pronta ganha um worker com a IA escolhida, respeitando a cota e
+  o limite de workers ao mesmo tempo (`HABBLAUD_BOARD_MAX_WORKERS`, padrão 3). Os agentes aparecem no escritório; o
+  card mostra o andamento de cada ação, o histórico e as perguntas dos agentes, que você responde pelo próprio card.
+  No fim, o Promp IA faz o commit, o push e abre o PR ("Closes #N"; no Linear, o PR é anexado à issue) e o card vai
+  para Revisão; PR aceito, Concluído. Ação que falha trava o card: tentar de novo ou cancelar (o worktree fica). Um
+  terminal "Promp IA · coordenador" por projeto aparece no Orca: é por ele que o Promp IA fala com a orquestração.
+- Com a máquina carregada, o quadro usa a última lista de projetos e times enquanto o Orca responde.
+- **Todos os projetos por padrão:** sem filtro, o quadro mostra os cards de todos os projetos do Orca e dos times do
+  Linear que nenhum projeto usa (esses só para ver e abrir), cada um com o nome do projeto. Escolher um projeto
+  filtra e deixa trocar a fonte dele; o "+ Novo card" pede o projeto.
+- **Editar card:** o botão **Editar** no detalhe carrega o texto completo da issue e deixa mudar tipo, título e
+  descrição; salvar atualiza a issue no GitHub ou no Linear (a label de tipo é trocada, as outras ficam). Card sendo
+  planejado ou executado não muda; com plano esperando aprovação, o card avisa para pedir revisão.
+- **Revisão do plano pelo planejador:** com o plano esperando aprovação, escreva o que mudar em **Pedir revisão ao
+  planejador**; o Claude refaz a sugestão a partir do plano atual e do pedido (e das revisões anteriores). Se a
+  revisão falhar ou for cancelada, o plano anterior continua. O planejador agora lê a issue inteira, não só o começo.
+- **Quadro no escritório:** o quadro kanban da parede de cada sala mostra post-its com os cards do projeto (a fazer,
+  em execução, prontos), a gaveta da sala ganha o botão **Tarefas** (abre o quadro naquele projeto) e os agentes que
+  trabalham no worktree de um card aparecem na sala do repositório. Avisos quando um card precisa de você (pergunta
+  de agente, plano pronto, card travado) ou quando um PR é aberto; clicar abre o card.
+- **Aprovar e fazer merge pelo quadro:** o card em Revisão ganha **Aprovar e fazer merge do PR** (com confirmação).
+  O Promp IA faz o merge no GitHub (squash; `HABBLAUD_BOARD_MERGE=merge|rebase` muda), apaga o branch e o worktree do
+  card, marca a issue do Linear como Done e atualiza a pasta do projeto (fast-forward, só se ela está no branch
+  principal e sem mudanças). Opcional: um comando para rodar na pasta do projeto depois do merge (ex.: build e
+  reinício), salvo por projeto; o card mostra o andamento e a saída. Conflito ou PR fechado: o card avisa e não muda.
+- **Cotas conferidas no Orca antes de distribuir:** o quadro lê as cotas que o próprio Orca mede (`orca account
+  list`) junto com as do escritório (vale o maior uso) e tira as IAs que o Orca não consegue usar (sem login). A
+  conferência é refeita antes de planejar, antes de criar as subtarefas, antes de começar cada worker e ao tentar de
+  novo: IA sem cota ou indisponível é trocada pela equivalente do tipo da ação (ex.: análise do Antigravity vai para
+  o Claude), com a troca anotada no plano. Só espera quando nenhuma IA serve.
+- **Perguntas que expiram:** quando o agente que perguntou já terminou (seguiu sem a resposta), a pergunta sai do
+  card sozinha, em vez de ficar presa e dar erro do Orca ("Dispatch is inactive") ao responder.
+
 ## [1.0.3] - 2026-10-16
 
 ### Corrigido
@@ -220,6 +282,28 @@ idiomas.
   respondem, a meta a 80 % e, com `&fireworks=1`, um botão de teste dos fogos). `npm run shots:world` refaz as capturas
   `docs/screenshots/world-predio.png`, `world-enviado.png`, `world-cidade.png`, `world-cartao.png`, `world-visita.png`,
   `world-visita-painel.png`, `world-social.png` e `world-praca.png`.
+
+## [0.11.1] - 2026-10-13
+
+Versão do fork (Promp IA) sobre a 0.11.0 do Habblaud.
+
+### Adicionado
+
+- **Agentes do Orca no escritório:** OpenCode, Antigravity e Gemini rodando nos terminais do Orca viram
+  personagens na sala do projeto, com status (trabalhando, esperando você, à toa), prompt e ferramenta atual. Cada
+  tipo ganha o seu chip (OC, AG, GM). `HABBLAUD_ORCA=0` desliga; `HABBLAUD_ORCA_IDLE_MIN` diz quanto tempo um
+  agente parado continua no escritório (padrão 180 min).
+- **Contas do Codex do Orca** (`~/Library/Application Support/orca/codex-accounts/*/home`) entram na fonte do Codex:
+  sessões e uso de 5 h/semanal como as de `~/.codex`. O Orca não mostra mais o Codex por conta própria (evita personagem
+  duplicado).
+- **Cotas do Antigravity** (Gemini e Claude/GPT, 5 h e semanal) pelo `agy -p /usage`, a cada 5 min (0 tokens).
+  `HABBLAUD_ANTIGRAVITY=0` desliga.
+
+### Alterado
+
+- **Marca Promp IA:** logotipo em pixels "promp" com o selo laranja "IA" no topo, na abertura e na placa da recepção,
+  e "Promp IA" em todos os textos da interface e do mod. Os nomes técnicos (`HABBLAUD_*`, `~/.habblaud`, plugins
+  `habblaud`, `/habblaud`) continuam iguais. Rode `npm run mod:install` para o Claude Code pegar o mod novo.
 
 ## [0.11.0] - 2026-10-13
 

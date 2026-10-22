@@ -30,7 +30,7 @@ const TERMINAL_ROUTE = /^\/api\/sessions\/([^/]+)\/([^/]+)\/terminal$/;
 
 /** Por que a trava recusa a requisição (undefined = liberada): os mesmos textos do terminal do agente. */
 export function sessionsLockError(enabled: boolean, host: string | undefined, trusted?: boolean): string | undefined {
-  if (!enabled) return tr('terminal desligado: ele só funciona com o Habblaud acessível apenas pelo próprio computador');
+  if (!enabled) return tr('terminal desligado: ele só funciona com o Promp IA acessível apenas pelo próprio computador');
   if (trusted === false) return tr('não liberado no acesso remoto (veja HABBLAUD_REMOTE_ALLOW)');
   if (trusted === undefined && !isLoopbackHost(host)) return tr('o terminal só abre pelo próprio computador (http://localhost ou http://127.0.0.1)');
   return undefined;

@@ -1,4 +1,4 @@
-// Ditado: botão de microfone que grava no navegador (MediaRecorder), manda o áudio ao Habblaud (POST /api/dictation)
+// Ditado: botão de microfone que grava no navegador (MediaRecorder), manda o áudio ao Promp IA (POST /api/dictation)
 // e devolve o texto transcrito pelo Whisper local do Mac, com o idioma detectado sozinho (português ou inglês; ver
 // server/dictation/whisper.ts). Fica no "Novo agente" e na caixa de mensagem (gaveta e terminal). O microfone só existe
 // em página segura (HTTPS ou localhost): fora disso o botão some.
@@ -75,7 +75,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     res = await fetch(path, { credentials: 'same-origin', cache: 'no-store', ...init });
   } catch {
-    throw new Error(tr('o Habblaud não respondeu'));
+    throw new Error(tr('o Promp IA não respondeu'));
   }
   const body = (await res.json().catch(() => ({}))) as T & { error?: string };
   if (!res.ok) throw new Error(body.error ?? tr('erro {0}', [res.status]));

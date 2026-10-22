@@ -77,7 +77,7 @@ const SCOPE = 'user';
 /** Tempo máximo de cada chamada ao CLI (o add/update de um diretório local leva poucos segundos). */
 const CLI_TIMEOUT_MS = 120_000;
 
-const USAGE = tr('Uso: npm run mod:<install|uninstall|status> [-- opções]\n\n  install     instala o mod do Habblaud no Claude Code de cada conta (marketplace desta pasta + plugins)\n              e tira o que ele substitui: o tap de statusline e o hook de permissão antigos e o mod do\n              nome antigo (codetown)\n  uninstall   tira os plugins e o marketplace do Habblaud de cada conta (e os do nome antigo, se sobraram)\n  status      mostra, por conta, o marketplace, os plugins (e versões) e o que sobrou do jeito antigo\n\nOpções:\n  --sem-permissoes   não instala o plugin de responder permissões pelo escritório (e mantém o hook antigo)\n  --sem-mensagens    não instala o plugin de mandar mensagens pelo escritório (um já instalado continua)\n  --conta <pasta>    só esta conta (ex.: --conta ~/.claude-conta2); pode repetir\n  --dry-run          mostra o que faria, sem instalar nem gravar nada\n  --claude <cmd>     comando do Claude Code (padrão: claude, do PATH)\n  -h, --help         mostra esta ajuda\n\nPrecisa do Claude Code {0} ou mais novo. Em versões anteriores, use o jeito antigo:\nnpm run usage:install (uso ao vivo) e npm run hooks:install (responder permissões); mandar mensagens pelo\nescritório só existe com o mod.\n\nContas: as mesmas do servidor (~/.claude* com projects/ ou sessions/, CLAUDE_CONFIG_DIR ou\nHABBLAUD_CLAUDE_DIRS). Uso capturado em HABBLAUD_USAGE_DIR (padrão ~/.habblaud/usage).', [MIN_CLAUDE_VERSION]);
+const USAGE = tr('Uso: npm run mod:<install|uninstall|status> [-- opções]\n\n  install     instala o mod do Promp IA no Claude Code de cada conta (marketplace desta pasta + plugins)\n              e tira o que ele substitui: o tap de statusline e o hook de permissão antigos e o mod do\n              nome antigo (codetown)\n  uninstall   tira os plugins e o marketplace do Promp IA de cada conta (e os do nome antigo, se sobraram)\n  status      mostra, por conta, o marketplace, os plugins (e versões) e o que sobrou do jeito antigo\n\nOpções:\n  --sem-permissoes   não instala o plugin de responder permissões pelo escritório (e mantém o hook antigo)\n  --sem-mensagens    não instala o plugin de mandar mensagens pelo escritório (um já instalado continua)\n  --conta <pasta>    só esta conta (ex.: --conta ~/.claude-conta2); pode repetir\n  --dry-run          mostra o que faria, sem instalar nem gravar nada\n  --claude <cmd>     comando do Claude Code (padrão: claude, do PATH)\n  -h, --help         mostra esta ajuda\n\nPrecisa do Claude Code {0} ou mais novo. Em versões anteriores, use o jeito antigo:\nnpm run usage:install (uso ao vivo) e npm run hooks:install (responder permissões); mandar mensagens pelo\nescritório só existe com o mod.\n\nContas: as mesmas do servidor (~/.claude* com projects/ ou sessions/, CLAUDE_CONFIG_DIR ou\nHABBLAUD_CLAUDE_DIRS). Uso capturado em HABBLAUD_USAGE_DIR (padrão ~/.habblaud/usage).', [MIN_CLAUDE_VERSION]);
 
 // ---------------------------------------------------------------------------------------------
 // O CLI do Claude Code (injetável: os testes nunca chamam o de verdade)
@@ -705,7 +705,7 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
   }
   const manifest = join(ctx.root, '.claude-plugin', 'marketplace.json');
   if (opts.command === 'install' && !existsSync(manifest)) {
-    out(tr('Não achei {0}: esta pasta não tem o mod (versão antiga do Habblaud? rode git pull).', [tildify(manifest, home)]));
+    out(tr('Não achei {0}: esta pasta não tem o mod (versão antiga do Promp IA? rode git pull).', [tildify(manifest, home)]));
     return 1;
   }
 
@@ -728,7 +728,7 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
     }
   }
   if (opts.command === 'status') {
-    out(tr('Claude Code {0}{1} · Habblaud {2} em {3}', [cliVersion ?? tr('(versão desconhecida)'), cliVersion && !versionAtLeast(cliVersion, MIN_CLAUDE_VERSION) ? tr(' — o mod precisa do {0}+', [MIN_CLAUDE_VERSION]) : '', ctx.version, tildify(ctx.root, home)]));
+    out(tr('Claude Code {0}{1} · Promp IA {2} em {3}', [cliVersion ?? tr('(versão desconhecida)'), cliVersion && !versionAtLeast(cliVersion, MIN_CLAUDE_VERSION) ? tr(' — o mod precisa do {0}+', [MIN_CLAUDE_VERSION]) : '', ctx.version, tildify(ctx.root, home)]));
   }
 
   // Nome antigo: ~/.codetown vira ~/.habblaud antes de criar (ou usar) a pasta do uso.
@@ -854,7 +854,7 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
   if (opts.command === 'install' && !opts.dryRun && !failures) {
     out('');
     out(tr('Pronto. Sessões novas do Claude Code já carregam o mod; nas que já estão abertas, rode /reload-plugins (ou'));
-    out(tr('reabra a sessão). O uso de 5h/semanal chega ao Habblaud depois da próxima resposta de cada sessão.'));
+    out(tr('reabra a sessão). O uso de 5h/semanal chega ao Promp IA depois da próxima resposta de cada sessão.'));
     out(tr('Para conferir: npm run mod:status · Para desfazer: npm run mod:uninstall'));
   }
   if (opts.command === 'uninstall' && !opts.dryRun && changed) {
@@ -866,7 +866,7 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
     // O mod e os plugins só falam com o Habblaud local: diz se ele está lá para responder.
     const port = habblaudPort(env);
     const health = await (ctx.health ?? fetchHealth)(port);
-    const at = tr('Habblaud em http://127.0.0.1:{0}', [port]);
+    const at = tr('Promp IA em http://127.0.0.1:{0}', [port]);
     if (!health) out(tr('{0}: fora do ar (o mod segue gravando o uso; os pedidos de permissão ficam só no terminal).', [at]));
     else if (health.permissions) out(tr('{0}: no ar e respondendo pedidos de permissão (com alguma página aberta).', [at]));
     else out(tr('{0}: no ar, mas responder pelo escritório está desligado (porta exposta na rede ou HABBLAUD_TERMINAL=0).', [at]));
@@ -875,7 +875,7 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
       out(
         health.messages
           ? tr('Mensagens pelo escritório: ligadas (chegam às sessões abertas com o plugin {0}).', [shortName(MESSAGES_PLUGIN)])
-          : tr('Mensagens pelo escritório: desligadas no Habblaud (porta exposta na rede, HABBLAUD_TERMINAL=0 ou HABBLAUD_MENSAGENS=0).'),
+          : tr('Mensagens pelo escritório: desligadas no Promp IA (porta exposta na rede, HABBLAUD_TERMINAL=0 ou HABBLAUD_MENSAGENS=0).'),
       );
     }
   }

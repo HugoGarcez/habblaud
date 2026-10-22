@@ -235,7 +235,7 @@ async function start(allow: RemoteFeature[] = ['permissions']): Promise<Harness>
   const gate = createRemoteGate({ config: CFG, sessions: new RemoteSessions(SECRET, CFG), secure: false });
   const page = (_req: http.IncomingMessage, res: http.ServerResponse) => {
     res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end('<!doctype html><title>Habblaud</title>');
+    res.end('<!doctype html><title>Promp IA</title>');
   };
   const local = http.createServer((req, res) => {
     if (guard(req, res)) return;
@@ -584,9 +584,10 @@ describe('GET /api/access (o que a página pode fazer)', () => {
       messages: false,
       terminal: false,
       spawn: false,
+      board: false,
       world: false,
     });
-    expect(JSON.parse((await request(h.localBase, '/api/access')).body)).toEqual({ remote: false, local: true, permissions: true, messages: true, terminal: false, spawn: true, world: true });
+    expect(JSON.parse((await request(h.localBase, '/api/access')).body)).toEqual({ remote: false, local: true, permissions: true, messages: true, terminal: false, spawn: true, board: false, world: true });
     expect(JSON.parse((await request(h.localBase, '/api/access', { headers: { Host: '192.168.1.5:4747' } })).body)).toMatchObject({
       local: false,
       permissions: false,

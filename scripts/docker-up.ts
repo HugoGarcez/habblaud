@@ -666,7 +666,7 @@ async function up(opts: Options, port: number): Promise<void> {
   const existing = await fetchHealth(baseUrl, 1_500);
   if (existing && !existing.docker) {
     fail(
-      tr('já existe um Habblaud rodando fora do Docker em {0} (npm run dev ou npm start?).\n', [publicUrl]) +
+      tr('já existe um Promp IA rodando fora do Docker em {0} (npm run dev ou npm start?).\n', [publicUrl]) +
         tr(`Pare-o antes, ou use outra porta: HABBLAUD_PORT=4848 npm run docker:up`),
     );
   }
@@ -721,12 +721,12 @@ async function up(opts: Options, port: number): Promise<void> {
   const plan = planUp(inspectDocker(), opts.build);
   const { copyFailed } = runPlan(plan, port, opts.build);
 
-  say(tr('Aguardando o Habblaud responder em {0}…', [publicUrl]));
+  say(tr('Aguardando o Promp IA responder em {0}…', [publicUrl]));
   const health = await waitHealthy(baseUrl);
-  if (!health) fail(tr('o Habblaud não respondeu em {0} s. Veja o que aconteceu com: npm run docker:logs', [HEALTH_TIMEOUT_MS / 1000]));
+  if (!health) fail(tr('o Promp IA não respondeu em {0} s. Veja o que aconteceu com: npm run docker:logs', [HEALTH_TIMEOUT_MS / 1000]));
 
   console.log('');
-  say(tr('Habblaud{0} no ar: {1}', [health.version ? ` ${health.version}` : '', publicUrl]));
+  say(tr('Promp IA{0} no ar: {1}', [health.version ? ` ${health.version}` : '', publicUrl]));
   for (const acc of accounts) {
     const src = health.sources?.find((s) => s.label === acc.id);
     if (!src) continue;
@@ -834,7 +834,7 @@ function updateMods(dirs: string[], accounts: DetectedAccount[]): Pick<ModUpdate
     }
     return mod;
   } catch (err) {
-    warn(tr('não consegui conferir o mod do Habblaud ({0}).', [(err as Error).message]));
+    warn(tr('não consegui conferir o mod do Promp IA ({0}).', [(err as Error).message]));
     return { installed: false, unavailable: true };
   }
 }

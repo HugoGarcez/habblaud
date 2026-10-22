@@ -130,7 +130,7 @@ describe('respostas assíncronas do editor de personagem', () => {
 
   for (const operation of ['save', 'reset'] as const) {
     for (const next of ['b', 'a']) {
-      it.each([undefined, 'Sem conexão com o Habblaud.'])(`${operation}: resposta %s não altera a nova edição de ${next}`, async (error) => {
+      it.each([undefined, 'Sem conexão com o Promp IA.'])(`${operation}: resposta %s não altera a nova edição de ${next}`, async (error) => {
         const ui = characterEditor();
         ui.open('a');
         ui.send(operation);

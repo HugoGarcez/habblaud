@@ -590,7 +590,7 @@ export class BuildingUplink {
     this.stop_ = { reason, key: sessionKey(this.o.store.get()) };
     log.warn(
       reason === 'update'
-        ? tr('Habblaud World: esta versão do Habblaud não entra mais no mundo; atualize para o prédio voltar.')
+        ? tr('Habblaud World: esta versão do Promp IA não entra mais no mundo; atualize para o prédio voltar.')
         : tr('Habblaud World: o servidor encerrou a conexão do prédio ({0}).', [reason]),
     );
     this.clearReconnect();

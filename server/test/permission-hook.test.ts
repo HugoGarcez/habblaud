@@ -114,7 +114,7 @@ describe('permission-hook.mjs (processo)', () => {
     srv.registry!.decide(await pendingId(srv), { behavior: 'deny', message: 'use pnpm', interrupt: true });
     const r = await run;
     expect(r.code).toBe(0);
-    expect(JSON.parse(r.stdout).hookSpecificOutput.decision).toEqual({ behavior: 'deny', message: 'Recusado pelo usuário no Habblaud: use pnpm', interrupt: true });
+    expect(JSON.parse(r.stdout).hookSpecificOutput.decision).toEqual({ behavior: 'deny', message: 'Recusado pelo usuário no Promp IA: use pnpm', interrupt: true });
   });
 
   it('pergunta respondida no Habblaud: aprova com a entrada original mais `answers` (textos originais)', async () => {
@@ -142,7 +142,7 @@ describe('permission-hook.mjs (processo)', () => {
     srv = await servePermissions();
     const run = runHook(JSON.stringify(askJson()), ['--port', String(srv.port)]);
     srv.registry!.decide(await pendingId(srv), { behavior: 'deny', message: 'decida você' });
-    expect(JSON.parse((await run).stdout).hookSpecificOutput.decision).toEqual({ behavior: 'deny', message: 'Recusado pelo usuário no Habblaud: decida você' });
+    expect(JSON.parse((await run).stdout).hookSpecificOutput.decision).toEqual({ behavior: 'deny', message: 'Recusado pelo usuário no Promp IA: decida você' });
   });
 
   it('"responder no terminal": sai sem decisão (stdout vazio)', async () => {
@@ -217,7 +217,7 @@ describe('permission-hook.mjs (funções)', () => {
       hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow' } },
     });
     expect(decisionOutput({ status: 'decided', behavior: 'deny' }, hookJson())).toEqual({
-      hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'deny', message: 'Recusado pelo usuário no Habblaud.' } },
+      hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'deny', message: 'Recusado pelo usuário no Promp IA.' } },
     });
     expect(decisionOutput({ status: 'released', reason: 'terminal' }, hookJson())).toBeUndefined();
     expect(decisionOutput({ status: 'pending' }, hookJson())).toBeUndefined();

@@ -71,7 +71,7 @@ export function formatBytes(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1).replace('.', ',')} MB`;
 }
 
-function fileToBase64(file: Blob): Promise<string> {
+export function fileToBase64(file: Blob): Promise<string> {
   return new Promise((ok, fail) => {
     const r = new FileReader();
     r.onload = () => ok(String(r.result).replace(/^data:[^,]*,/, ''));
@@ -85,7 +85,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     res = await fetch(path, { credentials: 'same-origin', cache: 'no-store', ...init });
   } catch {
-    throw new Error(tr('o Habblaud não respondeu'));
+    throw new Error(tr('o Promp IA não respondeu'));
   }
   const body = (await res.json().catch(() => ({}))) as T & { error?: string };
   if (!res.ok) throw new Error(body.error ?? tr('erro {0}', [res.status]));

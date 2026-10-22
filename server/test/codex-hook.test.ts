@@ -173,7 +173,7 @@ describe('hook.mjs do Codex (processo)', () => {
     let run = runHook(JSON.stringify(permission()), { CODEX_HOME: codexHome });
     expect(srv.registry!.decide(await pendingId(srv), { behavior: 'deny', message: 'use pnpm' })).toBe('ok');
     let r = await run;
-    expect(JSON.parse(r.stdout)).toEqual({ hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'deny', message: 'Recusado pelo usuário no Habblaud: use pnpm' } } });
+    expect(JSON.parse(r.stdout)).toEqual({ hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'deny', message: 'Recusado pelo usuário no Promp IA: use pnpm' } } });
     run = runHook(JSON.stringify(permission()), { CODEX_HOME: codexHome });
     srv.registry!.decide(await pendingId(srv), { behavior: 'terminal' });
     r = await run;
@@ -258,7 +258,7 @@ describe('hook.mjs do Codex (funções)', () => {
     const allow = hook.decisionOutput({ status: 'decided', behavior: 'allow', suggestion: 0 });
     expect(allow).toEqual({ hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow' } } });
     expect(hook.decisionOutput({ status: 'decided', behavior: 'deny', interrupt: true })).toEqual({
-      hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'deny', message: 'Recusado pelo usuário no Habblaud.' } },
+      hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'deny', message: 'Recusado pelo usuário no Promp IA.' } },
     });
     expect(hook.decisionOutput({ status: 'decided', behavior: 'answer', answers: [] })).toBeUndefined();
     expect(hook.decisionOutput({ status: 'released', reason: 'terminal' })).toBeUndefined();

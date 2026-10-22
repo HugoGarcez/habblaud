@@ -438,7 +438,7 @@ export function createCityScene(o: CitySceneOptions): CityScene {
 
   // ------------------------------------------------------------------ stream
 
-  const offline = () => tr('Sem conexão com o Habblaud World agora; o Habblaud tenta de novo sozinho.');
+  const offline = () => tr('Sem conexão com o Habblaud World agora; o Promp IA tenta de novo sozinho.');
 
   const onStream = (ev: WorldStreamEvent) => {
     switch (ev.type) {

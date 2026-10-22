@@ -174,7 +174,7 @@ describe('DemoSimulator: Codex', () => {
     const codex = sim.snapshot(start).agents.find((a) => a.provider === 'codex')!;
     expect(sim.receiveMessage(codex.id, 'roda o lint também', start)).toBe(true);
     // Na hora, nada aparece (está na fila).
-    expect(sim.snapshot(start).agents.find((a) => a.id === codex.id)!.recent.some((r) => r.text === 'Mensagem pelo Habblaud')).toBe(false);
+    expect(sim.snapshot(start).agents.find((a) => a.id === codex.id)!.recent.some((r) => r.text === 'Mensagem pelo Promp IA')).toBe(false);
     let t = start;
     let deliveredAt = 0;
     let statusAtDelivery = '';
@@ -182,7 +182,7 @@ describe('DemoSimulator: Codex', () => {
       t += 250;
       sim.tick(t);
       const a = sim.snapshot(t).agents.find((x) => x.id === codex.id)!;
-      const m = a.recent.find((r) => r.text === 'Mensagem pelo Habblaud');
+      const m = a.recent.find((r) => r.text === 'Mensagem pelo Promp IA');
       if (m) {
         deliveredAt = m.at;
         statusAtDelivery = a.recent[a.recent.indexOf(m) - 1]?.kind ?? '';

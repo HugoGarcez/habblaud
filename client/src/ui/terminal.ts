@@ -47,7 +47,7 @@ export const INPUT_PREVIEW_LINES = 10;
 /** Prompt do usuário muito longo (texto colado): recolhido. */
 export const PROMPT_PREVIEW_LINES = 24;
 
-export const TERMINAL_UNAVAILABLE_HINT = tr('O terminal só fica disponível quando o Habblaud roda com acesso local (bind 127.0.0.1)');
+export const TERMINAL_UNAVAILABLE_HINT = tr('O terminal só fica disponível quando o Promp IA roda com acesso local (bind 127.0.0.1)');
 const OPEN_ERROR = tr('Não foi possível abrir o terminal. O recurso só funciona no acesso local, com o agente ainda aberto.');
 const SESSION_OPEN_ERROR = tr('Não foi possível abrir a sessão. O histórico só funciona no acesso local, com o transcript ainda no disco.');
 /** Espera depois da última tecla antes de buscar (a busca percorre toda a conversa na tela). */
@@ -373,12 +373,12 @@ export function terminalFooter(agent: AgentInfo | undefined, agents: readonly Ag
     case 'waiting': {
       const text = agent.waitingFor ? tr('Esperando você: {0}', [agent.waitingFor]) : tr('Esperando você');
       if (agent.permission) return { kind: 'waiting', text, since: agent.statusSince };
-      // Sem o pedido no Habblaud (o hook já devolveu à sessão, a sessão abriu sem o plugin ou não havia página aberta
+      // Sem o pedido no Promp IA (o hook já devolveu à sessão, a sessão abriu sem o plugin ou não havia página aberta
       // quando ele chegou): os botões não vêm, então diz onde responder.
       const hint =
         agent.provider === 'codex'
-          ? tr('{0} · responda no Codex: este pedido não chegou ao Habblaud ou passou do tempo de espera', [text])
-          : tr('{0} · responda no Claude Code: este pedido não chegou ao Habblaud ou passou do tempo de espera', [text]);
+          ? tr('{0} · responda no Codex: este pedido não chegou ao Promp IA ou passou do tempo de espera', [text])
+          : tr('{0} · responda no Claude Code: este pedido não chegou ao Promp IA ou passou do tempo de espera', [text]);
       return { kind: 'waiting', text: hint, since: agent.statusSince };
     }
     default:

@@ -34,6 +34,14 @@ import { createMessageRoutes } from './messages/http';
 import { MessageRegistry } from './messages/registry';
 import type { CodexLive } from './sources/codex/live';
 import { ClaudeWatcher } from './sources/watcher';
+import { findOrcaBin, OrcaWatcher } from './sources/orca';
+import { AntigravityUsageService, findAgyBin } from './sources/antigravity-usage';
+import { findBin } from './board/cli';
+import { createBoardRoutes } from './board/http';
+import { BoardService } from './board/service';
+import { BoardStore } from './board/store';
+import { runnableClaudeBin } from './claude-bin';
+import type { AgentId } from '../shared/board';
 import { discoverCodexDirs } from './sources/codex/accounts';
 import { CodexHistory } from './sources/codex/history';
 import { CodexSource } from './sources/codex/source';
@@ -42,7 +50,6 @@ import { UpdateChecker } from './updates/checker';
 import { getLocale, tr } from '../shared/i18n';
 import type { WorldLocale } from '../shared/world/protocol';
 import { createCliRunner, createOpener, SpawnService } from './spawn/spawn';
-import { runnableClaudeBin } from './claude-bin';
 import { AttachmentStore } from './spawn/attachments';
 import { recentFolders } from './spawn/folders';
 import { isDemoId } from '../shared/timeline';
@@ -58,6 +65,17 @@ import { OwnerSocial } from './world/social';
 import { BuildingTokens } from './world/tokens';
 import { BuildingUplink } from './world/uplink';
 import { WorldViewer } from './world/viewer';
+import { userInfo } from 'node:os';
+
+// Pelo launchd (LaunchAgent) o processo nasce sem USER/LOGNAME. O Claude Code acha o login no Keychain pela conta do
+// usuário: sem USER, o planejador do quadro e o /usage das contas dão "OAuth session expired" mesmo logado.
+try {
+  const user = userInfo().username;
+  process.env.USER ||= user;
+  process.env.LOGNAME ||= user;
+} catch {
+  // sem usuário no sistema (contêiner): fica como está
+}
 
 const config = loadConfig();
 const startedAt = Date.now();
@@ -79,7 +97,7 @@ const roomAliases = new RoomAliases(join(config.dataDir, 'rooms.json'));
 roomAliases.load();
 
 // Office, contas e fontes de agentes se referenciam (avisos de mudança / fontes): ligação tardia.
-const late: { office?: Office; agents?: SourceSet; permissions?: PermissionRegistry; messages?: MessageRegistry; ptys?: PtyManager; ptyOff?: string } = {};
+const late: { office?: Office; agents?: SourceSet; permissions?: PermissionRegistry; messages?: MessageRegistry; orca?: OrcaWatcher; board?: BoardService; ptys?: PtyManager; ptyOff?: string } = {};
 // Versão nova: consulta a release mais recente no GitHub a cada 6 h (HABBLAUD_UPDATE_CHECK=0 desliga).
 const updates = new UpdateChecker({
   current: config.version,
@@ -116,13 +134,15 @@ const accounts = new AccountsService({
 const office = new Office({
   names,
   roomAlias: (path) => roomAliases.get(path),
+  roomPath: (cwd) => late.board?.roomPathFor(cwd),
+  board: () => late.board?.summary(),
   version: config.version,
   // No modo dev o Vite serve o cliente direto do código-fonte: não há build para comparar.
   build: config.dev ? undefined : createBuildReader(config.rootDir),
   startedAt,
-  accounts: (sessions) => accounts.list(sessions),
-  sources: () => late.agents?.sources() ?? [],
-  accountName: (id) => accounts.find(id)?.detected.name,
+  accounts: (sessions) => [...accounts.list(sessions), ...(late.orca?.accounts(sessions) ?? [])],
+  sources: () => [...(late.agents?.sources() ?? []), ...(late.orca?.sources() ?? [])],
+  accountName: (id) => accounts.find(id)?.detected.name ?? late.orca?.accountName(id),
   terminal: config.terminal,
   permissions: () => late.permissions?.snapshot() ?? new Map(),
   messages: config.messages ? () => late.messages?.reachable() ?? new Set() : undefined,
@@ -141,7 +161,50 @@ if (codex) agents.add(codex);
 // Eventos dos hooks do Codex (POST /api/codex/events, mod/habblaud-codex/hook.mjs): vão para a fonte do Codex ao vivo
 // (CodexLive); sem ela (nenhuma pasta do Codex ou HABBLAUD_CODEX=0) a rota responde {ok: false}.
 const codexLive: CodexLive | undefined = codex;
+// Agentes do Orca (OpenCode, Antigravity, Gemini…): lidos pela CLI do Orca, fora do Docker. HABBLAUD_ORCA=0 desliga.
+// O Codex do Orca fica com a fonte do Codex acima (as contas do Orca entram em discoverCodexDirs).
+// Cotas do Antigravity: `agy -p /usage` a cada 5 min (0 tokens); fora do Docker. HABBLAUD_ANTIGRAVITY=0 desliga.
+const agyUsage = new AntigravityUsageService({
+  bin: config.inDocker || process.env.HABBLAUD_ANTIGRAVITY === '0' ? undefined : findAgyBin(),
+  onChange: () => office.markDirty(),
+});
+const orca = new OrcaWatcher({
+  office,
+  usage: () => (config.inDocker ? [] : agyUsage.entries()),
+  bin: config.inDocker || process.env.HABBLAUD_ORCA === '0' ? undefined : findOrcaBin(),
+  idleMaxMs: Number(process.env.HABBLAUD_ORCA_IDLE_MIN) > 0 ? Number(process.env.HABBLAUD_ORCA_IDLE_MIN) * 60_000 : undefined,
+  skipTypes: codex ? ['claude', 'codex'] : ['claude'],
+});
 late.office = office;
+late.orca = orca;
+// Quadro de tarefas dos projetos do Orca (server/board/): fora do Docker e com a CLI do Orca. HABBLAUD_BOARD=0 desliga.
+const orcaBin = config.inDocker || process.env.HABBLAUD_BOARD === '0' ? undefined : findOrcaBin();
+const boardStore = new BoardStore(join(config.dataDir, 'board.json'));
+if (orcaBin) boardStore.load();
+// IAs com CLI neste computador (o ~/.local/bin entra no PATH: é onde o instalador do Claude Code e do Codex põem).
+const agentPath = { ...process.env, PATH: `${process.env.PATH ?? ''}:${join(config.home, '.local', 'bin')}` };
+const boardClaude = runnableClaudeBin(agentPath);
+const installedAgents = new Set<AgentId>();
+if (boardClaude) installedAgents.add('claude');
+if (findBin('codex', agentPath)) installedAgents.add('codex');
+if (findAgyBin()) installedAgents.add('antigravity');
+if (findBin('opencode')) installedAgents.add('opencode');
+const board = orcaBin
+  ? new BoardService({
+      store: boardStore,
+      orca: orcaBin,
+      gh: findBin('gh'),
+      claude: boardClaude,
+      installed: installedAgents,
+      plannerModel: process.env.HABBLAUD_PLANNER_MODEL?.trim() || undefined,
+      // As contas como a barra superior mostra (uso com a janela vencida já zerada).
+      accounts: () => hub.current().accounts,
+      maxWorkers: Number(process.env.HABBLAUD_BOARD_MAX_WORKERS) > 0 ? Number(process.env.HABBLAUD_BOARD_MAX_WORKERS) : undefined,
+      mergeMethod: (['squash', 'merge', 'rebase'] as const).find((m) => m === process.env.HABBLAUD_BOARD_MERGE?.trim()),
+      onChange: () => office.markDirty(),
+    })
+  : undefined;
+late.board = board;
 late.agents = agents;
 // Página que pode responder pelo escritório: Host local na porta local; na remota, só com permissions liberado.
 const hub = new Hub(office, {
@@ -319,6 +382,9 @@ late.ptyOff = ptyOff;
 if (config.demo) office.setDemo(true);
 // As fontes síncronas (a do Claude Code) terminam o boot aqui, antes de o hub começar a transmitir.
 void agents.start();
+orca.start();
+agyUsage.start();
+board?.start();
 accounts.start();
 hub.start();
 if (timeline) {
@@ -349,7 +415,7 @@ const api = createApiHandler({
   office,
   hub,
   accounts,
-  sources: () => agents.sources(),
+  sources: () => [...agents.sources(), ...orca.sources()],
   version: config.version,
   inDocker: config.inDocker,
   terminal: config.terminal,
@@ -359,6 +425,7 @@ const api = createApiHandler({
   permissions: permissions ? createPermissionRoutes(permissions) : undefined,
   messages: messages ? createMessageRoutes(messages) : undefined,
   pty: ptys ? createPtyRoutes(ptys) : undefined,
+  board: board ? createBoardRoutes(board) : undefined,
   spawn,
   attachments,
   dictation,
@@ -470,7 +537,7 @@ if (config.remote) {
 
 server.listen(config.port, config.host, () => {
   const host = config.host === '0.0.0.0' || config.host === '::' ? 'localhost' : config.host;
-  log.info(tr('🏢 Habblaud {0}{1}{2} em http://{3}:{4}', [config.version, config.dev ? ' (dev)' : '', config.inDocker ? ' (docker)' : '', host, config.port]));
+  log.info(tr('🏢 Promp IA {0}{1}{2} em http://{3}:{4}', [config.version, config.dev ? ' (dev)' : '', config.inDocker ? ' (docker)' : '', host, config.port]));
   const list = accounts.entries();
   if (!list.length) log.warn(tr('Nenhuma pasta do Claude Code encontrada (defina HABBLAUD_CLAUDE_DIRS).'));
   for (const dir of codexDirsRefused(process.env, config.home)) {
@@ -491,6 +558,7 @@ server.listen(config.port, config.host, () => {
   } else {
     log.info(tr('   Codex: {0}.', [config.codex ? tr('nenhuma pasta do Codex encontrada (defina HABBLAUD_CODEX_DIRS)') : tr('desligado (HABBLAUD_CODEX=0)')]));
   }
+  if (orca.enabled) log.info('   Orca: agentes de outros CLIs (OpenCode, Antigravity…) pelos terminais do Orca.');
   if (office.isDemo()) log.info(tr('   Modo demonstração ligado (agentes simulados misturados aos reais).'));
   if (config.terminal) log.info(tr('   Terminal: ligado (acesso só local).'));
   else log.info(tr('   Terminal: desligado ({0}).', [terminalOffReason(process.env, config.host, config.inDocker)]));
@@ -547,6 +615,9 @@ function shutdown(signal: string): void {
   clearInterval(ticker);
   stats.stop();
   agents.stop();
+  orca.stop();
+  agyUsage.stop();
+  board?.stop();
   accounts.stop();
   hub.stop();
   terminals?.stop();

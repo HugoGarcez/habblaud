@@ -240,7 +240,7 @@ function visibilityText(key: VisibilitySwitch): { label: string; hint: string } 
     case 'compactions':
       return { label: tr('Mostrar as compactações'), hint: tr('Quando um agente compacta o contexto, a lixeira da sala enche. Sai só o fato, nada do conteúdo.') };
     case 'knocks':
-      return { label: tr('Avisar quando baterem na porta'), hint: tr('Quem estiver na porta do seu prédio pode bater; o aviso chega aqui no Habblaud, sem o nome de quem bateu.') };
+      return { label: tr('Avisar quando baterem na porta'), hint: tr('Quem estiver na porta do seu prédio pode bater; o aviso chega aqui no Promp IA, sem o nome de quem bateu.') };
   }
 }
 
@@ -486,7 +486,7 @@ export class WorldSettingsGroup {
   }
 
   private build(): View {
-    if (this.mode === 'local_only') return { el: para('ui-set__hint', tr('A conta do Habblaud World só pode ser mexida no próprio computador, com o Habblaud em acesso local (bind 127.0.0.1) e aberto por http://localhost.')) };
+    if (this.mode === 'local_only') return { el: para('ui-set__hint', tr('A conta do Habblaud World só pode ser mexida no próprio computador, com o Promp IA em acesso local (bind 127.0.0.1) e aberto por http://localhost.')) };
     if (this.mode !== 'active') return { el: h('div') };
     const key = this.builtKey;
     if (key === 'loading') return { el: para('ui-set__hint', tr('Carregando…')) };
@@ -567,7 +567,7 @@ export class WorldSettingsGroup {
       h(
         'ul',
         { class: 'ui-world__list' },
-        h('li', {}, h('strong', { text: tr('Sai:') }), ' ', tr('o tema do escritório; um andar por sala aberta, com um código aleatório que muda todo dia; de cada agente, se é principal ou subagente, a ferramenta, o status, a aparência, um nome sorteado e a faixa de tarefas concluídas no dia; os tokens do prédio arredondados em faixas (dá para desligar); se você ligar, o fato de um agente ter compactado o contexto; a versão e o commit do Habblaud, com a marca de cópia modificada; e o idioma da interface, só para os e-mails.')),
+        h('li', {}, h('strong', { text: tr('Sai:') }), ' ', tr('o tema do escritório; um andar por sala aberta, com um código aleatório que muda todo dia; de cada agente, se é principal ou subagente, a ferramenta, o status, a aparência, um nome sorteado e a faixa de tarefas concluídas no dia; os tokens do prédio arredondados em faixas (dá para desligar); se você ligar, o fato de um agente ter compactado o contexto; a versão e o commit do Promp IA, com a marca de cópia modificada; e o idioma da interface, só para os e-mails.')),
         h('li', {}, h('strong', { text: tr('Nunca sai:') }), ' ', tr('caminhos e nomes de projetos, títulos de sessão, comandos, mensagens, código, custo, a sua conta do Claude, o seu e-mail e o nome do computador.')),
       ),
       para('ui-world__key', tr('Com os dados que saem não dá para saber quem você é nem em que trabalha.')),
@@ -1251,7 +1251,7 @@ export class WorldSettingsGroup {
     const error = h('p', { class: 'ui-world__error', role: 'alert', hidden: true });
     const sw = switchRow(
       tr('Avisar por e-mail antes de retirar meu prédio por inatividade'),
-      tr('Sem notícias deste Habblaud por 7 dias, o prédio some do mapa e, 30 dias depois, é retirado. O e-mail chega 3 dias antes da retirada.'),
+      tr('Sem notícias deste Promp IA por 7 dias, o prédio some do mapa e, 30 dias depois, é retirado. O e-mail chega 3 dias antes da retirada.'),
       () => void toggle(),
     );
     const noPlayer = para('ui-set__hint', tr('O aviso de inatividade fica disponível depois de criar o personagem.'));

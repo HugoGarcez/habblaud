@@ -112,7 +112,7 @@ describe('rotas do auxiliar do Codex', () => {
     expect(lines.join('\n')).not.toContain('o resto');
   });
 
-  it('Habblaud fora do ar ou recusando: a rodada só informa (nada roda)', async () => {
+  it('Promp IA fora do ar ou recusando: a rodada só informa (nada roda)', async () => {
     const run = async () => ({ ok: true as const });
     expect(await round(httpPost(1), run)).toEqual({ state: 'down' });
     const s = await serve(false);
@@ -182,7 +182,7 @@ describe('spawnRound com anexos e dictationRound', () => {
       files.map((f) => (wrote.push(`${id}:${f.name}:${f.data.toString()}`), `/h/att/${f.name}`)),
     );
     expect(wrote).toEqual(['a:print.png:png']);
-    expect(new URL(opened[0]).searchParams.get('q')).toBe('veja\n\nAnexo enviado pelo Habblaud (leia antes de começar):\n- /h/att/print.png');
+    expect(new URL(opened[0]).searchParams.get('q')).toBe('veja\n\nAnexo enviado pelo Promp IA (leia antes de começar):\n- /h/att/print.png');
     expect(r).toEqual({ state: 'ok', results: [{ id: 'a', ok: true, how: 'app' }, { id: 'b', ok: false, error: 'anexo ilegível' }] });
   });
 
@@ -275,7 +275,7 @@ describe('spawnRound (agentes novos pelo auxiliar)', () => {
     expect(calls[1]).toEqual(['/api/host/spawn/ack', { results: r.state === 'ok' ? r.results : [] }]);
   });
 
-  it('Habblaud fora do ar ou recusando', async () => {
+  it('Promp IA fora do ar ou recusando', async () => {
     expect(await spawnRound(async () => null, async () => ({ ok: true }))).toEqual({ state: 'down' });
     expect(await spawnRound(async () => ({ status: 403, json: { error: 'x' } }), async () => ({ ok: true }))).toEqual({ state: 'refused', status: 403 });
   });

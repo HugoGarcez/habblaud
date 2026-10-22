@@ -1,4 +1,4 @@
-// Interface do Habblaud (painéis DOM sobre o canvas do escritório).
+// Interface do Promp IA (painéis DOM sobre o canvas do escritório).
 // Recebe o OfficeStore (dados) e o WorldApi (canvas) e monta: barra superior com uso por conta,
 // barra lateral, gaveta de detalhes, feed, avisos, configurações, ajuda e estados de carregamento/vazio.
 // DOM incremental: os snapshots (até ~5/s) só marcam a UI como "suja"; tudo é reconciliado uma vez por quadro.
@@ -12,6 +12,7 @@ import './styles.css';
 import type { OfficeStore } from '../net/store';
 import type { Selection, WorldApi } from '../world/api';
 import type { PanelName, TerminalRouter, UiComponent, UiContext } from './context';
+import { BoardLauncher } from './board-launcher';
 import { DayLauncher } from './daystats-launcher';
 import { RoomRenamer } from './roomrename';
 import { h } from './dom';
@@ -275,6 +276,8 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
   help = new HelpDialog();
   const day = new DayLauncher(ctx, (el) => root.append(el));
   topbar.addPanelButton(day.button);
+  const board = new BoardLauncher(ctx, (el) => root.append(el), (n) => toasts.push(n));
+  topbar.addPanelButton(board.button);
   // Botão direito numa sala (lista lateral ou escritório): renomear.
   const renamer = new RoomRenamer(ctx);
   ctx.renameRoom = (id, at) => renamer.open(id, at);
@@ -297,7 +300,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
   }));
   drawer.onLayoutChange = () => applyLayout();
 
-  const components: UiComponent[] = [topbar, sidebar, drawer, terminal, pty, history, deliveries, feed, toasts, settings, empty, banner, tip, notifier, splash, timelapse, sound, day, updateToaster, worldDialog, popups, worldChip];
+  const components: UiComponent[] = [topbar, sidebar, drawer, terminal, pty, history, deliveries, feed, toasts, settings, empty, banner, tip, notifier, splash, timelapse, sound, day, board, updateToaster, worldDialog, popups, worldChip];
   if (scene) components.push(scene);
   root.append(worldSocial.el);
   components.push(worldSocial);
@@ -454,6 +457,12 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
       case 'M':
         e.preventDefault();
         day.toggle();
+        break;
+      case 'k':
+      case 'K':
+        if (!board.available) break;
+        e.preventDefault();
+        board.toggle();
         break;
       case '[':
         e.preventDefault();

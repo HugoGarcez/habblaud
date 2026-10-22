@@ -236,7 +236,7 @@ describe('rotas', () => {
     expect(done).toMatchObject({ id: msg.id, status: 'delivered' });
     expect(done.updatedAt).toBeGreaterThanOrEqual(done.createdAt);
     const agent = (await snapshot(srv)).agents.find((a) => a.id === MAIN)!;
-    expect(agent.recent.at(-1)).toMatchObject({ icon: '✉️', text: 'Mensagem pelo Habblaud', detail: 'Agora roda os testes de novo e me diga o que falhou' });
+    expect(agent.recent.at(-1)).toMatchObject({ icon: '✉️', text: 'Mensagem pelo Promp IA', detail: 'Agora roda os testes de novo e me diga o que falhou' });
   });
 
   it('a sessão some (sem rodadas): canMessage volta a falso e a mensagem na fila falha no prazo', async () => {
@@ -265,7 +265,7 @@ describe('rotas', () => {
     expect((await request(srv.base, `/api/messages/${encodeURIComponent(msg.id)}`)).json).toMatchObject({ status: 'delivered' });
     srv.office.tick();
     const after = (await snapshot(srv)).agents.find((a) => a.id === demo.id)!;
-    expect(after.recent.some((a) => a.text === 'Mensagem pelo Habblaud' && a.detail === 'oi, demo')).toBe(true);
+    expect(after.recent.some((a) => a.text === 'Mensagem pelo Promp IA' && a.detail === 'oi, demo')).toBe(true);
   });
 
   it('demo com o recurso desligado: os agentes fictícios também não recebem', async () => {

@@ -58,7 +58,7 @@ export class WorldChip implements UiComponent {
     const texts: Record<WorldChipState, [text: string, title: string]> = {
       live: [tr('no mundo'), tr('Seu prédio está aceso no Habblaud World: {0} e {1}. Clique para abrir o Habblaud World.', [floorsText(b?.floors ?? 0), agentsText(b?.agents ?? 0)])],
       paused: [tr('pausado'), tr('Pausado: seu prédio está apagado, mas você pode andar pela cidade. Nada do escritório sai deste computador; clique para retomar.')],
-      reconnecting: [tr('reconectando…'), tr('Sem conexão com o Habblaud World agora; o Habblaud tenta de novo sozinho. Clique para ver o seu prédio.')],
+      reconnecting: [tr('reconectando…'), tr('Sem conexão com o Habblaud World agora; o Promp IA tenta de novo sozinho. Clique para ver o seu prédio.')],
       stopped: [tr('parado'), tr('Seu prédio parou de subir ao Habblaud World. Clique para ver o motivo.')],
     };
     const [text, base] = texts[state];

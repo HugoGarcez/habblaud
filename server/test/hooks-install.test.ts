@@ -77,7 +77,7 @@ describe('hooks-install.ts (funções puras)', () => {
     const upd = planInstall(old, entry);
     expect(upd.action === 'install' && upd.settings).toEqual({ hooks: { PermissionRequest: [{ matcher: '*', hooks: [entry] }] } });
     expect(upd.message).toMatch(/atualizado/);
-    expect(planUninstall(old)).toEqual({ action: 'uninstall', settings: {}, message: 'hook do Habblaud removido' });
+    expect(planUninstall(old)).toEqual({ action: 'uninstall', settings: {}, message: 'hook do Promp IA removido' });
   });
 
   it('o caminho do nome antigo (mod/codetown-permissoes/, até a 0.3.2) também é "nosso": install troca, uninstall tira', () => {
@@ -94,7 +94,7 @@ describe('hooks-install.ts (funções puras)', () => {
     expect(planUninstall(old)).toEqual({
       action: 'uninstall',
       settings: { model: 'opus', hooks: { PermissionRequest: [{ matcher: '*', hooks: [{ type: 'command', command: 'meu-hook' }] }] } },
-      message: 'hook do Habblaud removido',
+      message: 'hook do Promp IA removido',
     });
   });
 
@@ -105,7 +105,7 @@ describe('hooks-install.ts (funções puras)', () => {
     expect(planInstall({ hooks: { PermissionRequest: {} } }, entry).action).toBe('skip');
   });
 
-  it('uninstall: tira só o hook do Habblaud; o que ficar vazio sai', () => {
+  it('uninstall: tira só o hook do Promp IA; o que ficar vazio sai', () => {
     const mixed = { matcher: '*', hooks: [{ type: 'command', command: 'meu-hook' }, entry] };
     const p = planUninstall({ hooks: { PermissionRequest: [mixed], Stop: [] } });
     expect(p.action === 'uninstall' && p.settings).toEqual({ hooks: { PermissionRequest: [{ matcher: '*', hooks: [{ type: 'command', command: 'meu-hook' }] }], Stop: [] } });
@@ -168,14 +168,14 @@ describe('hooks-install.ts (arquivos, HOME falso)', () => {
     expect(readdirSync(join(home, '.claude')).filter((f) => f.includes('backup'))).toHaveLength(1);
   });
 
-  it('status (com o Habblaud no ar ou não) e uninstall devolvem tudo como era', async () => {
+  it('status (com o Promp IA no ar ou não) e uninstall devolvem tudo como era', async () => {
     await exec('install', { port: 4851 });
     out = [];
     await exec('status', { port: 4851 }, { permissions: true });
     const text = out.join('\n');
     // Caminho entre aspas simples quando tem `\` (Windows): ver quotePath.
     expect(text).toMatch(/\.claude \(.*\): instalado \(.*permission-hook\.mjs["'] --port 4851; tempo limite 330 s\)/);
-    expect(text).toContain('Habblaud em http://127.0.0.1:4851: respondendo pedidos de permissão');
+    expect(text).toContain('Promp IA em http://127.0.0.1:4851: respondendo pedidos de permissão');
     out = [];
     await exec('status', { port: 4851 });
     expect(out.join('\n')).toContain('fora do ar');
@@ -229,7 +229,7 @@ describe('hooks-install.ts (arquivos, HOME falso)', () => {
     expect(out.join('\n')).toContain('JSON inválido');
   });
 
-  it.skipIf(!SH)('o comando instalado roda de verdade: com o Habblaud fora do ar, sai rápido e sem decisão', async () => {
+  it.skipIf(!SH)('o comando instalado roda de verdade: com o Promp IA fora do ar, sai rápido e sem decisão', async () => {
     await exec('install', { port: 1 });
     const cmd: string = read('.claude').hooks.PermissionRequest[0].hooks[0].command;
     const input = JSON.stringify({ session_id: 's', hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: { command: 'ls' } });

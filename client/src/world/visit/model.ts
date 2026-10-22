@@ -118,7 +118,7 @@ export function visitPanel(d: WorldBuildingDetail): VisitPanel {
   const light = visitLightOf(d.building);
   const empty =
     light === 'away'
-      ? tr('Prédio apagado: o dono pausou ou não está com o Habblaud aberto. As salas ficam escuras e vazias.')
+      ? tr('Prédio apagado: o dono pausou ou não está com o Promp IA aberto. As salas ficam escuras e vazias.')
       : light === 'discreet'
         ? tr('Modo discreto: o dono não mostra os agentes. As salas aparecem vazias, com a luz acesa.')
         : null;

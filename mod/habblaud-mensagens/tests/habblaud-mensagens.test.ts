@@ -1,6 +1,6 @@
 // Testes do plugin de mensagens, rodados pelo próprio Claude Code: `claude plugin test` dentro de
 // mod/habblaud-mensagens (sem sessão, sem login, sem rede). Os stubs respondem no lugar do Claude Code e do
-// Habblaud: env, relógio (mock.clock), $.session.id, $.session.surfaces, $.http.fetch (as duas rotas do
+// Promp IA: env, relógio (mock.clock), $.session.id, $.session.surfaces, $.http.fetch (as duas rotas do
 // servidor) e o prompt.submit de baixo (a sessão: aceita, um hook recusa, a chamada lança ou fica presa).
 import type { HttpResponse, On } from 'claude-code'
 import { describe, expect, mock, test } from 'claude-code/testing'
@@ -12,7 +12,7 @@ const INBOX_URL = `http://127.0.0.1:${PORT}/api/mod/inbox`
 const ACK_URL = `${INBOX_URL}/ack`
 const JSON_HEADERS = { 'content-type': 'application/json', accept: 'application/json' }
 
-/** Resposta do Habblaud ao inbox: mensagens, 'offline' (conexão recusada), 'hang' (não responde) ou um HTTP cru. */
+/** Resposta do Promp IA ao inbox: mensagens, 'offline' (conexão recusada), 'hang' (não responde) ou um HTTP cru. */
 type Answer = InboxMessage[] | 'offline' | 'hang' | { status: number; text: string }
 /** O que a sessão faz com um prompt: entra, um hook recusa, a chamada lança, ou fica presa (sessão ocupada). */
 type Fate = 'ok' | 'drop' | 'throw' | 'hang'
@@ -94,7 +94,7 @@ function world(on: On, w: World = {}) {
 const START = { cwd: '/work', surface: 'terminal', isInteractive: true } as const
 
 describe('rodadas', () => {
-  test('a cada 2 s pergunta ao Habblaud (marca a presença); sem mensagens, nada vai para a sessão e não há ack', async ($, on) => {
+  test('a cada 2 s pergunta ao Promp IA (marca a presença); sem mensagens, nada vai para a sessão e não há ack', async ($, on) => {
     const w = world(on)
     await $.session.start(START)
     expect(w.sent).toEqual([])
@@ -204,7 +204,7 @@ describe('rodadas', () => {
     expect(w.texts()).toEqual(['oi'])
   })
 
-  test('Habblaud fora do ar, 403 (mensagens desligadas) ou 404 (versão sem a rota): recua para 30 s até voltar', async ($, on) => {
+  test('Promp IA fora do ar, 403 (mensagens desligadas) ou 404 (versão sem a rota): recua para 30 s até voltar', async ($, on) => {
     let answer: Answer = 'offline'
     const w = world(on, { inbox: () => answer })
     await $.session.start(START)
@@ -226,7 +226,7 @@ describe('rodadas', () => {
     expect(w.acks()).toEqual([])
   })
 
-  test('Habblaud travado: desiste em 2 s e recua para 30 s', async ($, on) => {
+  test('Promp IA travado: desiste em 2 s e recua para 30 s', async ($, on) => {
     let hang = true
     const w = world(on, { inbox: () => (hang ? 'hang' : []) })
     await $.session.start(START)
@@ -239,7 +239,7 @@ describe('rodadas', () => {
     expect(w.inboxes().length).toBe(2)
   })
 
-  test('sessão sem superfície (claude -p, SDK): nem pergunta ao Habblaud', async ($, on) => {
+  test('sessão sem superfície (claude -p, SDK): nem pergunta ao Promp IA', async ($, on) => {
     const w = world(on, { surfaces: [] })
     await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
     await w.clock.advance(10_000)

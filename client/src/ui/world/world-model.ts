@@ -504,9 +504,9 @@ export function worldErrorText(raw: WorldErrorCode | string, action: WorldAction
     case 'too_large':
     case 'unsupported_media_type':
     case 'method_not_allowed':
-      return tr('O pedido saiu num formato que o servidor não aceita. Atualize o Habblaud e tente de novo.');
+      return tr('O pedido saiu num formato que o servidor não aceita. Atualize o Promp IA e tente de novo.');
     case 'not_configured':
-      return tr('O Habblaud World não está ligado neste Habblaud (HABBLAUD_WORLD_URL recusada; veja o log do servidor).');
+      return tr('O Habblaud World não está ligado neste Promp IA (HABBLAUD_WORLD_URL recusada; veja o log do servidor).');
     case 'rate_limited':
       return action === 'export'
         ? tr('Dá para baixar os dados uma vez por dia. Tente de novo amanhã.')
@@ -520,21 +520,21 @@ export function worldErrorText(raw: WorldErrorCode | string, action: WorldAction
     case 'account_deleted':
       return tr('A conta do Habblaud World foi excluída. O prédio e o perfil saíram do mundo na hora; o resto é apagado do banco em 7 dias e dos backups em até 30.');
     case 'storage_failed':
-      return tr('Não deu para gravar a sessão neste computador: ela vale só até o Habblaud reiniciar.');
+      return tr('Não deu para gravar a sessão neste computador: ela vale só até o Promp IA reiniciar.');
     case 'too_many_streams':
-      return tr('A cidade já está aberta em outras abas do Habblaud. Feche uma delas para abrir aqui.');
+      return tr('A cidade já está aberta em outras abas do Promp IA. Feche uma delas para abrir aqui.');
     case 'no_stream':
-      return tr('A cena Mundo perdeu a conexão com o Habblaud. Abra a cidade de novo.');
+      return tr('A cena Mundo perdeu a conexão com o Promp IA. Abra a cidade de novo.');
     case 'not_connected':
       if (action === 'unblock') return tr('Sem conexão com o Habblaud World agora: desbloquear precisa do prédio aceso ou da cidade aberta.');
-      return tr('Sem conexão com o Habblaud World agora; o Habblaud tenta de novo sozinho.');
+      return tr('Sem conexão com o Habblaud World agora; o Promp IA tenta de novo sozinho.');
     case 'offline':
-      return tr('Sem conexão com o Habblaud.');
+      return tr('Sem conexão com o Promp IA.');
     case 'forbidden':
     case 'local_only':
-      return tr('A conta do World só pode ser mexida pelo próprio computador, com o Habblaud aberto em localhost.');
+      return tr('A conta do World só pode ser mexida pelo próprio computador, com o Promp IA aberto em localhost.');
     case 'terminal_off':
-      return tr('A conta do World só pode ser mexida com o Habblaud acessível apenas pelo próprio computador (acesso local, bind 127.0.0.1).');
+      return tr('A conta do World só pode ser mexida com o Promp IA acessível apenas pelo próprio computador (acesso local, bind 127.0.0.1).');
     case 'invalid':
       switch (action) {
         case 'register':
@@ -577,7 +577,7 @@ export function buildingState(b: WorldBuildingStatus | undefined, hasPlayer: boo
 export function buildingStopView(reason: WorldBuildingStop): { label: string; desc: string; toggle: BuildingView['toggle'] } {
   switch (reason) {
     case 'update':
-      return { label: tr('Atualize o Habblaud'), desc: tr('Esta versão do Habblaud não entra mais no mundo. Atualize para o prédio voltar a acender.'), toggle: null };
+      return { label: tr('Atualize o Promp IA'), desc: tr('Esta versão do Promp IA não entra mais no mundo. Atualize para o prédio voltar a acender.'), toggle: null };
     case 'other-device':
       return {
         label: tr('Conectado em outro computador'),
@@ -613,7 +613,7 @@ export const UPLINK_REJECT_CODES = UPLINK_ACK_ERRORS;
 export function uplinkRejectText(code: string | undefined): string {
   switch (code) {
     case 'schema':
-      return tr('O pacote saiu fora do formato do protocolo. Atualize o Habblaud.');
+      return tr('O pacote saiu fora do formato do protocolo. Atualize o Promp IA.');
     case 'limits':
       return tr('O escritório passou dos limites do mundo (64 andares, 64 agentes por andar, 256 agentes ou 64 KB).');
     case 'name_pool':
@@ -629,9 +629,9 @@ export function uplinkRejectText(code: string | undefined): string {
     case 'left':
       return tr('A conta saiu do mundo (por este ou por outro computador): nada mais sai até você voltar ao mundo.');
     case 'implausible':
-      return tr('O pacote contradiz o anterior de um jeito que o Habblaud não produz: o mundo o descartou, e o prédio fica com o último aceito. As próximas remessas vão normalmente.');
+      return tr('O pacote contradiz o anterior de um jeito que o Promp IA não produz: o mundo o descartou, e o prédio fica com o último aceito. As próximas remessas vão normalmente.');
     default:
-      return tr('Um motivo que esta versão do Habblaud não conhece.');
+      return tr('Um motivo que esta versão do Promp IA não conhece.');
   }
 }
 
@@ -789,7 +789,7 @@ function buildingViewBase(b: WorldBuildingStatus | undefined, hasPlayer: boolean
             ? tr('O mundo está em manutenção; tentamos de novo em instantes.')
             : first
               ? tr('O prédio acende com a primeira remessa.')
-              : tr('Sem conexão com o mundo agora: o Habblaud tenta de novo sozinho. Com 2 minutos sem notícias, o prédio apaga.'),
+              : tr('Sem conexão com o mundo agora: o Promp IA tenta de novo sozinho. Com 2 minutos sem notícias, o prédio apaga.'),
         stats,
         rejected,
         toggle: { action: 'pause', text: tr('Pausar'), hint: `${tr('Pausar interrompe o envio na hora e apaga o prédio no mundo.')} ${later}` },

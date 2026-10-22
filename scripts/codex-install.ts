@@ -55,14 +55,14 @@ export const OBSERVE_TIMEOUT_S = 5;
 export const SESSION_END_TIMEOUT_S = 1;
 /** Folga do tempo limite do PermissionRequest sobre a espera (node subindo, evento e registro; o hook desiste antes). */
 export const PERMISSION_SLACK_S = 10;
-export const STATUS_MESSAGE = tr('Aguardando resposta no Habblaud…');
+export const STATUS_MESSAGE = tr('Aguardando resposta no Promp IA…');
 /** Configuração lida pelo hook (porta e espera), em ~/.habblaud. */
 export const CONFIG_NAME = 'codex-hook.json';
 
 /** Versão mínima do Node para o hook (o mesmo `engines` do Habblaud, na parte que importa: fetch e AbortSignal). */
 export const MIN_NODE_MAJOR = 22;
 
-const USAGE = tr('Uso: npm run codex:<install|uninstall|status> [-- opções]\n\n  install     acrescenta os hooks do Habblaud no hooks.json de cada pasta do Codex (faz backup antes)\n  uninstall   tira os hooks do Habblaud de cada pasta (os outros hooks ficam)\n  status      mostra se os hooks estão lá e se o Habblaud está respondendo\n\nOpções:\n  --dry-run        mostra o que mudaria, sem gravar nada\n  --conta <id>     só a pasta desta conta (o nome da pasta, ex.: .codex)\n  --port <n>       porta do Habblaud (padrão: HABBLAUD_PORT ou {0})\n  --espera <s>     quanto o Codex espera sua resposta no Habblaud antes de pedir a aprovação no terminal\n                   (padrão: {1} s; entre {2} e {3})\n  --node <caminho> o Node {4}+ que roda os hooks (padrão: o `node` do shell de login, se for {5}+;\n                   senão o primeiro {6}+ entre /opt/homebrew/bin, /usr/local/bin e o deste comando)\n  -h, --help       mostra esta ajuda\n\nPastas: HABBLAUD_CODEX_DIRS (lista separada por vírgula) ou CODEX_HOME e as pastas ~/.codex* do Codex.\nDepois de instalar, abra o Codex e aprove os hooks do Habblaud em /hooks.', [DEFAULT_PORT, DEFAULT_WAIT_S, MIN_WAIT_S, MAX_WAIT_S, MIN_NODE_MAJOR, MIN_NODE_MAJOR, MIN_NODE_MAJOR]);
+const USAGE = tr('Uso: npm run codex:<install|uninstall|status> [-- opções]\n\n  install     acrescenta os hooks do Promp IA no hooks.json de cada pasta do Codex (faz backup antes)\n  uninstall   tira os hooks do Promp IA de cada pasta (os outros hooks ficam)\n  status      mostra se os hooks estão lá e se o Promp IA está respondendo\n\nOpções:\n  --dry-run        mostra o que mudaria, sem gravar nada\n  --conta <id>     só a pasta desta conta (o nome da pasta, ex.: .codex)\n  --port <n>       porta do Promp IA (padrão: HABBLAUD_PORT ou {0})\n  --espera <s>     quanto o Codex espera sua resposta no Promp IA antes de pedir a aprovação no terminal\n                   (padrão: {1} s; entre {2} e {3})\n  --node <caminho> o Node {4}+ que roda os hooks (padrão: o `node` do shell de login, se for {5}+;\n                   senão o primeiro {6}+ entre /opt/homebrew/bin, /usr/local/bin e o deste comando)\n  -h, --help       mostra esta ajuda\n\nPastas: HABBLAUD_CODEX_DIRS (lista separada por vírgula) ou CODEX_HOME e as pastas ~/.codex* do Codex.\nDepois de instalar, abra o Codex e aprove os hooks do Promp IA em /hooks.', [DEFAULT_PORT, DEFAULT_WAIT_S, MIN_WAIT_S, MAX_WAIT_S, MIN_NODE_MAJOR, MIN_NODE_MAJOR, MIN_NODE_MAJOR]);
 
 // ---------------------------------------------------------------------------------------------
 // Funções puras (testadas em server/test/codex-install.test.ts)
@@ -260,7 +260,7 @@ export function planUninstall(file: Settings): PlanAction {
   const next: Settings = { ...file };
   if (Object.keys(hooks).length) next.hooks = hooks;
   else delete next.hooks;
-  return { action: 'uninstall', file: next, message: tr('hooks do Habblaud removidos'), shifted };
+  return { action: 'uninstall', file: next, message: tr('hooks do Promp IA removidos'), shifted };
 }
 
 export interface InstallState {
@@ -490,7 +490,7 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
       changed++;
       if (plan.action === 'install') for (const e of plan.approve) approve.add(e);
       if (plan.action === 'uninstall' && plan.shifted.length) {
-        out(tr('    Hooks de outros apps que vinham depois dos do Habblaud ({0}) mudaram de posição:', [plan.shifted.join(', ')]));
+        out(tr('    Hooks de outros apps que vinham depois dos do Promp IA ({0}) mudaram de posição:', [plan.shifted.join(', ')]));
         out(tr('    o Codex vai pedir para aprová-los de novo em /hooks.'));
       }
     } catch (err) {
@@ -521,11 +521,11 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
     );
     const port = cfg?.port ?? opts.port;
     const health = await (ctx.health ?? fetchHealth)(port);
-    if (!health) out(tr('Habblaud em http://127.0.0.1:{0}: fora do ar (com ele parado, os hooks saem na hora e o Codex segue normal).', [port]));
+    if (!health) out(tr('Promp IA em http://127.0.0.1:{0}: fora do ar (com ele parado, os hooks saem na hora e o Codex segue normal).', [port]));
     else {
       const events = health.codexEvents ? tr('recebendo os eventos do Codex') : tr('no ar, mas sem a fonte do Codex (os eventos são ignorados)');
       const perms = health.permissions ? tr('aprovar pelo escritório ligado (com alguma página aberta)') : tr('aprovar pelo escritório desligado (porta exposta na rede ou HABBLAUD_TERMINAL=0)');
-      out(tr('Habblaud em http://127.0.0.1:{0}: {1}; {2}.', [port, events, perms]));
+      out(tr('Promp IA em http://127.0.0.1:{0}: {1}; {2}.', [port, events, perms]));
     }
     out(tr('Confiança: o Codex só roda um hook novo ou alterado depois que você o aprova; confira em /hooks dentro do Codex.'));
   }
@@ -538,16 +538,16 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
       return !('error' in r) && installState(r.settings, command, opts.waitS).outdated.includes('PermissionRequest');
     });
     if (behind.length) {
-      out(tr('! {0}: o Habblaud está lá com outra espera; rode npm run codex:install sem --conta para alinhar.', [behind.map((d) => basename(d)).join(', ')]));
+      out(tr('! {0}: o Promp IA está lá com outra espera; rode npm run codex:install sem --conta para alinhar.', [behind.map((d) => basename(d)).join(', ')]));
     }
   }
   if (opts.command === 'install' && approve.size && !opts.dryRun) {
     out('');
-    out(tr('Pronto. Falta um passo: abra o Codex e aprove os hooks do Habblaud em /hooks (o Codex só roda hook novo'));
-    out(tr('ou alterado depois que você aprova). Com o Habblaud aberto no navegador, as sessões do Codex aparecem no'));
+    out(tr('Pronto. Falta um passo: abra o Codex e aprove os hooks do Promp IA em /hooks (o Codex só roda hook novo'));
+    out(tr('ou alterado depois que você aprova). Com o Promp IA aberto no navegador, as sessões do Codex aparecem no'));
     out(tr('escritório e os pedidos de aprovação esperam sua resposta lá por até {0} s antes de irem para o terminal.', [opts.waitS]));
     if (approve.has('PermissionRequest') && approve.size < EVENTS.length) {
-      out(tr('(A espera ou o caminho do Habblaud mudou: aprove de novo os hooks alterados em /hooks.)'));
+      out(tr('(A espera ou o caminho do Promp IA mudou: aprove de novo os hooks alterados em /hooks.)'));
     }
     out(tr('Para desfazer: npm run codex:uninstall'));
   }

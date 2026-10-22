@@ -142,6 +142,6 @@ export function writeAttachments(root: string, spawnId: string, files: readonly 
 export function promptWithAttachments(prompt: string, paths: readonly string[]): string {
   if (!paths.length) return prompt;
   const list = paths.map((p) => `- ${p}`).join('\n');
-  const head = paths.length === 1 ? tr('Anexo enviado pelo Habblaud (leia antes de começar):') : tr('Anexos enviados pelo Habblaud (leia antes de começar):');
+  const head = paths.length === 1 ? tr('Anexo enviado pelo Promp IA (leia antes de começar):') : tr('Anexos enviados pelo Promp IA (leia antes de começar):');
   return `${prompt.trim() ? `${prompt.trimEnd()}\n\n` : ''}${head}\n${list}`;
 }

@@ -318,7 +318,7 @@ describe('personagem do projeto (store)', () => {
     expect(await new OfficeStore().resetCharacter('a')).toBeUndefined();
     expect(fetchMock).toHaveBeenLastCalledWith('/api/agents/a/character', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     fetchMock.mockRejectedValueOnce(new TypeError('failed to fetch'));
-    expect(await new OfficeStore().resetCharacter('a')).toBe('Sem conexão com o Habblaud.');
+    expect(await new OfficeStore().resetCharacter('a')).toBe('Sem conexão com o Promp IA.');
     const calls = fetchMock.mock.calls.length;
     expect(await new OfficeStore({ mock: true }).resetCharacter('a')).toMatch(/ao vivo/);
     expect(fetchMock.mock.calls.length).toBe(calls);

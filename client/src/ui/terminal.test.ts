@@ -224,7 +224,7 @@ describe('terminalFooter', () => {
     const perm = { id: 'p1', tool: 'Bash', title: 'Bash(ls)' } as unknown as NonNullable<AgentInfo['permission']>;
     expect(terminalFooter(agent({ status: 'waiting', waitingFor: 'aprovar uma permissão', permission: perm }), [], now).text).toBe('Esperando você: aprovar uma permissão');
     expect(terminalFooter(agent({ status: 'waiting', waitingFor: 'aprovar uma permissão' }), [], now).text).toBe(
-      'Esperando você: aprovar uma permissão · responda no Claude Code: este pedido não chegou ao Habblaud ou passou do tempo de espera',
+      'Esperando você: aprovar uma permissão · responda no Claude Code: este pedido não chegou ao Promp IA ou passou do tempo de espera',
     );
     expect(terminalFooter(agent({ status: 'waiting', provider: 'codex' }), [], now).text).toMatch(/^Esperando você · responda no Codex:/);
     expect(terminalFooter(agent({ status: 'idle' }), [], now)).toEqual({ kind: 'idle', text: 'Aguardando o próximo prompt' });

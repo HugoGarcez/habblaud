@@ -138,7 +138,7 @@ export class WorldPopups implements UiComponent {
         title: tr('Você está na lista de espera'),
         body: [
           para(tr('O acesso é liberado aos poucos, em lotes. Avisamos por e-mail quando chegar a sua vez.')),
-          hint(tr('Enquanto isso, o Habblaud continua normal e nada do escritório é enviado.')),
+          hint(tr('Enquanto isso, o Promp IA continua normal e nada do escritório é enviado.')),
         ],
         actions: [ok],
         primary: ok,

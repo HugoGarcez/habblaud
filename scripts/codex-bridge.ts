@@ -39,7 +39,7 @@ export const WAIT_ROUND_MIN_MS = 500;
 export const REFUSED_RETRY_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 5_000;
 
-const USAGE = tr('Uso: npm run codex:bridge [-- opções]\n\nEntrega as mensagens do escritório às sessões do Codex quando o Habblaud roda no Docker (deixe rodando no computador).\n\nOpções:\n  --port <n>   porta do Habblaud (padrão: HABBLAUD_PORT ou {0})\n  --once       faz uma rodada só e sai\n  -h, --help   mostra esta ajuda\n\nBinário do Codex: HABBLAUD_CODEX_BIN ou `codex` do PATH.', [DEFAULT_PORT]);
+const USAGE = tr('Uso: npm run codex:bridge [-- opções]\n\nEntrega as mensagens do escritório às sessões do Codex quando o Promp IA roda no Docker (deixe rodando no computador).\n\nOpções:\n  --port <n>   porta do Promp IA (padrão: HABBLAUD_PORT ou {0})\n  --once       faz uma rodada só e sai\n  -h, --help   mostra esta ajuda\n\nBinário do Codex: HABBLAUD_CODEX_BIN ou `codex` do PATH.', [DEFAULT_PORT]);
 
 export interface BridgeMessage {
   id: string;
@@ -346,8 +346,8 @@ async function main(): Promise<void> {
   const log = (line: string) => console.log(`[codex-bridge] ${line}`);
   log(
     bin
-      ? tr('Entregando as mensagens do Habblaud (http://127.0.0.1:{0}) às sessões do Codex com {1}, e começando os agentes novos pedidos no escritório. Ctrl+C para parar.', [parsed.port, bin])
-      : tr('Sem o Codex (codex no PATH ou HABBLAUD_CODEX_BIN): só começo os agentes novos pedidos no Habblaud (http://127.0.0.1:{0}). Ctrl+C para parar.', [parsed.port]),
+      ? tr('Entregando as mensagens do Promp IA (http://127.0.0.1:{0}) às sessões do Codex com {1}, e começando os agentes novos pedidos no escritório. Ctrl+C para parar.', [parsed.port, bin])
+      : tr('Sem o Codex (codex no PATH ou HABBLAUD_CODEX_BIN): só começo os agentes novos pedidos no Promp IA (http://127.0.0.1:{0}). Ctrl+C para parar.', [parsed.port]),
   );
   log(cli ? tr('Agentes novos rodam em segundo plano com {0} --bg (pasta confiável; senão, no app do Claude).', [claudeBin]) : tr('Sem o claude no PATH (ou HABBLAUD_CLAUDE_BIN): agentes novos abrem no app do Claude e esperam o Enter.'));
   const whisper = findWhisper(process.env);
@@ -381,12 +381,12 @@ async function main(): Promise<void> {
     const r = run ? await round(post, run, log) : spawned;
     const state =
       r.state === 'down'
-        ? tr('Habblaud fora do ar em http://127.0.0.1:{0}; tentando de novo a cada {1} s.', [parsed.port, POLL_MS / 1_000])
+        ? tr('Promp IA fora do ar em http://127.0.0.1:{0}; tentando de novo a cada {1} s.', [parsed.port, POLL_MS / 1_000])
         : r.state === 'refused'
-          ? tr('o Habblaud recusou ({0}{1}).', [r.status, r.error ? `: ${r.error}` : ''])
+          ? tr('o Promp IA recusou ({0}{1}).', [r.status, r.error ? `: ${r.error}` : ''])
           : run
             ? tr('conectado: os agentes do Codex já recebem mensagens pelo escritório.')
-            : tr('conectado ao Habblaud.');
+            : tr('conectado ao Promp IA.');
     if (state !== last) log(state);
     last = state;
     if (parsed.once) {

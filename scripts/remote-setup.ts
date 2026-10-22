@@ -232,7 +232,7 @@ function installService(): string {
   }
   if (process.platform === 'linux') {
     const unit = `[Unit]
-Description=${tr('Habblaud: anuncia o endereço .local do acesso pelo celular')}
+Description=${tr('Promp IA: anuncia o endereço .local do acesso pelo celular')}
 After=network-online.target
 
 [Service]
@@ -346,7 +346,7 @@ async function main(): Promise<void> {
       '',
       tr('  No celular (mesmo Wi-Fi):'),
       ...urls.map((u) => `    ${u}`),
-      tr('  Primeira vez: aceite o aviso, toque em "Instale o certificado do Habblaud" e confie nele'),
+      tr('  Primeira vez: aceite o aviso, toque em "Instale o certificado do Promp IA" e confie nele'),
       tr('    iPhone:  Ajustes > Perfil Baixado > Instalar; depois Ajustes > Geral > Sobre > Ajustes de Confiança de Certificados'),
       tr('    Android: Configurações > Segurança > Criptografia e credenciais > Instalar certificado > Certificado de CA'),
       tr('  Impressão digital da CA (confira no celular antes de confiar):'),

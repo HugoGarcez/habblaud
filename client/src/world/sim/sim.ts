@@ -159,6 +159,9 @@ export class Sim {
 
   // =================================================================== snapshot
 
+  /** Contagem dos cards do quadro de tarefas por sala (pasta), do último snapshot. */
+  private boardRooms: NonNullable<OfficeSnapshot['meta']['board']>['rooms'] | undefined;
+
   applySnapshot(input: OfficeSnapshot, now: number): void {
     let snap = this.injected.rooms.length || this.injected.agents.length ? { ...input, rooms: [...input.rooms, ...this.injected.rooms], agents: [...input.agents, ...this.injected.agents] } : input;
     if (this.agentPatches.size) {
@@ -166,6 +169,7 @@ export class Sim {
       snap = { ...snap, agents: snap.agents.map((a) => (patches.has(a.id) ? { ...a, ...patches.get(a.id) } : a)) };
     }
     this.lastSnapshot = input;
+    this.boardRooms = input.meta.board?.rooms;
     this.now = now;
     const first = !this.initialized;
     this.initialized = true;
@@ -752,11 +756,23 @@ export class Sim {
     return n;
   }
 
-  /** Contas presentes e quadro kanban de cada sala. */
+  /**
+   * Contas presentes e quadro kanban de cada sala: primeiro os cards do quadro de tarefas do projeto (meta.board;
+   * a fazer = amarelo, em execução = andando, revisão/concluído = feito), depois as tarefas dos agentes da sala.
+   */
   private refreshRoomInfo(): void {
     for (const room of this.rooms.values()) {
       const accs = new Set<string>();
       const board: RoomState['board'] = [];
+      const counts = this.boardRooms?.[room.info.path];
+      if (counts) {
+        const add = (n: number | undefined, status: RoomState['board'][number]['status']) => {
+          for (let i = 0; i < (n ?? 0) && board.length < 10; i++) board.push({ status });
+        };
+        add(counts.running, 'in_progress');
+        add((counts.backlog ?? 0) + (counts.planning ?? 0) + (counts.approval ?? 0), 'pending');
+        add((counts.review ?? 0) + (counts.done ?? 0), 'completed');
+      }
       for (const c of this.chars.values()) {
         if (c.roomId !== room.id || c.leaving) continue;
         accs.add(c.info.account);

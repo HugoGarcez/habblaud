@@ -159,7 +159,7 @@ describe('MessageRegistry: Codex no modo Node (o servidor roda o codex queue)', 
     expect(registry.get(id)!.status).toBe('sent');
     expect(await settle(registry, id)).toMatchObject({ status: 'delivered' });
     expect(fakeCodexCalls(log)).toEqual([{ args: ['queue', `--thread=${THREAD}`, '--message=roda os testes'], codexHome }]);
-    expect(snapAgent(office, MAIN)!.recent.some((a) => a.text === 'Mensagem pelo Habblaud' && a.detail === 'roda os testes')).toBe(true);
+    expect(snapAgent(office, MAIN)!.recent.some((a) => a.text === 'Mensagem pelo Promp IA' && a.detail === 'roda os testes')).toBe(true);
     // A caixa de entrada do plugin nunca entrega mensagens do Codex (nem conhece o agente do Codex).
     expect(registry.inbox({ session: THREAD, account: '.codex' })).toEqual([]);
   });

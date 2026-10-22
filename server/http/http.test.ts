@@ -29,7 +29,7 @@ async function start(extra: Partial<ApiDeps> = {}, officeExtra: Partial<OfficeDe
   const dist = join(tmp.dir, 'dist');
   mkdirSync(join(dist, 'assets', 'brand'), { recursive: true });
   mkdirSync(join(dist, 'bundle'), { recursive: true });
-  writeFileSync(join(dist, 'index.html'), '<!doctype html><title>Habblaud</title>');
+  writeFileSync(join(dist, 'index.html'), '<!doctype html><title>Promp IA</title>');
   writeFileSync(join(dist, 'bundle', 'main-abc12345.js'), 'console.log(1)');
   writeFileSync(join(dist, 'assets', 'brand', 'logo-mark.png'), 'png');
   writeFileSync(join(dist, 'assets', 'manifest.json'), '{}');
@@ -100,6 +100,21 @@ describe('API HTTP', () => {
   afterEach(async () => {
     await env.close();
     env.cleanup();
+  });
+
+  it('/api/board: desligado sem o quadro; só pelo Host local; /api/access diz se há', async () => {
+    const port = new URL(env.base).port;
+    expect((await fetch(`${env.base}/api/board`)).status).toBe(403);
+    expect(((await (await fetch(`${env.base}/api/access`)).json()) as { board?: boolean }).board).toBe(false);
+    const other = await start({ board: (_req, res) => void res.end('{"projects":[]}') });
+    try {
+      expect((await fetch(`${other.base}/api/board`)).status).toBe(200);
+      expect(((await (await fetch(`${other.base}/api/access`)).json()) as { board?: boolean }).board).toBe(true);
+      expect((await raw(other.base, '/api/board', { headers: { Host: `habblaud.lan:${port}` } })).status).toBe(403);
+    } finally {
+      await other.close();
+      other.cleanup();
+    }
   });
 
   it('GET /api/snapshot', async () => {
@@ -239,7 +254,7 @@ describe('API HTTP', () => {
   it('estáticos: SPA fallback, immutable só no /bundle (hash) e revalidação no resto', async () => {
     const page = await fetch(`${env.base}/sala/qualquer`);
     expect(page.status).toBe(200);
-    expect(await page.text()).toContain('<title>Habblaud</title>');
+    expect(await page.text()).toContain('<title>Promp IA</title>');
     expect(page.headers.get('cache-control')).toBe(REVALIDATE);
     expect(page.headers.get('x-frame-options')).toBe('DENY');
     const bundle = await fetch(`${env.base}/bundle/main-abc12345.js`);
@@ -264,7 +279,7 @@ describe('API HTTP', () => {
     expect((await fetch(`${env.base}/bundle/nao-existe.js`)).status).toBe(404);
     // Tentativa de sair da pasta cai no index.html, nunca em arquivos de fora.
     const escape = await fetch(`${env.base}/..%2F..%2Fetc%2Fpasswd`);
-    expect(await escape.text()).toContain('<title>Habblaud</title>');
+    expect(await escape.text()).toContain('<title>Promp IA</title>');
   });
 });
 

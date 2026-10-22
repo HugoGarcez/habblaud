@@ -105,7 +105,7 @@ describe('caixa de mensagem (peças puras)', () => {
     const codex = (over: Partial<AgentInfo> = {}) => agent({ provider: 'codex', ...over });
     expect(composerMode(codex(), ON)).toEqual({ kind: 'ready' });
     expect(composerMode(codex({ canMessage: undefined }), ON)).toEqual({ kind: 'hint', text: CODEX_BRIDGE_HINT });
-    expect(CODEX_BRIDGE_HINT).toBe('Para mandar mensagens ao Codex: com o Habblaud no Docker, deixe npm run codex:bridge rodando; no modo Node funciona sozinho');
+    expect(CODEX_BRIDGE_HINT).toBe('Para mandar mensagens ao Codex: com o Promp IA no Docker, deixe npm run codex:bridge rodando; no modo Node funciona sozinho');
     expect(composerMode(codex(), { ...ON, enabled: false })).toEqual({ kind: 'off', text: 'Para responder, use o Codex' });
     expect(composerMode(codex({ kind: 'sub', parentId: 'acc:1' }), ON).kind).toBe('off');
     expect(composerMode(codex({ status: 'offline' }), ON)).toEqual({ kind: 'off', text: 'Sessão encerrada' });

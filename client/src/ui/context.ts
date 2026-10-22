@@ -12,7 +12,7 @@ export interface UiComponent {
 export type PanelName = 'sidebar' | 'feed';
 
 /**
- * Uma janela de terminal só, por agente: o interativo quando a sessão roda dentro do Habblaud (pty); senão o
+ * Uma janela de terminal só, por agente: o interativo quando a sessão roda dentro do Promp IA (pty); senão o
  * de leitura (com "Assumir daqui" para passar a ser interativo). Montado em ui/index.ts.
  */
 export interface TerminalRouter {
@@ -71,6 +71,15 @@ export interface UiContext {
   toggleWorld(): void;
   /** Abre o campo de renomear a sala perto do ponto (px da janela); botão direito na sala (ui/roomrename.ts). */
   renameRoom?(roomId: string, at: { x: number; y: number }): void;
+  /**
+   * Quadro de tarefas (ui/board-launcher.ts), quando disponível: abrir em todos os projetos, num projeto (e num card,
+   * pela chave do card) ou no projeto de uma pasta (a da sala).
+   */
+  board?: {
+    available(): boolean;
+    open(projectId?: string, card?: string): void;
+    openForPath(path: string): void;
+  };
   /**
    * (Opcional) "Ver como os outros veem": abre a cidade do Habblaud World e entra no próprio prédio (a cena Visita). Só
    * existe com a cena Mundo montada (app.ts).

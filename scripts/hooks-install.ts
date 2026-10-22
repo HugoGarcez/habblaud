@@ -41,9 +41,9 @@ export const DEFAULT_PORT = 4747;
 export const DEFAULT_TIMEOUT_S = 300;
 /** Folga do tempo limite do Claude Code sobre o do hook (o hook sempre desiste antes). */
 const TIMEOUT_SLACK_S = 30;
-export const STATUS_MESSAGE = tr('Aguardando resposta no Habblaud');
+export const STATUS_MESSAGE = tr('Aguardando resposta no Promp IA');
 
-const USAGE = tr('Uso: npm run hooks:<install|uninstall|status> [-- opções]\n\n  install     acrescenta o hook de permissão do Habblaud em cada conta (faz backup do settings.json)\n  uninstall   tira o hook do Habblaud de cada conta (os outros hooks ficam)\n  status      mostra se o hook está instalado e se o Habblaud está respondendo pedidos\n\nOpções:\n  --dry-run        mostra o que mudaria, sem gravar nada\n  --node <cmd>     comando do node usado no hook (padrão: detectado no PATH)\n  --port <n>       porta do Habblaud (padrão: HABBLAUD_PORT ou {0})\n  --timeout <s>    quanto o hook espera sua resposta no Habblaud antes de devolver o pedido ao terminal\n                   (padrão: {1} s)\n  -h, --help       mostra esta ajuda\n\nContas: as mesmas do servidor (~/.claude* com projects/ ou sessions/, CLAUDE_CONFIG_DIR ou\nHABBLAUD_CLAUDE_DIRS).', [DEFAULT_PORT, DEFAULT_TIMEOUT_S]);
+const USAGE = tr('Uso: npm run hooks:<install|uninstall|status> [-- opções]\n\n  install     acrescenta o hook de permissão do Promp IA em cada conta (faz backup do settings.json)\n  uninstall   tira o hook do Promp IA de cada conta (os outros hooks ficam)\n  status      mostra se o hook está instalado e se o Promp IA está respondendo pedidos\n\nOpções:\n  --dry-run        mostra o que mudaria, sem gravar nada\n  --node <cmd>     comando do node usado no hook (padrão: detectado no PATH)\n  --port <n>       porta do Promp IA (padrão: HABBLAUD_PORT ou {0})\n  --timeout <s>    quanto o hook espera sua resposta no Promp IA antes de devolver o pedido ao terminal\n                   (padrão: {1} s)\n  -h, --help       mostra esta ajuda\n\nContas: as mesmas do servidor (~/.claude* com projects/ ou sessions/, CLAUDE_CONFIG_DIR ou\nHABBLAUD_CLAUDE_DIRS).', [DEFAULT_PORT, DEFAULT_TIMEOUT_S]);
 
 // ---------------------------------------------------------------------------------------------
 // Funções puras (testadas em server/test/hooks-install.test.ts)
@@ -125,7 +125,7 @@ export function planInstall(settings: Settings, entry: Rec): PlanAction {
   }
   const rest = withoutOurs(ev.list).list;
   const next: Settings = { ...settings, hooks: { ...ev.hooks, [EVENT]: [...rest, { matcher: '*', hooks: [entry] }] } };
-  return { action: 'install', settings: next, message: mine.length ? tr('atualizado (novo caminho do Habblaud, do node ou das opções)') : tr('instalado') };
+  return { action: 'install', settings: next, message: mine.length ? tr('atualizado (novo caminho do Promp IA, do node ou das opções)') : tr('instalado') };
 }
 
 /** Plano de remoção: tira só os hooks do Habblaud (e o que ficar vazio por causa disso). */
@@ -140,7 +140,7 @@ export function planUninstall(settings: Settings): PlanAction {
   const next: Settings = { ...settings };
   if (Object.keys(hooks).length) next.hooks = hooks;
   else delete next.hooks;
-  return { action: 'uninstall', settings: next, message: tr('hook do Habblaud removido') };
+  return { action: 'uninstall', settings: next, message: tr('hook do Promp IA removido') };
 }
 
 /** Hook do Habblaud instalado nesta conta (o primeiro), ou undefined. */
@@ -286,13 +286,13 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
   }
   if (opts.command === 'status') {
     const health = await (ctx.health ?? fetchHealth)(opts.port);
-    if (!health) out(tr('Habblaud em http://127.0.0.1:{0}: fora do ar (com ele parado, o hook sai na hora e o terminal segue normal).', [opts.port]));
-    else if (health.permissions) out(tr('Habblaud em http://127.0.0.1:{0}: respondendo pedidos de permissão (com alguma página aberta).', [opts.port]));
-    else out(tr('Habblaud em http://127.0.0.1:{0}: no ar, mas responder pelo escritório está desligado (porta exposta na rede ou HABBLAUD_TERMINAL=0).', [opts.port]));
+    if (!health) out(tr('Promp IA em http://127.0.0.1:{0}: fora do ar (com ele parado, o hook sai na hora e o terminal segue normal).', [opts.port]));
+    else if (health.permissions) out(tr('Promp IA em http://127.0.0.1:{0}: respondendo pedidos de permissão (com alguma página aberta).', [opts.port]));
+    else out(tr('Promp IA em http://127.0.0.1:{0}: no ar, mas responder pelo escritório está desligado (porta exposta na rede ou HABBLAUD_TERMINAL=0).', [opts.port]));
   }
   if (opts.command === 'install' && changed) {
     out('');
-    out(tr('Pronto. Com o Habblaud aberto no navegador, os pedidos de permissão aparecem no escritório e você'));
+    out(tr('Pronto. Com o Promp IA aberto no navegador, os pedidos de permissão aparecem no escritório e você'));
     out(tr('pode aprovar ou recusar por lá; o diálogo continua no terminal e vale o que responder primeiro.'));
     out(tr('Sessões abertas costumam recarregar o settings.json sozinhas; se não, reabra a sessão.'));
     out(tr('Para desfazer: npm run hooks:uninstall'));

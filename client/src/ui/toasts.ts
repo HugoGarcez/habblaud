@@ -82,13 +82,16 @@ export class Toasts implements UiComponent {
     const count = h('span', { class: 'ui-toast__count', hidden: true });
     const body = h(
       'button',
-      { class: 'ui-toast__body', type: 'button', title: n.agentId || n.roomId ? tr('Mostrar no escritório') : '' },
+      { class: 'ui-toast__body', type: 'button', title: n.board ? tr('Abrir o card no quadro de tarefas') : n.agentId || n.roomId ? tr('Mostrar no escritório') : '' },
       agent ? createAvatar(agent, 'xs') : null,
       h('span', { class: 'ui-toast__text', text: n.text }),
       count,
     );
     body.addEventListener('click', () => {
-      if (n.agentId && this.ctx.agent(n.agentId)) this.ctx.select({ type: 'agent', id: n.agentId }, { focus: true });
+      if (n.board) {
+        this.ctx.board?.open(n.board.projectId, n.board.card);
+        this.dismiss(toast);
+      } else if (n.agentId && this.ctx.agent(n.agentId)) this.ctx.select({ type: 'agent', id: n.agentId }, { focus: true });
       else if (n.roomId && this.ctx.store.room(n.roomId)) this.ctx.select({ type: 'room', id: n.roomId }, { focus: true });
     });
     const el = h('div', { class: `ui-toast ui-toast--${n.level}`, role: n.level === 'alert' ? 'alert' : 'status' }, body);

@@ -7,7 +7,7 @@
 // - guarda as mensagens de cada agente na ordem e acompanha a situação delas (queued → sent → delivered/failed);
 // - falha as que ninguém buscou, as que a sessão não confirmou, as do agente que saiu e as de uma conversa que já
 //   trocou (/clear, /resume): cada mensagem vale só para a sessão em que foi mandada;
-// - põe a atividade "Mensagem pelo Habblaud" no agente quando a sessão confirma a entrega;
+// - põe a atividade "Mensagem pelo Promp IA" no agente quando a sessão confirma a entrega;
 // - simula a entrega para os agentes do demo (nada vai a uma sessão de verdade).
 // O texto vai à sessão exatamente como foi digitado (é do próprio usuário) e nunca sai nas respostas da página nem
 // no log; só a atividade do feed leva o começo dele, mascarado e cortado.
@@ -47,7 +47,7 @@ export const ERR_GONE = tr('o agente saiu do escritório');
 export const ERR_REFUSED = tr('a sessão não aceitou a mensagem');
 export const ERR_SESSION_CHANGED = tr('a conversa do agente mudou (/clear ou /resume) antes da entrega');
 export const ERR_CODEX_UNAVAILABLE =
-  tr('não há como entregar ao Codex agora: rode o Habblaud fora do Docker com o `codex` no PATH (ou HABBLAUD_CODEX_BIN) ou, no Docker, deixe o npm run codex:bridge rodando no Mac');
+  tr('não há como entregar ao Codex agora: rode o Promp IA fora do Docker com o `codex` no PATH (ou HABBLAUD_CODEX_BIN) ou, no Docker, deixe o npm run codex:bridge rodando no Mac');
 export const ERR_CODEX_NOT_FETCHED = tr('o auxiliar do Codex não buscou a mensagem: o npm run codex:bridge está rodando no Mac?');
 export const ERR_CODEX_SLOW = tr('o Codex demorou demais com as mensagens anteriores a este agente');
 export const ERR_CODEX_NOT_CONFIRMED = tr('o auxiliar do Codex não confirmou a entrega');

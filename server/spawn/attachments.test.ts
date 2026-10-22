@@ -63,9 +63,9 @@ describe('anexos do Novo agente', () => {
 
   it('o pedido ganha a lista dos caminhos', () => {
     expect(promptWithAttachments('Corrija o layout', ['/h/.habblaud/attachments/x/print.png'])).toBe(
-      'Corrija o layout\n\nAnexo enviado pelo Habblaud (leia antes de começar):\n- /h/.habblaud/attachments/x/print.png',
+      'Corrija o layout\n\nAnexo enviado pelo Promp IA (leia antes de começar):\n- /h/.habblaud/attachments/x/print.png',
     );
-    expect(promptWithAttachments('', ['/a', '/b'])).toBe('Anexos enviados pelo Habblaud (leia antes de começar):\n- /a\n- /b');
+    expect(promptWithAttachments('', ['/a', '/b'])).toBe('Anexos enviados pelo Promp IA (leia antes de começar):\n- /a\n- /b');
     expect(promptWithAttachments('só texto', [])).toBe('só texto');
   });
 

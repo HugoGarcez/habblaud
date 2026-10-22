@@ -180,7 +180,7 @@ describe('rotas', () => {
     const after = ((await request(srv.base, '/api/snapshot')).json as OfficeSnapshot).agents.find((a) => a.id === agentId)!;
     expect(after.permission).toBeUndefined();
     expect(after.status).toBe('working');
-    expect(after.recent.at(-1)).toMatchObject({ icon: '💬', text: 'Respondido no Habblaud' });
+    expect(after.recent.at(-1)).toMatchObject({ icon: '💬', text: 'Respondido no Promp IA' });
   });
 
   it('demo: o pedido fictício responde pela mesma rota', async () => {

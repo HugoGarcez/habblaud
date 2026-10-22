@@ -39,6 +39,15 @@ describe('contas do Codex', () => {
     expect(discoverCodexDirs({ HABBLAUD_CODEX_DIRS: `~/.codex-vazia, ${other}, /nao/existe` }, h.dir)).toEqual([join(h.dir, '.codex-vazia'), other]);
   });
 
+  it('contas do Codex gerenciadas pelo Orca (codex-accounts/<id>/home) entram depois das de $HOME', () => {
+    const h = home();
+    const main = h.codex('.codex');
+    const orca = join('Library', 'Application Support', 'orca', 'codex-accounts');
+    const acc = h.codex(join(orca, 'conta-1', 'home'));
+    h.codex(join(orca, 'conta-vazia', 'home'), 'none');
+    expect(discoverCodexDirs({}, h.dir)).toEqual([main, acc]);
+  });
+
   it('letra pelo alias de shell (CODEX_HOME), derivada sem colidir com o Claude Code; cor sem repetir', () => {
     const h = home();
     const main = h.codex('.codex');

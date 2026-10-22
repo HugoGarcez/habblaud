@@ -53,7 +53,7 @@ describe('DemoSimulator: pedidos de permissão', () => {
     a = sim.snapshot(start + 1).agents.find((x) => x.id === id)!;
     expect(a.status).toBe('working');
     expect(a.permission).toBeUndefined();
-    expect(a.recent.map((r) => r.text)).toContain('Aprovado no Habblaud (sempre permitir)');
+    expect(a.recent.map((r) => r.text)).toContain('Aprovado no Promp IA (sempre permitir)');
     expect(sim.decidePermission(p.id, { behavior: 'allow' }, start + 2)).toBe(false);
   });
 
@@ -64,7 +64,7 @@ describe('DemoSimulator: pedidos de permissão', () => {
     sim.decidePermission(p1.id, { behavior: 'deny', message: 'agora não' }, start + 1);
     const after = sim.snapshot(start + 1).agents.find((x) => x.id === a1)!;
     expect(after.status).toBe('working');
-    expect(after.recent.at(-1)).toMatchObject({ icon: '🚫', text: 'Recusado no Habblaud' });
+    expect(after.recent.at(-1)).toMatchObject({ icon: '🚫', text: 'Recusado no Promp IA' });
 
     const sim2 = new DemoSimulator({ seed: 6 }, start);
     const a2 = sim2.forcePermission(start, 'permission')!;
@@ -99,7 +99,7 @@ describe('DemoSimulator: pedidos de permissão', () => {
     expect(after.status).toBe('working');
     expect(after.permission).toBeUndefined();
     const act = after.recent.at(-1)!;
-    expect(act).toMatchObject({ icon: '💬', text: 'Respondido no Habblaud' });
+    expect(act).toMatchObject({ icon: '💬', text: 'Respondido no Promp IA' });
     expect(act.detail).toBe(`${single!.header}: ${single!.options[1]!.label} · ${multi!.header}: ${multi!.options[0]!.label}, ${multi!.options[2]!.label}, “lint também”`);
   });
 
@@ -108,7 +108,7 @@ describe('DemoSimulator: pedidos de permissão', () => {
     const id = sim.forcePermission(start, 'question')!;
     const p = sim.snapshot(start).agents.find((x) => x.id === id)!.permission!;
     expect(sim.decidePermission(p.id, { behavior: 'deny', message: 'decida você' }, start + 1)).toBe(true);
-    expect(sim.snapshot(start + 1).agents.find((x) => x.id === id)!.recent.at(-1)).toMatchObject({ icon: '🚫', text: 'Recusado no Habblaud' });
+    expect(sim.snapshot(start + 1).agents.find((x) => x.id === id)!.recent.at(-1)).toMatchObject({ icon: '🚫', text: 'Recusado no Promp IA' });
   });
 
   it('com o tempo, as esperas por permissão trazem pedido e ele some quando a espera acaba', () => {
@@ -159,7 +159,7 @@ describe('pedidos do Codex (demo)', () => {
     expect(sim.decidePermission(p.id, { behavior: 'deny', message: 'não', interrupt: true }, start + 1)).toBe(false);
     expect(sim.decidePermission(p.id, { behavior: 'answer', answers: [] }, start + 1)).toBe(false);
     expect(sim.decidePermission(p.id, { behavior: 'deny', message: 'use pnpm' }, start + 1)).toBe(true);
-    expect(sim.snapshot(start + 1).agents.find((x) => x.id === id)!.recent.at(-1)).toMatchObject({ text: 'Recusado no Habblaud' });
+    expect(sim.snapshot(start + 1).agents.find((x) => x.id === id)!.recent.at(-1)).toMatchObject({ text: 'Recusado no Promp IA' });
   });
 
   it('o prazo do Codex acaba: o pedido sai do escritório e o agente segue esperando no terminal', () => {
