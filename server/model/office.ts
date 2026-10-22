@@ -32,6 +32,7 @@ import { applyPermission } from '../permissions/registry';
 import type { NameStore, StoredCharacter } from './names';
 import { normalizeCwd, roomDisplayNames, SlotAllocator } from './rooms';
 import { tr } from '../../shared/i18n';
+import type { WorldMeta } from '../../shared/world/api';
 
 export const OFFLINE_GRACE_MS = 20_000;
 export const DONE_GRACE_MS = 25_000;
@@ -81,6 +82,8 @@ export interface OfficeDeps {
   updates?: () => UpdateStatus;
   /** Terminais interativos (PtyManager): estado do recurso e os abertos. */
   ptys?: () => { status: PtyStatus; list: PtyInfo[] };
+  /** Habblaud World (WorldService.meta; ver OfficeSnapshot.meta.world). */
+  world?: () => WorldMeta;
   now?: () => number;
 }
 
@@ -1005,6 +1008,7 @@ export class Office {
         ...(ptys ? { pty: ptys.status } : {}),
         updates: this.deps.updates?.(),
         ...(this.deps.board ? { board: this.deps.board() } : {}),
+        ...(this.deps.world ? { world: this.deps.world() } : {}),
       },
     };
   }

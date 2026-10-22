@@ -1,7 +1,7 @@
 {
   "name": "habblaud-mensagens",
   "displayName": "Promp IA: mensagens pelo escritório",
-  "version": "0.11.1",
+  "version": "1.0.4",
   "description": "Leva para a sessão do Claude Code as mensagens que você digita no Promp IA (painel do agente ou terminal), como se você as tivesse digitado no terminal.",
   "author": { "name": "Márcio Junior", "url": "https://github.com/marmottajr" },
   "homepage": "https://github.com/marmottajr/habblaud#readme",
