@@ -133,6 +133,9 @@ describe('planejador', () => {
     expect(r).toEqual({ summary: 'S', actions: [{ id: 'a1' }] });
     expect(seen?.cwd).toBe('/p/loja');
     expect(seen?.env?.CLAUDE_CONFIG_DIR).toBe('/c/.claude-b');
+    // Conta padrão: sem a variável (com ela o Claude Code procura outro item do Keychain).
+    await runPlanner({ claude: 'claude', cwd: '/p/loja', configDir: '/c/.claude', model: 'sonnet', exec, env: { HOME: '/c', CLAUDE_CONFIG_DIR: '/x' } }, 'oi');
+    expect(seen?.env && 'CLAUDE_CONFIG_DIR' in seen.env).toBe(false);
     expect(seen?.args).toEqual(expect.arrayContaining(['-p', 'oi', '--json-schema', '--allowedTools', 'Read,Grep,Glob', '--setting-sources', 'project', '--strict-mcp-config']));
     const viaResult: Exec = async () => JSON.stringify({ result: JSON.stringify({ summary: 'R', actions: [] }) });
     expect((await runPlanner({ claude: 'c', cwd: '/', model: 'm', exec: viaResult }, 'x')).summary).toBe('R');

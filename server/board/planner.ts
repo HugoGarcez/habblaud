@@ -6,6 +6,8 @@
 // (--setting-sources project: sem hooks nem plugins pessoais, o que também deixa a chamada bem mais rápida) e sem
 // servidores MCP. Modelo: HABBLAUD_PLANNER_MODEL (padrão sonnet).
 import { ACTION_TYPES, AGENT_IDS, type AgentQuota, type BoardCard, type BoardProject, type CardPlan } from '../../shared/board';
+import { homedir } from 'node:os';
+import { isDefaultDir } from '../accounts/detect';
 import { CliError, type Exec } from './cli';
 import { MAX_ACTIONS } from './router';
 
@@ -117,11 +119,13 @@ export async function runPlanner(run: PlannerRun, prompt: string): Promise<{ sum
     '--strict-mcp-config',
     '--no-session-persistence',
   ];
-  const out = await run.exec(run.claude, args, {
-    timeoutMs: PLANNER_TIMEOUT_MS,
-    cwd: run.cwd,
-    env: { ...(run.env ?? process.env), ...(run.configDir ? { CLAUDE_CONFIG_DIR: run.configDir } : {}) },
-  });
+  // Conta padrão (~/.claude): sem CLAUDE_CONFIG_DIR. Com a variável, mesmo apontando para a pasta padrão, o Claude Code
+  // procura o login em outro item do Keychain (o de sufixo), e dá "OAuth session expired" com a conta logada.
+  const env = { ...(run.env ?? process.env) };
+  const home = env.HOME || homedir();
+  if (run.configDir && !isDefaultDir(run.configDir, home)) env.CLAUDE_CONFIG_DIR = run.configDir;
+  else delete env.CLAUDE_CONFIG_DIR;
+  const out = await run.exec(run.claude, args, { timeoutMs: PLANNER_TIMEOUT_MS, cwd: run.cwd, env });
   let d: { is_error?: boolean; result?: string; structured_output?: { summary?: unknown; actions?: unknown } };
   try {
     d = JSON.parse(out);
