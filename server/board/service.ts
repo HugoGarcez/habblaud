@@ -9,11 +9,15 @@
 // Planejar (planner.ts + router.ts): o card vai para Planejando, o planejador roda em segundo plano e o plano cai em
 // Aguardando aprovação; a pessoa edita, aprova (o plano vira comentário na issue e o card entra na fila de execução)
 // ou descarta. Planejamento que falha volta o card à coluna da fonte, com o erro.
-import { BOARD_COLUMNS, kindFromLabels, stageColumn, type AgentId, type BoardAllView, type BoardAttention, type BoardColumn, type BoardSummary, type BoardCard, type BoardIndex, type BoardProject, type BoardProjectConfig, type BoardView, type CardDetails, type CardEdit, type CardPlan, type CardWork, type LinearTeam, type NewCard, type PlanEdit } from '../../shared/board';
+//
+// Imagens (attachments.ts): as do card novo ficam no store (BoardCard.attachments); as de um pedido de revisão, no
+// plano (CardPlan.revisionAttachments). Descartar o plano apaga as das revisões; as do card ficam (a issue continua).
+import { BOARD_COLUMNS, kindFromLabels, stageColumn, type AgentId, type BoardAllView, type BoardAttention, type BoardColumn, type BoardSummary, type BoardCard, type BoardIndex, type BoardProject, type BoardProjectConfig, type BoardView, type CardAttachment, type CardDetails, type CardEdit, type CardPlan, type CardWork, type LinearTeam, type PlanEdit } from '../../shared/board';
 import { tr } from '../../shared/i18n';
 import type { AccountInfo } from '../../shared/types';
 import { errMsg, log } from '../log';
 import { agentQuotas, AGENT_NAMES, bestClaudeAccount } from './agents';
+import { BoardFiles, type DecodedImage } from './attachments';
 import { CliError, execCli, orcaResult, retryOnce, type Exec } from './cli';
 import { DEFAULT_PLANNER_MODEL, plannerPrompt, runPlanner, type PlanRevision } from './planner';
 import { commentIssue, createGithub, issueDetails, updateIssue, createLinear, listGithub, listLinear, listLinearTeams } from './providers';
@@ -57,6 +61,8 @@ export interface BoardServiceOptions {
   maxWorkers?: number;
   /** Como fazer o merge dos PRs (HABBLAUD_BOARD_MERGE: squash, merge ou rebase). */
   mergeMethod?: MergeMethod;
+  /** Arquivos das imagens dos cards; padrão: a pasta board-attachments ao lado do board.json. */
+  files?: BoardFiles;
 }
 
 export type BoardResult<T> = { ok: T } | { error: string; status: 400 | 404 | 409 | 502 };
@@ -116,10 +122,12 @@ export class BoardService {
   private agentOff = new Map<AgentId, { reason: string; at: number }>();
   private limitsLoading?: Promise<void>;
   readonly runner: BoardRunner;
+  readonly files: BoardFiles;
 
   constructor(private readonly opts: BoardServiceOptions) {
     this.exec = opts.exec ?? execCli;
     this.now = opts.now ?? Date.now;
+    this.files = opts.files ?? new BoardFiles(opts.store.attachmentsDir);
     this.runner = new BoardRunner({
       store: opts.store,
       exec: this.exec,
@@ -135,6 +143,7 @@ export class BoardService {
       mergeMethod: opts.mergeMethod,
       saveAfterMerge: (p, command) => this.saveAfterMerge(p, command),
       onChange: opts.onChange,
+      files: this.files,
     });
     // Comando de depois do merge que rodava quando o servidor parou (muitas vezes foi ele que reiniciou): segue.
     this.runner.resumeUpdates();
@@ -186,7 +195,7 @@ export class BoardService {
     const raw = await this.sourceView(projectId, refresh);
     if (!raw) return undefined;
     const works = this.opts.store.works(projectId);
-    return { ...raw, cards: raw.cards.map((c) => ({ ...this.decorate(c, works[c.id]), projectId, projectName: raw.project.name })), agents: this.agents() };
+    return { ...raw, cards: raw.cards.map((c) => ({ ...this.decorate(projectId, c, works[c.id]), projectId, projectName: raw.project.name })), agents: this.agents() };
   }
 
   /**
@@ -243,7 +252,7 @@ export class BoardService {
       const works = this.opts.store.works(projectId);
       const counts: Partial<Record<BoardColumn, number>> = {};
       for (const c of cached.value.cards) {
-        const col = this.decorate(c, works[c.id]).column;
+        const col = this.decorate(projectId, c, works[c.id]).column;
         counts[col] = (counts[col] ?? 0) + 1;
       }
       rooms[path] = Object.fromEntries(BOARD_COLUMNS.filter((k) => counts[k]).map((k) => [k, counts[k]]));
@@ -270,9 +279,26 @@ export class BoardService {
     return undefined;
   }
 
-  private decorate(card: BoardCard, work: CardWork | undefined): BoardCard {
-    if (!work) return card;
-    return { ...card, column: stageColumn(work.stage, card.column), work };
+  private decorate(projectId: string, card: BoardCard, work: CardWork | undefined): BoardCard {
+    const attachments = this.opts.store.attachments(projectId, card.id);
+    const withImages = attachments.length ? { ...card, attachments: [...attachments] } : card;
+    if (!work) return withImages;
+    return { ...withImages, column: stageColumn(work.stage, card.column), work };
+  }
+
+  /** O anexo `attachmentId` do card (do card novo, de uma revisão do plano ou da revisão em andamento) e o arquivo. */
+  attachment(projectId: string, cardId: string, attachmentId: string): { attachment: CardAttachment; data: Buffer } | undefined {
+    const work = this.opts.store.work(projectId, cardId);
+    const all = [...this.opts.store.attachments(projectId, cardId), ...(work?.plan?.revisionAttachments?.flat() ?? []), ...(work?.revisingAttachments ?? [])];
+    const attachment = all.find((a) => a.id === attachmentId);
+    const data = attachment && this.files.read(attachment);
+    return attachment && data ? { attachment, data } : undefined;
+  }
+
+  /** Apaga os arquivos das imagens das revisões de um trabalho que saiu do card. */
+  private dropRevisionFiles(work: CardWork | undefined): void {
+    this.files.remove(work?.plan?.revisionAttachments?.flat());
+    this.files.remove(work?.revisingAttachments);
   }
 
   private summaryTimer: NodeJS.Timeout | null = null;
@@ -318,7 +344,8 @@ export class BoardService {
    * Planeja (ou, com `feedback`, revisa o plano que espera aprovação: o planejador recebe o plano atual e o pedido).
    * Durante a revisão o plano anterior fica guardado e volta se ela falhar.
    */
-  async plan(projectId: string, cardId: string, feedback?: string): Promise<BoardResult<BoardCard>> {
+  async plan(projectId: string, cardId: string, feedback?: string, images: readonly DecodedImage[] = []): Promise<BoardResult<BoardCard>> {
+    if (images.length && !feedback) return { error: tr('As imagens acompanham um pedido de revisão: escreva o que mudar.'), status: 400 };
     const found = await this.findCard(projectId, cardId);
     if (!found) return { error: tr('card desconhecido (a lista pode estar desatualizada: atualize o quadro)'), status: 404 };
     const { project, card } = found;
@@ -334,17 +361,26 @@ export class BoardService {
       return { error: tr('Nenhuma conta do Claude com cota para planejar agora.'), status: 409 };
     }
     if (this.planning.size >= MAX_PLANNERS) return { error: tr('Já há {0} planejamentos em andamento; espere um terminar.', [MAX_PLANNERS]), status: 409 };
+    let revisingAttachments: CardAttachment[] = [];
+    try {
+      revisingAttachments = this.files.save(images);
+    } catch (err) {
+      log.warn(`Quadro: não deu para gravar as imagens de ${card.ref}: ${errMsg(err)}`);
+      return { error: tr('Não deu para gravar as imagens: {0}', [errMsg(err)]), status: 502 };
+    }
+    // Planejar do zero joga fora o plano anterior (e as imagens das revisões dele).
+    if (!feedback) this.dropRevisionFiles(current);
     const work: CardWork = feedback
-      ? { stage: 'planning', ref: card.ref, title: card.title, plan: current!.plan, revising: feedback, updatedAt: this.now() }
+      ? { stage: 'planning', ref: card.ref, title: card.title, plan: current!.plan, revising: feedback, ...(revisingAttachments.length ? { revisingAttachments } : {}), updatedAt: this.now() }
       : { stage: 'planning', ref: card.ref, title: card.title, updatedAt: this.now() };
     this.setWork(projectId, cardId, work);
     const key = `${projectId}|${cardId}`;
     this.planning.add(key);
-    void this.runPlan(project, card, account?.configDir, feedback ? { previous: current!.plan!, feedback } : undefined).finally(() => {
+    void this.runPlan(project, card, account?.configDir, feedback ? { previous: current!.plan!, feedback, attachments: revisingAttachments } : undefined).finally(() => {
       this.planning.delete(key);
       this.opts.onChange?.();
     });
-    return { ok: this.decorate(card, work) };
+    return { ok: this.decorate(projectId, card, work) };
   }
 
   private async runPlan(project: BoardProject, card: BoardCard, configDir: string | undefined, revision?: PlanRevision): Promise<void> {
@@ -355,12 +391,28 @@ export class BoardService {
       // O card guarda só o começo da descrição: o planejador lê a issue inteira (se a fonte responder).
       const full = await issueDetails(this.exec, { gh: this.opts.gh, orca: this.opts.orca }, { source: card.source, repo: project.github, ref: card.ref }).catch(() => undefined);
       const forPlanner = full ? { ...card, title: full.title || card.title, body: full.body } : card;
-      const raw = await runPlanner({ claude: this.opts.claude!, cwd: project.path!, configDir, model, exec: this.exec }, plannerPrompt(project, forPlanner, quotas, revision));
+      const images = this.planImages(project.id, card.id, revision);
+      const raw = await runPlanner(
+        { claude: this.opts.claude!, cwd: project.path!, configDir, model, exec: this.exec, ...(images.card.length || images.revision.length ? { addDirs: [this.files.dir] } : {}) },
+        plannerPrompt(project, forPlanner, quotas, revision, images),
+      );
       const { actions, notes } = route(raw.actions, this.agents());
       if (!actions.length) throw new CliError(tr('o planejador não devolveu nenhuma ação válida'));
       const revisions = revision ? [...(revision.previous.revisions ?? []), revision.feedback] : undefined;
-      const plan: CardPlan = { summary: raw.summary, actions, notes, createdAt: this.now(), model, ...(revisions ? { revisions } : {}) };
-      // A pessoa pode ter descartado enquanto rodava.
+      // Uma lista por revisão (planos antigos não tinham: [] para cada uma).
+      const revisionAttachments = revision
+        ? [...(revision.previous.revisions ?? []).map((_, i) => revision.previous.revisionAttachments?.[i] ?? []), revision.attachments ?? []]
+        : undefined;
+      const plan: CardPlan = {
+        summary: raw.summary,
+        actions,
+        notes,
+        createdAt: this.now(),
+        model,
+        ...(revisions ? { revisions } : {}),
+        ...(revisionAttachments?.some((l) => l.length) ? { revisionAttachments } : {}),
+      };
+      // A pessoa pode ter descartado enquanto rodava (o descarte já apagou as imagens da revisão).
       if (this.opts.store.work(project.id, card.id)?.stage !== 'planning') return;
       this.setWork(project.id, card.id, { stage: 'approval', plan, updatedAt: this.now() });
     } catch (err) {
@@ -371,9 +423,17 @@ export class BoardService {
         : raw;
       log.warn(`Quadro: planejamento de ${card.ref} (${project.name}) falhou: ${raw}`);
       if (this.opts.store.work(project.id, card.id)?.stage !== 'planning') return;
+      // A revisão que falhou não fica no plano: as imagens dela também não.
+      this.files.remove(revision?.attachments);
       if (revision) this.setWork(project.id, card.id, { stage: 'approval', plan: revision.previous, error: tr('A revisão falhou ({0}); o plano anterior continua.', [msg]), updatedAt: this.now() });
       else this.setWork(project.id, card.id, { stage: 'failed', error: tr('O planejamento falhou: {0}', [msg]), updatedAt: this.now() });
     }
+  }
+
+  /** Caminhos das imagens para o planejador: as do card e as do pedido de revisão atual. */
+  private planImages(projectId: string, cardId: string, revision?: PlanRevision): { card: string[]; revision: string[] } {
+    const paths = (list: readonly CardAttachment[] | undefined) => (list ?? []).map((a) => this.files.path(a)).filter((p): p is string => !!p);
+    return { card: paths(this.opts.store.attachments(projectId, cardId)), revision: paths(revision?.attachments) };
   }
 
   /** Texto completo do card na fonte (para editar). */
@@ -413,7 +473,7 @@ export class BoardService {
     if (cached) cached.value = { ...cached.value, cards: cached.value.cards.map((c) => (c.id === cardId ? updated : c)) };
     if (work) this.setWork(projectId, cardId, { ...work, title: edit.title, ...(work.stage === 'approval' ? { error: tr('O card foi editado depois do plano: peça uma revisão ou planeje de novo se mudou o que precisa ser feito.') } : {}) });
     else this.opts.onChange?.();
-    return { ok: { ...this.decorate(updated, this.opts.store.work(projectId, cardId)), projectId, projectName: project.name } };
+    return { ok: { ...this.decorate(projectId, updated, this.opts.store.work(projectId, cardId)), projectId, projectName: project.name } };
   }
 
   /** Plano editado na página (troca de IA, ações removidas ou reescritas): o roteador confere de novo. */
@@ -427,7 +487,7 @@ export class BoardService {
     const plan: CardPlan = { ...work.plan, summary: typeof edit.summary === 'string' ? edit.summary.trim().slice(0, 1_000) : work.plan.summary, actions, notes };
     const next: CardWork = { stage: 'approval', plan, updatedAt: this.now() };
     this.setWork(projectId, cardId, next);
-    return { ok: this.decorate(found.card, next) };
+    return { ok: this.decorate(projectId, found.card, next) };
   }
 
   /** Aprova: o card entra na fila de execução e o plano vira comentário na issue (se falhar, só no log). */
@@ -446,7 +506,7 @@ export class BoardService {
     commentIssue(this.exec, { gh: this.opts.gh, orca: this.opts.orca }, { source: card.source, repo: project.github, ref: card.ref }, planMarkdown(work.plan)).catch((err) =>
       log.warn(`Quadro: não deu para comentar o plano em ${card.ref}: ${err instanceof CliError ? err.message : errMsg(err)}`),
     );
-    return { ok: this.decorate(card, next) };
+    return { ok: this.decorate(projectId, card, next) };
   }
 
   /**
@@ -459,11 +519,14 @@ export class BoardService {
     const work = this.opts.store.work(projectId, cardId);
     if (work?.run) await this.runner.cancel(projectId, cardId);
     // Cancelar uma revisão volta ao plano anterior (o resultado que chegar depois é ignorado).
-    else if (work?.stage === 'planning' && work.revising && work.plan) this.setWork(projectId, cardId, { ...work, stage: 'approval', revising: undefined, error: undefined, updatedAt: this.now() });
-    else this.setWork(projectId, cardId, undefined);
+    else if (work?.stage === 'planning' && work.revising && work.plan) {
+      this.files.remove(work.revisingAttachments);
+      this.setWork(projectId, cardId, { ...work, stage: 'approval', revising: undefined, revisingAttachments: undefined, error: undefined, updatedAt: this.now() });
+    } else this.setWork(projectId, cardId, undefined);
     const after = this.opts.store.work(projectId, cardId);
-    if (after) return { ok: this.decorate(found.card, after) };
-    return { ok: found.card };
+    if (!after) this.dropRevisionFiles(work);
+    if (after) return { ok: this.decorate(projectId, found.card, after) };
+    return { ok: this.decorate(projectId, found.card, undefined) };
   }
 
   /** Resposta a uma pergunta de um worker. */
@@ -497,7 +560,7 @@ export class BoardService {
   private async current(projectId: string, cardId: string): Promise<BoardResult<BoardCard>> {
     const found = await this.findCard(projectId, cardId);
     if (!found) return { error: tr('card desconhecido (a lista pode estar desatualizada: atualize o quadro)'), status: 404 };
-    return { ok: this.decorate(found.card, this.opts.store.work(projectId, cardId)) };
+    return { ok: this.decorate(projectId, found.card, this.opts.store.work(projectId, cardId)) };
   }
 
   private async sourceView(projectId: string, refresh: boolean): Promise<Omit<BoardView, 'agents'> | undefined> {
@@ -530,20 +593,33 @@ export class BoardService {
    * Card novo: vira issue na fonte do projeto (com a label do tipo, quando existe lá) e entra no Backlog. Erro de
    * configuração ou da fonte volta como `{error}` (a página mostra); projeto desconhecido, undefined.
    */
-  async create(projectId: string, card: NewCard): Promise<{ card: BoardCard } | { error: string } | undefined> {
+  async create(projectId: string, card: CardEdit, images: readonly DecodedImage[] = []): Promise<{ card: BoardCard } | { error: string } | undefined> {
     const project = (await this.index()).projects.find((p) => p.id === projectId);
     if (!project) return undefined;
     const body = `${card.body.trim()}\n\n---\n${tr('_Criado pelo Promp IA._')}`.trim();
+    // As imagens são gravadas antes da issue (erro aqui não deixa issue sem as imagens) e apagadas se a fonte falhar.
+    let attachments: CardAttachment[];
+    try {
+      attachments = this.files.save(images);
+    } catch (err) {
+      log.warn(`Quadro: não deu para gravar as imagens do card novo: ${errMsg(err)}`);
+      return { error: tr('Não deu para gravar as imagens: {0}', [errMsg(err)]) };
+    }
     try {
       let created: BoardCard;
       if (project.source === 'github' && project.github && this.opts.gh) created = await createGithub(this.exec, this.opts.gh, project.github, { ...card, body }, this.now());
       else if (project.source === 'linear' && project.linearTeam) created = await createLinear(this.exec, this.opts.orca, project.linearTeam, { ...card, body }, this.now());
-      else return { error: tr('Escolha de onde vêm as tarefas deste projeto: GitHub ou Linear.') };
+      else {
+        this.files.remove(attachments);
+        return { error: tr('Escolha de onde vêm as tarefas deste projeto: GitHub ou Linear.') };
+      }
       const cached = this.views.get(projectId);
       if (cached) cached.value = { ...cached.value, cards: [created, ...cached.value.cards.filter((c) => c.id !== created.id)] };
+      if (attachments.length) this.opts.store.setAttachments(projectId, created.id, attachments);
       this.opts.onChange?.();
-      return { card: created };
+      return { card: this.decorate(projectId, created, undefined) };
     } catch (err) {
+      this.files.remove(attachments);
       return { error: describeError(err, project.source) };
     }
   }

@@ -5,7 +5,8 @@
 //      exigem `--from <handle>` de um terminal vivo do Orca (o servidor não roda dentro de um);
 //   2. `orchestration run-create` (um Run por card) e `worktree create` (cópia do repositório só do card, ligada à
 //      issue, sem setup);
-//   3. uma Task por ação do plano (`task-create`, com as dependências);
+//   3. uma Task por ação do plano (`task-create`, com as dependências; as instruções levam os caminhos das imagens
+//      anexadas ao card e aos pedidos de revisão do plano);
 //   4. estágio "running": a cada rodada, `task-list` diz o que está pronto; cada Task pronta ganha um worker
 //      (`worker-start --task … --agent <IA> --worktree path:<worktree>`), respeitando o limite de workers ao mesmo
 //      tempo e a cota da IA; perguntas dos workers (`orchestration inbox`, tipo question/escalation) aparecem no card e
@@ -22,10 +23,11 @@
 // pelo nome antes de criar de novo. O estado fica em board.json: depois de reiniciar, a rodada continua de onde parou.
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import type { ActionRun, BoardCard, BoardProject, CardRun, CardWork, PlanAction } from '../../shared/board';
+import type { ActionRun, BoardCard, BoardProject, CardAttachment, CardPlan, CardRun, CardWork, PlanAction } from '../../shared/board';
 import { tr } from '../../shared/i18n';
 import { errMsg, log } from '../log';
 import { AGENT_NAMES } from './agents';
+import { imagesNote, type BoardFiles } from './attachments';
 import type { AgentId, AgentQuota } from '../../shared/board';
 import { CliError, orcaResult, readDetached, runDetachedShell, waitDetached, type Exec, type Shell } from './cli';
 import { pickAgent, substitute, swapNote } from './router';
@@ -62,6 +64,8 @@ export interface RunnerDeps {
   mergeMethod?: MergeMethod;
   /** Grava o comando de depois do merge no projeto. */
   saveAfterMerge?(projectId: string, command: string): void;
+  /** Arquivos das imagens dos cards (os caminhos vão nas instruções dos agentes). */
+  files?: BoardFiles;
   shell?: Shell;
   onChange?: () => void;
 }
@@ -77,13 +81,29 @@ export function worktreeName(card: Pick<BoardCard, 'ref' | 'title'>): string {
   return `promp-${slug}`.slice(0, 48).replace(/-+$/, '');
 }
 
+/** Caminhos absolutos das imagens do card: as anexadas ao criar e as dos pedidos de revisão do plano. */
+export interface SpecImages {
+  card: readonly string[];
+  revisions: readonly string[];
+}
+
 /** Instruções da Task: a ação, o contexto do card e as regras do trabalho no worktree compartilhado. */
-export function taskSpec(project: BoardProject, card: BoardCard, action: PlanAction, index: number, total: number, worktree: { path: string; branch: string }): string {
+export function taskSpec(
+  project: BoardProject,
+  card: BoardCard,
+  action: PlanAction,
+  index: number,
+  total: number,
+  worktree: { path: string; branch: string },
+  images: SpecImages = { card: [], revisions: [] },
+): string {
   return [
     `Card ${card.ref} do projeto "${project.name}": ${card.title}`,
     `Ação ${index + 1} de ${total}: ${action.title}`,
     '',
     action.instructions,
+    ...imagesNote(images.card, 'Imagens anexadas ao card (abra/leia cada uma antes de começar: ilustram a demanda):'),
+    ...imagesNote(images.revisions, 'Imagens anexadas aos pedidos de correção do plano (abra/leia cada uma: ilustram a correção pedida):'),
     '',
     'Regras deste trabalho (Promp IA):',
     `- Trabalhe só no worktree ${worktree.path} (branch ${worktree.branch}).`,
@@ -202,6 +222,13 @@ export class BoardRunner {
     return next;
   }
 
+  private specImages(projectId: string, cardId: string, plan: CardPlan): SpecImages {
+    const files = this.d.files;
+    if (!files) return { card: [], revisions: [] };
+    const paths = (list: readonly CardAttachment[]) => list.map((a) => files.path(a)).filter((p): p is string => !!p);
+    return { card: paths(this.d.store.attachments(projectId, cardId)), revisions: paths(plan.revisionAttachments?.flat() ?? []) };
+  }
+
   private note(run: CardRun, text: string): void {
     run.log.push({ at: this.now(), text });
     if (run.log.length > LOG_MAX) run.log.splice(0, run.log.length - LOG_MAX);
@@ -309,7 +336,7 @@ export class BoardRunner {
         a.createRequest ??= randomUUID();
         persist();
         const deps = action.deps.map((d) => run.actions[d]?.taskId).filter((x): x is string => !!x);
-        const r = await this.mutate<{ task: { id: string } }>(taskCreateArgs(from, run.runId, project, card, plan.actions, i, run.worktree, deps), a.createRequest);
+        const r = await this.mutate<{ task: { id: string } }>(taskCreateArgs(from, run.runId, project, card, plan.actions, i, run.worktree, deps, this.specImages(projectId, cardId, plan)), a.createRequest);
         a.taskId = r.task.id;
         persist();
       }
@@ -572,7 +599,7 @@ export class BoardRunner {
     for (const [i, x] of plan.actions.entries()) {
       if (!renew.has(x.id)) continue;
       const deps = x.deps.map((d) => ids[d] ?? run.actions[d]?.taskId).filter((t): t is string => !!t);
-      const r = await this.mutate<{ task: { id: string } }>(taskCreateArgs(from, run.runId, project, card, plan.actions, i, run.worktree, deps), randomUUID());
+      const r = await this.mutate<{ task: { id: string } }>(taskCreateArgs(from, run.runId, project, card, plan.actions, i, run.worktree, deps, this.specImages(projectId, cardId, plan)), randomUUID());
       ids[x.id] = r.task.id;
     }
     this.save(projectId, cardId, (w) => {
@@ -1021,7 +1048,7 @@ export class BoardRunner {
   }
 }
 
-function taskCreateArgs(from: string, runId: string, project: BoardProject, card: BoardCard, actions: readonly PlanAction[], i: number, worktree: { path: string; branch: string }, deps: string[]): string[] {
+function taskCreateArgs(from: string, runId: string, project: BoardProject, card: BoardCard, actions: readonly PlanAction[], i: number, worktree: { path: string; branch: string }, deps: string[], images?: SpecImages): string[] {
   const action = actions[i];
   return [
     'orchestration',
@@ -1033,7 +1060,7 @@ function taskCreateArgs(from: string, runId: string, project: BoardProject, card
     '--task-title',
     action.title.slice(0, 120),
     '--spec',
-    taskSpec(project, card, action, i, actions.length, { path: worktree.path, branch: stripRef(worktree.branch) }),
+    taskSpec(project, card, action, i, actions.length, { path: worktree.path, branch: stripRef(worktree.branch) }, images),
     '--deps',
     JSON.stringify(deps),
   ];

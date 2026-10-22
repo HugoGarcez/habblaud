@@ -1,7 +1,8 @@
-// Formulário "Novo card" do quadro de tarefas (ui/board.ts): tipo (Issue, Funcionalidade, Correção), título e
-// descrição. Quem cria a issue é o quadro (POST /api/board/projects/:id/cards); aqui só o formulário.
-import { CARD_BODY_MAX, CARD_TITLE_MAX, type CardKind, type NewCard } from '../../../shared/board';
+// Formulário "Novo card" do quadro de tarefas (ui/board.ts): tipo (Issue, Funcionalidade, Correção), título,
+// descrição e imagens (ui/board-images.ts). Quem cria a issue é o quadro (POST /api/board/projects/:id/cards); aqui só o formulário.
+import { CARD_BODY_MAX, CARD_TITLE_MAX, type CardKind, type NewAttachment, type NewCard } from '../../../shared/board';
 import { tr } from '../../../shared/i18n';
+import { ImagePicker } from './board-images';
 import { kindLabel } from './board-model';
 import { h, setHidden, setText } from './dom';
 
@@ -38,6 +39,7 @@ export class NewCardForm {
   private readonly target: HTMLSelectElement;
   private readonly title: HTMLInputElement;
   private readonly body: HTMLTextAreaElement;
+  private readonly images = new ImagePicker();
   private readonly error: HTMLElement;
   private readonly createBtn: HTMLButtonElement;
   private busy = false;
@@ -70,9 +72,11 @@ export class NewCardForm {
       this.title,
       h('label', { class: 'ui-spawn__label', attrs: { for: 'ui-board-new-body' }, text: tr('Descrição') }),
       this.body,
+      this.images.el,
       this.error,
       h('div', { class: 'ui-board-new__foot' }, h('span', { class: 'ui-board-new__hint', text: tr('Vai para:') }), this.target, cancel, this.createBtn),
     );
+    this.images.listen(this.el);
     this.el.addEventListener('submit', (e) => {
       e.preventDefault();
       void this.send();
@@ -126,10 +130,17 @@ export class NewCardForm {
     setText(this.createBtn, tr('Criando…'));
     try {
       if (!this.target.value) return this.showError(tr('Escolha um projeto.'));
-      const err = await this.opts.submit({ kind: this.kind, title, body: this.body.value }, this.target.value);
+      let images: NewAttachment[] = [];
+      try {
+        images = await this.images.encode();
+      } catch (err) {
+        return this.showError(err instanceof Error ? err.message : String(err));
+      }
+      const err = await this.opts.submit({ kind: this.kind, title, body: this.body.value, ...(images.length ? { images } : {}) }, this.target.value);
       if (err) return this.showError(err);
       this.title.value = '';
       this.body.value = '';
+      this.images.clear();
       this.setKind('issue');
       this.close();
     } finally {
