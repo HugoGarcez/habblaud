@@ -16,7 +16,8 @@ do meio (0.**3**.0).
   isn't signed in") não trava mais o card: a IA fica fora da escolha por 30 minutos e a ação tenta de novo, sozinha,
   com a equivalente disponível (a troca fica nas notas do plano).
 - **Quadro de tarefas:** tarefa que o Orca não repete mais (falhou três vezes) segue numa tarefa nova ao **Tentar de
-  novo**, junto com as que dependiam dela.
+  novo**, junto com as que dependiam dela. A recusa do Orca que cita a falta de login de outra IA não tira a IA atual
+  da escolha.
 
 ### Corrigido
 

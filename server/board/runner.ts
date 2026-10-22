@@ -39,6 +39,7 @@ export const AFTER_MERGE_TIMEOUT_MS = 20 * 60_000;
 export type MergeMethod = 'squash' | 'merge' | 'rebase';
 const LOG_MAX = 40;
 /** Falha do worker que é da IA, não da tarefa (sem login no Orca): outra IA tenta no lugar. */
+const RETRY_REFUSED = /will not retry it again|cannot retry from/i;
 const AGENT_LOGIN_ERROR = /notSignedIn|isn't signed in|is not signed in|not logged in|Failed to authenticate|OAuth session expired/i;
 const COORDINATOR_TITLE = 'Promp IA · coordenador';
 
@@ -507,7 +508,7 @@ export class BoardRunner {
         r = await start(a.taskId, retryOf, requestId);
       } catch (err) {
         // Task que já falhou vezes demais: o Orca não a repete mais ("will not retry it again"); vai numa Task nova.
-        if (!retryOf || !found || !(err instanceof CliError) || !/will not retry it again/i.test(err.message)) throw err;
+        if (!retryOf || !found || !(err instanceof CliError) || !RETRY_REFUSED.test(err.message)) throw err;
         const taskId = await this.renewTasks(projectId, cardId, action.id, from, found.project, found.card);
         r = await start(taskId, undefined, randomUUID());
       }
@@ -547,7 +548,8 @@ export class BoardRunner {
    * ação tenta de novo com a equivalente disponível. Sem alternativa, o card fica travado como está.
    */
   private swapFailedAgent(projectId: string, cardId: string, action: PlanAction, error: string): void {
-    if (!AGENT_LOGIN_ERROR.test(error)) return;
+    // A recusa de repetir cita o erro da última tentativa, que pode ser de outra IA.
+    if (!AGENT_LOGIN_ERROR.test(error) || RETRY_REFUSED.test(error)) return;
     this.d.agentFailed?.(action.agent, tr('não está logado no Orca'));
     const alt = pickAgent(action, this.d.agents());
     if (!alt || alt === action.agent) return;
@@ -928,7 +930,8 @@ export class BoardRunner {
             action.agent = alt;
           }
           const retryOf = a.dispatchId;
-          Object.assign(a, { state: 'starting', error: undefined, startRequest: randomUUID(), startedAt: this.now() });
+          // O dispatch novo vem do worker-start (ou da lista do Run); o anterior não vale mais.
+          Object.assign(a, { state: 'starting', error: undefined, dispatchId: undefined, startRequest: randomUUID(), startedAt: this.now() });
           retries.push({ action, requestId: a.startRequest!, retryOf });
         }
         this.note(w.run!, tr('Tentando de novo.'));

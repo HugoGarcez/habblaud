@@ -418,6 +418,29 @@ describe('runner', () => {
     expect(work(store).stage).toBe('running');
   });
 
+  it('recusa de repetir que cita falta de login de outra IA não tira a IA atual da escolha', async () => {
+    const { store, runner, state } = setup();
+    await runner.tick();
+    await runner.tick();
+    await settle();
+    state.tasks[0].status = 'failed';
+    state.tasks[0].result = 'testes quebraram';
+    await runner.tick();
+    // Recusa também na Task nova: o card trava, mas a IA da ação continua a mesma.
+    const refuse = (): never => {
+      state.fail.set('orchestration worker-start', () => {
+        throw new CliError("Task task_1 failed 3 times, so Orca will not retry it again (last error: Antigravity isn't signed in).", 'refused');
+      });
+      throw new CliError("Task task_1 failed 3 times, so Orca will not retry it again (last error: Antigravity isn't signed in).", 'refused');
+    };
+    state.fail.set('orchestration worker-start', refuse);
+    await runner.retry('p', card.id);
+    await settle();
+    expect(work(store).stage).toBe('blocked');
+    expect(work(store).plan!.actions[0].agent).toBe('codex');
+    expect(state.calls.filter((c) => c[2] === 'worker-start')).toHaveLength(3);
+  });
+
   it('falha comum (não de login) continua travando o card', async () => {
     const { store, runner, state } = setup();
     await runner.tick();
