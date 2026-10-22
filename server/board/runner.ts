@@ -385,7 +385,8 @@ export class BoardRunner {
         Object.assign(a, { state: 'done', finishedAt: this.now(), result: workerSummary(t.result) ?? a.result, waitingFor: undefined });
         this.note(run, tr('Concluída: {0}', [action.title]));
         changed = true;
-      } else if (t.status === 'failed' && a.state !== 'failed' && a.state !== 'canceled') {
+      } else if (t.status === 'failed' && a.state !== 'failed' && a.state !== 'canceled' && a.state !== 'starting') {
+        // 'starting': o worker novo (Tentar de novo) ainda está abrindo, e até lá a Task segue com a falha anterior.
         const error = workerSummary(t.result) ?? (await this.workerError(a.dispatchId)) ?? tr('a tarefa falhou');
         Object.assign(a, { state: 'failed', finishedAt: this.now(), error, waitingFor: undefined });
         this.note(run, tr('Falhou: {0}', [action.title]));

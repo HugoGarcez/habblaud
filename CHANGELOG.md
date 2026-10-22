@@ -18,6 +18,8 @@ do meio (0.**3**.0).
   card que já travou volta com **Tentar de novo**.
 - **Quadro de tarefas:** ação cujo worker falha sem relatório mostra o motivo que o Orca guardou (ex.: "Antigravity
   isn't signed in") em vez de só "a tarefa falhou".
+- **Quadro de tarefas:** **Tentar de novo** travava o card outra vez com o erro antigo enquanto o Orca abria o worker
+  novo (a Task segue com a falha anterior até lá); a troca de IA na nova tentativa parecia não valer.
 
 ## [1.0.4] - 2026-10-22
 

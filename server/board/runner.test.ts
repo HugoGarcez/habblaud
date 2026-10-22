@@ -49,6 +49,8 @@ function fakeOrca() {
     head: 'main',
     /** `lastError` do `worker-show` (worker que falhou sem relatório). */
     workerError: undefined as string | undefined,
+    /** Segura o `worker-start` (o Orca leva dezenas de segundos para abrir o worker). */
+    startGate: undefined as Promise<void> | undefined,
   };
   const exec: Exec = async (bin, args) => {
     state.calls.push([bin, ...args]);
@@ -58,6 +60,7 @@ function fakeOrca() {
       state.fail.delete(cmd);
       f();
     }
+    if (cmd === 'orchestration worker-start' && state.startGate) await state.startGate;
     const val = (flag: string) => args[args.indexOf(flag) + 1];
     if (bin === 'git') {
       const sub = args[2];
@@ -329,6 +332,27 @@ describe('runner', () => {
     const last = state.calls.filter((c) => c[2] === 'worker-start').pop()!;
     expect(last).toEqual(expect.arrayContaining(['--retry-of', 'd_task_1', '--task', 'task_1']));
     expect(work(store).stage).toBe('running');
+  });
+
+  it('tentar de novo: a falha anterior da Task não trava o card enquanto o worker novo abre', async () => {
+    const { store, runner, state } = setup({ quotas: { codex: false } });
+    await runner.tick();
+    await runner.tick();
+    await settle();
+    state.tasks[0].status = 'failed';
+    state.workerError = "Antigravity isn't signed in.";
+    await runner.tick();
+    expect(work(store).stage).toBe('blocked');
+    let open!: () => void;
+    state.startGate = new Promise((r) => (open = r));
+    await runner.retry('p', card.id);
+    await runner.tick();
+    await settle();
+    expect(work(store).stage).toBe('running');
+    expect(work(store).run!.actions[plan.actions[0].id].state).toBe('starting');
+    open();
+    await settle();
+    expect(work(store).run!.actions[plan.actions[0].id]).toMatchObject({ state: 'running', error: undefined });
   });
 
   it('Task que falha sem relatório mostra o motivo do worker no Orca', async () => {
