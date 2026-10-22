@@ -65,6 +65,17 @@ import { OwnerSocial } from './world/social';
 import { BuildingTokens } from './world/tokens';
 import { BuildingUplink } from './world/uplink';
 import { WorldViewer } from './world/viewer';
+import { userInfo } from 'node:os';
+
+// Pelo launchd (LaunchAgent) o processo nasce sem USER/LOGNAME. O Claude Code acha o login no Keychain pela conta do
+// usuário: sem USER, o planejador do quadro e o /usage das contas dão "OAuth session expired" mesmo logado.
+try {
+  const user = userInfo().username;
+  process.env.USER ||= user;
+  process.env.LOGNAME ||= user;
+} catch {
+  // sem usuário no sistema (contêiner): fica como está
+}
 
 const config = loadConfig();
 const startedAt = Date.now();
