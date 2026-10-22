@@ -220,8 +220,12 @@ export class BoardRunner {
 
   // ---- terminal coordenador ----
 
-  private async coordinator(project: BoardProject): Promise<string> {
-    const saved = this.d.store.coordinator(project.id);
+  // Um terminal coordenador por card: o `run-create` prende o coordenador ao Run novo, e um coordenador dividido entre
+  // cards do mesmo projeto deixava o Run anterior sem dono ("worker-start requires the coordinator terminal currently
+  // bound to the Task Run").
+  private async coordinator(project: BoardProject, cardId: string, runId?: string): Promise<string> {
+    const key = coordinatorKey(project.id, cardId);
+    const saved = this.d.store.coordinator(key);
     if (saved) {
       try {
         orcaResult(await this.orca(['terminal', 'show', '--terminal', saved, '--json']));
@@ -234,8 +238,20 @@ export class BoardRunner {
     const r = orcaResult<{ terminal: { handle: string } }>(
       await this.orca(['terminal', 'create', '--worktree', `path:${project.path}`, '--title', COORDINATOR_TITLE, '--json'], 60_000),
     );
-    this.d.store.setCoordinator(project.id, r.terminal.handle);
-    return r.terminal.handle;
+    const handle = r.terminal.handle;
+    // Run que já existe (coordenador fechado, ou de antes desta versão): o terminal novo assume o Run.
+    if (runId) await this.mutate(['orchestration', 'run-use', '--from', handle, '--id', runId], randomUUID());
+    this.d.store.setCoordinator(key, handle);
+    return handle;
+  }
+
+  /** Fecha o coordenador do card quando o Run não precisa mais dele. */
+  private async releaseCoordinator(projectId: string, cardId: string): Promise<void> {
+    const key = coordinatorKey(projectId, cardId);
+    const handle = this.d.store.coordinator(key);
+    if (!handle) return;
+    this.d.store.setCoordinator(key, undefined);
+    await this.orca(['terminal', 'close', '--terminal', handle, '--json']).catch(() => undefined);
   }
 
   // ---- 1-3: preparação ----
@@ -265,7 +281,7 @@ export class BoardRunner {
     };
     const persist = () => this.save(projectId, cardId, (w) => ({ ...w, run }), ['queued']);
     try {
-      const from = await this.coordinator(project);
+      const from = await this.coordinator(project, cardId, run.runId);
       if (!run.runId) {
         run.runRequest ??= randomUUID();
         persist();
@@ -470,7 +486,7 @@ export class BoardRunner {
     this.inflight.add(requestId);
     const found = await this.d.lookup(projectId, cardId);
     try {
-      const from = await this.coordinator(found?.project ?? ({ id: projectId } as BoardProject));
+      const from = await this.coordinator(found?.project ?? ({ id: projectId } as BoardProject), cardId, run.runId);
       const r = await this.mutate<{ dispatch?: { id: string }; dispatchId?: string }>(
         [
           'orchestration',
@@ -711,6 +727,7 @@ export class BoardRunner {
   private async afterMerge(projectId: string, cardId: string, project: BoardProject, card: BoardCard, base: string, branch: string, command?: string): Promise<void> {
     const notes: string[] = [];
     const run = this.work(projectId, cardId)?.run;
+    await this.releaseCoordinator(projectId, cardId);
     if (branch && project.github) {
       await this.d
         .exec(this.d.gh!, ['api', '-X', 'DELETE', `repos/${project.github}/git/refs/heads/${branch}`])
@@ -784,7 +801,7 @@ export class BoardRunner {
     if (!run?.runId || !q) return tr('Pergunta desconhecida (talvez já respondida).');
     const found = await this.d.lookup(projectId, cardId);
     try {
-      const from = await this.coordinator(found?.project ?? ({ id: projectId } as BoardProject));
+      const from = await this.coordinator(found?.project ?? ({ id: projectId } as BoardProject), cardId, run.runId);
       await this.mutate(['orchestration', 'reply', '--from', from, '--run', run.runId, '--id', questionId, '--body', text], randomUUID());
     } catch (err) {
       const msg = err instanceof CliError ? err.message : errMsg(err);
@@ -875,7 +892,7 @@ export class BoardRunner {
     const run = work?.run;
     if (run?.runId) {
       const found = await this.d.lookup(projectId, cardId);
-      const from = await this.coordinator(found?.project ?? ({ id: projectId } as BoardProject)).catch(() => undefined);
+      const from = await this.coordinator(found?.project ?? ({ id: projectId } as BoardProject), cardId, run.runId).catch(() => undefined);
       for (const a of Object.values(run.actions)) {
         if (a.dispatchId && (a.state === 'starting' || a.state === 'running')) {
           await this.orca(['orchestration', 'worker-stop', '--dispatch', a.dispatchId, '--json']).catch(() => undefined);
@@ -886,7 +903,12 @@ export class BoardRunner {
       }
       if (run.worktree) log.info(`Quadro: execução de ${cardId} cancelada; o worktree fica em ${run.worktree.path}.`);
     }
+    await this.releaseCoordinator(projectId, cardId);
     this.d.store.setWork(projectId, cardId, undefined);
     this.d.onChange?.();
   }
+}
+
+function coordinatorKey(projectId: string, cardId: string): string {
+  return `${projectId}#${cardId}`;
 }

@@ -85,12 +85,14 @@ export class BoardStore {
     this.save();
   }
 
-  coordinator(projectId: string): string | undefined {
-    return this.data.coordinators[projectId];
+  /** Terminal coordenador do Orca de um card (chave `<projeto>#<card>`). */
+  coordinator(key: string): string | undefined {
+    return this.data.coordinators[key];
   }
 
-  setCoordinator(projectId: string, handle: string): void {
-    this.data.coordinators[projectId] = handle;
+  setCoordinator(key: string, handle: string | undefined): void {
+    if (handle) this.data.coordinators[key] = handle;
+    else delete this.data.coordinators[key];
     this.save();
   }
 

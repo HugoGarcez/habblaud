@@ -154,7 +154,8 @@ describe('runner', () => {
     const { store, runner, state, complete } = setup();
     await runner.tick();
     expect(work(store).stage).toBe('running');
-    expect(store.coordinator('p')).toBe('term_c');
+    expect(store.coordinator(`p#${card.id}`)).toBe('term_c');
+    expect(state.calls.some((c) => c[2] === 'run-use')).toBe(false);
     const run = work(store).run!;
     expect(run.runId).toBe('run_1');
     expect(run.worktree).toEqual({ id: 'r::/wt/promp-7', path: '/wt/promp-7', branch: 'refs/heads/me/promp-7', repoPath: '/repo' });
@@ -213,6 +214,22 @@ describe('runner', () => {
     expect(reqs).toHaveLength(2);
     expect(reqs[0]).toBe(reqs[1]);
     expect(work(store).stage).toBe('running');
+  });
+
+  it('coordenador por card: Run que já existe e perdeu o coordenador é assumido por um terminal novo', async () => {
+    const { store, runner, state } = setup();
+    await runner.tick();
+    expect(work(store).run!.runId).toBe('run_1');
+    // Coordenador de antes desta versão (por projeto) ou fechado: o card não tem um próprio.
+    store.setCoordinator(`p#${card.id}`, undefined);
+    await runner.tick();
+    await settle();
+    const use = state.calls.find((c) => c[2] === 'run-use')!;
+    expect(use).toEqual(expect.arrayContaining(['--from', 'term_c', '--id', 'run_1']));
+    expect(state.calls.findIndex((c) => c[2] === 'run-use')).toBeLessThan(state.calls.findIndex((c) => c[2] === 'worker-start'));
+    await runner.cancel('p', card.id);
+    expect(store.coordinator(`p#${card.id}`)).toBeUndefined();
+    expect(state.calls.some((c) => c[1] === 'terminal' && c[2] === 'close')).toBe(true);
   });
 
   it('preparação que falha trava o card; tentar de novo recomeça', async () => {

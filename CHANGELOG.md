@@ -10,6 +10,13 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Corrigido
+
+- **Quadro de tarefas:** dois cards do mesmo projeto em execução ao mesmo tempo travavam o primeiro ("worker-start
+  requires the coordinator terminal currently bound to the Task Run"), porque dividiam o terminal coordenador do Orca
+  e o Run do segundo tomava o lugar. Agora cada card tem o seu coordenador, fechado no merge ou no cancelamento; o
+  card que já travou volta com **Tentar de novo**.
+
 ## [1.0.4] - 2026-10-22
 
 Versão do fork (Promp IA) sobre a 1.0.3 do Habblaud.
