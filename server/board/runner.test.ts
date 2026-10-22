@@ -47,6 +47,8 @@ function fakeOrca() {
     /** Resposta do `gh pr view` do PR do card (sem ela: PR não existe). */
     pr: undefined as { state: string; mergeable?: string; baseRefName?: string; headRefName?: string } | undefined,
     head: 'main',
+    /** `lastError` do `worker-show` (worker que falhou sem relatório). */
+    workerError: undefined as string | undefined,
   };
   const exec: Exec = async (bin, args) => {
     state.calls.push([bin, ...args]);
@@ -101,6 +103,8 @@ function fakeOrca() {
       }
       case 'orchestration worker-list':
         return ok({ workers: [] });
+      case 'orchestration worker-show':
+        return ok({ worker: { lastError: state.workerError ?? null } });
       case 'orchestration inbox':
         return ok({ messages: state.messages });
       case 'orchestration reply':
@@ -325,6 +329,17 @@ describe('runner', () => {
     const last = state.calls.filter((c) => c[2] === 'worker-start').pop()!;
     expect(last).toEqual(expect.arrayContaining(['--retry-of', 'd_task_1', '--task', 'task_1']));
     expect(work(store).stage).toBe('running');
+  });
+
+  it('Task que falha sem relatório mostra o motivo do worker no Orca', async () => {
+    const { store, runner, state } = setup();
+    await runner.tick();
+    await runner.tick();
+    await settle();
+    state.tasks[0].status = 'failed';
+    state.workerError = "Antigravity isn't signed in.";
+    await runner.tick();
+    expect(work(store).error).toMatch(/Implementar.*Antigravity isn't signed in/);
   });
 
   it('sem mudanças nos arquivos: vai para revisão sem PR', async () => {

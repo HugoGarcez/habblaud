@@ -386,7 +386,8 @@ export class BoardRunner {
         this.note(run, tr('Concluída: {0}', [action.title]));
         changed = true;
       } else if (t.status === 'failed' && a.state !== 'failed' && a.state !== 'canceled') {
-        Object.assign(a, { state: 'failed', finishedAt: this.now(), error: workerSummary(t.result) ?? tr('a tarefa falhou'), waitingFor: undefined });
+        const error = workerSummary(t.result) ?? (await this.workerError(a.dispatchId)) ?? tr('a tarefa falhou');
+        Object.assign(a, { state: 'failed', finishedAt: this.now(), error, waitingFor: undefined });
         this.note(run, tr('Falhou: {0}', [action.title]));
         changed = true;
       } else if (t.status === 'dispatched' && a.state === 'starting') {
@@ -535,6 +536,19 @@ export class BoardRunner {
       );
     } finally {
       this.inflight.delete(requestId);
+    }
+  }
+
+  /** Motivo que o Orca guardou para o worker que falhou sem relatório (ex.: IA não logada no Orca). */
+  private async workerError(dispatchId?: string): Promise<string | undefined> {
+    if (!dispatchId) return undefined;
+    try {
+      const r = orcaResult<{ worker?: { lastError?: string | null }; dispatch?: { lastFailure?: string | null } }>(
+        await this.orca(['orchestration', 'worker-show', '--dispatch', dispatchId, '--json']),
+      );
+      return r.worker?.lastError || r.dispatch?.lastFailure || undefined;
+    } catch {
+      return undefined;
     }
   }
 
