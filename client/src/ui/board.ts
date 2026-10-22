@@ -4,7 +4,7 @@
 // (GET /api/board/all); escolher um projeto filtra (GET /api/board/projects/:id) e deixa trocar a fonte dele.
 // Filtrar por texto, abrir o detalhe do card (ui/board-detail.ts: planejar, aprovar, acompanhar a execução) e criar
 // cards novos (ui/board-new.ts). Relido a cada 30 s com a janela aberta (mais rápido com card planejando ou rodando).
-import type { AgentQuota, BoardAllView, BoardCard, BoardIndex, BoardProject, BoardSource, BoardView, CardDetails, CardEdit, CardStage, MergeRequest, NewCard, PlanEdit } from '../../../shared/board';
+import type { AgentQuota, BoardAllView, BoardCard, BoardIndex, BoardProject, BoardSource, BoardView, CardDetails, CardEdit, CardStage, MergeRequest, NewCard, PlanEdit, PlanRequest } from '../../../shared/board';
 import { tr } from '../../../shared/i18n';
 import { cardKey, columnLabel, groupCards, kindLabel, matchesFilter, projectForPath } from './board-model';
 import { CardDetail } from './board-detail';
@@ -130,7 +130,14 @@ export class BoardPanel {
       answer: (c, questionId, text) => this.cardAction(c, 'answer', 'POST', { questionId, text }),
       merge: (c, afterMerge) => this.mergeCard(c, afterMerge),
       afterMerge: (c) => this.index?.projects.find((p) => p.id === (c.projectId ?? this.projectId))?.afterMerge ?? '',
-      revise: async (c, feedback, edit) => (edit ? ((await this.cardAction(c, 'plan', 'PUT', edit)) ?? this.cardAction(c, 'plan', 'POST', { feedback })) : this.cardAction(c, 'plan', 'POST', { feedback })),
+      revise: async (c, feedback, edit, images) => {
+        const req: PlanRequest = images.length ? { feedback, images } : { feedback };
+        return edit ? ((await this.cardAction(c, 'plan', 'PUT', edit)) ?? this.cardAction(c, 'plan', 'POST', req)) : this.cardAction(c, 'plan', 'POST', req);
+      },
+      attachmentUrl: (c, a) => {
+        const url = this.cardUrl(c);
+        return url ? `${url}/attachments/${encodeURIComponent(a.id)}` : undefined;
+      },
       details: (c) => this.cardDetails(c),
       edit: (c, edit) => this.editCard(c, edit),
       close: () => this.closeDetail(),
@@ -322,7 +329,7 @@ export class BoardPanel {
     return undefined;
   }
 
-  private async cardAction(card: BoardCard, verb: 'plan' | 'approve' | 'discard' | 'retry' | 'answer' | 'merge', method: 'POST' | 'PUT', body?: PlanEdit | { questionId: string; text: string } | { feedback: string } | MergeRequest): Promise<string | undefined> {
+  private async cardAction(card: BoardCard, verb: 'plan' | 'approve' | 'discard' | 'retry' | 'answer' | 'merge', method: 'POST' | 'PUT', body?: PlanEdit | { questionId: string; text: string } | PlanRequest | MergeRequest): Promise<string | undefined> {
     const projectId = card.projectId ?? this.projectId;
     if (!projectId) return tr('Este card não está ligado a um projeto do Orca.');
     try {

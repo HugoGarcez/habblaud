@@ -10,6 +10,15 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Adicionado
+
+- **Imagens nos cards do quadro:** o card novo e o pedido de revisão do plano aceitam até 5 imagens (PNG, JPEG, GIF
+  ou WebP, até 5 MB cada, conferidas pelo conteúdo do arquivo) para ilustrar a demanda ou a correção. Ficam em
+  `~/.habblaud/board-attachments/`, o planejador e os agentes de cada ação recebem os caminhos para abri-las, e
+  descartar o plano apaga as imagens das revisões. No formulário do card novo e no pedido de revisão, o botão
+  "Anexar imagens" (ou colar com Ctrl+V, ou arrastar) mostra as miniaturas, deixa remover cada uma e avisa na hora
+  quando passa do limite; o detalhe do card mostra as imagens do card e das revisões, e um clique abre em tamanho maior.
+
 ## [1.0.4] - 2026-10-22
 
 Versão do fork (Promp IA) sobre a 1.0.3 do Habblaud.

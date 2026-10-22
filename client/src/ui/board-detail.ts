@@ -1,8 +1,9 @@
 // Detalhe de um card do quadro (ui/board.ts): descrição, link para a issue e o trabalho do Promp IA com o card —
 // Planejar com IA, acompanhar o planejamento, editar o plano (IA, título e instruções de cada ação; remover ações),
-// aprovar ou descartar. Quem fala com o servidor é o quadro; aqui só a apresentação e as edições locais.
-import { AFTER_MERGE_MAX, AGENT_IDS, CARD_BODY_MAX, CARD_TITLE_MAX, REVISION_MAX, type ActionRun, type ActionState, type ActionType, type CardDetails, type CardEdit, type CardKind, type AgentId, type AgentQuota, type BoardCard, type PlanAction, type PlanEdit } from '../../../shared/board';
+// aprovar ou descartar; as imagens do card e dos pedidos de revisão (ui/board-images.ts). Quem fala com o servidor é o quadro; aqui só a apresentação e as edições locais.
+import { AFTER_MERGE_MAX, AGENT_IDS, CARD_BODY_MAX, CARD_TITLE_MAX, REVISION_MAX, type ActionRun, type ActionState, type ActionType, type CardDetails, type CardEdit, type CardKind, type AgentId, type AgentQuota, type BoardCard, type CardAttachment, type NewAttachment, type PlanAction, type PlanEdit } from '../../../shared/board';
 import { tr } from '../../../shared/i18n';
+import { attachmentGallery, ImagePicker } from './board-images';
 import { cardKey, kindLabel } from './board-model';
 import { h, iconButton, setHidden, setText } from './dom';
 import { ICONS } from './icons';
@@ -12,8 +13,10 @@ export interface CardDetailActions {
   approve(card: BoardCard, edit: PlanEdit | undefined): Promise<string | undefined>;
   discard(card: BoardCard): Promise<string | undefined>;
   retry(card: BoardCard): Promise<string | undefined>;
-  /** Pede ao planejador para revisar o plano conforme o pedido (com as edições locais salvas antes, se houver). */
-  revise(card: BoardCard, feedback: string, edit: PlanEdit | undefined): Promise<string | undefined>;
+  /** Pede ao planejador para revisar o plano conforme o pedido e as imagens (com as edições locais salvas antes, se houver). */
+  revise(card: BoardCard, feedback: string, edit: PlanEdit | undefined, images: NewAttachment[]): Promise<string | undefined>;
+  /** Endereço de uma imagem anexada ao card (GET .../attachments/:id). */
+  attachmentUrl(card: BoardCard, attachment: CardAttachment): string | undefined;
   /** Texto completo da issue (ou a mensagem de erro). */
   details(card: BoardCard): Promise<CardDetails | string>;
   edit(card: BoardCard, edit: CardEdit): Promise<string | undefined>;
@@ -77,6 +80,8 @@ export class CardDetail {
   private readonly head: HTMLElement;
   private readonly content: HTMLElement;
   private readonly error: HTMLElement;
+  /** Imagens do pedido de revisão (fica entre os redesenhos; esvazia ao trocar de card ou depois de enviar). */
+  private readonly reviseImages = new ImagePicker();
 
   constructor(private readonly actions: CardDetailActions) {
     this.head = h('div', { class: 'ui-board-card__head' });
@@ -113,7 +118,7 @@ export class CardDetail {
     if (!same || planChanged || card.work?.stage !== 'approval') this.draft = undefined;
     // Durante a edição (plano ou resposta a uma pergunta), não redesenha por cima do que a pessoa está digitando.
     const typing = document.activeElement instanceof HTMLElement && this.el.contains(document.activeElement) && /^(TEXTAREA|INPUT|SELECT)$/.test(document.activeElement.tagName);
-    if (same && (this.draft || typing || this.editing) && !planChanged) {
+    if (same && (this.draft || typing || this.editing || this.reviseImages.count) && !planChanged) {
       this.card = card;
       this.agents = agents;
       return;
@@ -123,6 +128,7 @@ export class CardDetail {
     if (!same) {
       setHidden(this.error, true);
       this.editing = null;
+      this.reviseImages.clear();
     }
     this.render();
     setHidden(this.el, false);
@@ -131,6 +137,7 @@ export class CardDetail {
   hide(): void {
     this.card = null;
     this.draft = undefined;
+    this.reviseImages.clear();
     setHidden(this.el, true);
   }
 
@@ -153,7 +160,7 @@ export class CardDetail {
       this.content.replaceChildren(this.renderEdit(this.editing));
       return;
     }
-    const parts: (HTMLElement | null)[] = [c.body ? h('p', { class: 'ui-board-card__body', text: c.body }) : null];
+    const parts: (HTMLElement | null)[] = [c.body ? h('p', { class: 'ui-board-card__body', text: c.body }) : null, this.gallery(c.attachments, tr('Imagens do card'))];
     const w = c.work;
     if (!w || w.stage === 'failed') parts.push(this.renderStart());
     else if (w.stage === 'planning') parts.push(this.renderPlanning());
@@ -264,6 +271,7 @@ export class CardDetail {
       { class: 'ui-board-card__section' },
       h('p', { class: 'ui-board-card__planning', text: revising ? tr('Revisando o plano… o Claude está refazendo a sugestão com o seu pedido.') : tr('Planejando… o Claude está lendo o repositório (leva de 1 a 4 minutos).') }),
       revising ? h('p', { class: 'ui-board-new__hint', text: tr('Seu pedido: {0}', [revising]) }) : null,
+      revising ? this.gallery(c.work?.revisingAttachments, tr('Imagens do pedido de revisão')) : null,
       h('div', { class: 'ui-board-new__foot' }, this.button(tr('Cancelar'), '', () => this.run(() => this.actions.discard(c)))),
     );
   }
@@ -282,6 +290,7 @@ export class CardDetail {
       editable && plan.revisions?.length
         ? h('p', { class: 'ui-board-new__hint', text: tr('Revisado {0}× a seu pedido (último: "{1}").', [plan.revisions.length, plan.revisions[plan.revisions.length - 1]]) })
         : null,
+      this.renderRevisions(),
       editable ? null : this.renderRunHead(),
       plan.summary ? h('p', { class: 'ui-board-card__summary', text: plan.summary }) : null,
       plan.notes.length ? h('ul', { class: 'ui-board-card__notes' }, ...plan.notes.map((n) => h('li', { text: n }))) : null,
@@ -292,18 +301,39 @@ export class CardDetail {
         class: 'ui-rename__input',
         attrs: { rows: 3, maxlength: REVISION_MAX, placeholder: tr('Ex.: junte as ações 2 e 3; use o Codex nos testes; inclua atualizar a documentação'), 'aria-label': tr('O que mudar no plano') },
       });
+      this.reviseImages.listen(feedback);
       section.append(
         h(
           'div',
           { class: 'ui-board-card__revise' },
           h('label', { class: 'ui-spawn__label', text: tr('Pedir revisão ao planejador') }),
           feedback,
+          this.reviseImages.el,
           h(
             'div',
             { class: 'ui-board-new__foot' },
             this.button(tr('Revisar plano'), '', () => {
               const t = feedback.value.trim();
-              if (t) void this.run(() => this.actions.revise(c, t, this.draft ? { actions: this.draft, summary: plan.summary } : undefined));
+              if (!t) {
+                if (this.reviseImages.count) {
+                  setText(this.error, tr('Escreva o que mudar no plano: as imagens acompanham o pedido de revisão.'));
+                  setHidden(this.error, false);
+                  feedback.focus();
+                }
+                return;
+              }
+              const edit = this.draft ? { actions: this.draft, summary: plan.summary } : undefined;
+              void this.run(async () => {
+                let images: NewAttachment[];
+                try {
+                  images = await this.reviseImages.encode();
+                } catch (err) {
+                  return err instanceof Error ? err.message : String(err);
+                }
+                const err = await this.actions.revise(c, t, edit, images);
+                if (!err) this.reviseImages.clear();
+                return err;
+              });
             }),
           ),
         ),
@@ -338,6 +368,26 @@ export class CardDetail {
       if (foot.childElementCount) section.append(foot);
     }
     return section;
+  }
+
+  /** Miniaturas das imagens (do card ou de um pedido de revisão); null sem imagens. */
+  private gallery(list: readonly CardAttachment[] | undefined, label: string): HTMLElement | null {
+    const c = this.card!;
+    return list?.length ? attachmentGallery(list, (a) => this.actions.attachmentUrl(c, a), label) : null;
+  }
+
+  /** Os pedidos de revisão já atendidos, com as imagens de cada um (só quando algum tem imagens). */
+  private renderRevisions(): HTMLElement | null {
+    const plan = this.card!.work!.plan!;
+    const revisions = plan.revisions ?? [];
+    const images = plan.revisionAttachments ?? [];
+    if (!images.some((l) => l.length)) return null;
+    return h(
+      'details',
+      { class: 'ui-board-card__details ui-board-card__revisions' },
+      h('summary', { text: tr('Pedidos de revisão ({0})', [revisions.length]) }),
+      h('ol', {}, ...revisions.map((text, i) => h('li', {}, h('p', { class: 'ui-board-new__hint', text }), this.gallery(images[i], tr('Imagens do pedido de revisão'))))),
+    );
   }
 
   /** Situação da execução: erro, perguntas dos agentes, worktree e PR. */
@@ -513,6 +563,7 @@ export class CardDetail {
     } finally {
       this.busy = false;
       this.render();
+      this.reviseImages.refresh();
     }
   }
 }

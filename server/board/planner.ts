@@ -4,10 +4,12 @@
 //
 // Roda na conta do Claude com mais folga (CLAUDE_CONFIG_DIR), na pasta do projeto, sem as configurações do usuário
 // (--setting-sources project: sem hooks nem plugins pessoais, o que também deixa a chamada bem mais rápida) e sem
-// servidores MCP. Modelo: HABBLAUD_PLANNER_MODEL (padrão sonnet).
-import { ACTION_TYPES, AGENT_IDS, type AgentQuota, type BoardCard, type BoardProject, type CardPlan } from '../../shared/board';
+// servidores MCP. Modelo: HABBLAUD_PLANNER_MODEL (padrão sonnet). Imagens anexadas ao card (ou ao pedido de revisão)
+// entram no pedido pelos caminhos absolutos, com a pasta delas liberada para o Read (--add-dir).
+import { ACTION_TYPES, AGENT_IDS, type AgentQuota, type BoardCard, type BoardProject, type CardAttachment, type CardPlan } from '../../shared/board';
 import { homedir } from 'node:os';
 import { isDefaultDir } from '../accounts/detect';
+import { imagesNote } from './attachments';
 import { CliError, type Exec } from './cli';
 import { MAX_ACTIONS } from './router';
 
@@ -52,9 +54,17 @@ const KIND_TEXT = { issue: 'tarefa', feature: 'funcionalidade nova', fix: 'corre
 export interface PlanRevision {
   previous: CardPlan;
   feedback: string;
+  /** Imagens anexadas a este pedido de revisão. */
+  attachments?: CardAttachment[];
 }
 
-export function plannerPrompt(project: BoardProject, card: BoardCard, quotas: readonly AgentQuota[], revision?: PlanRevision): string {
+/** Caminhos absolutos das imagens: as do card e as do pedido de revisão atual. */
+export interface PlanImages {
+  card: readonly string[];
+  revision: readonly string[];
+}
+
+export function plannerPrompt(project: BoardProject, card: BoardCard, quotas: readonly AgentQuota[], revision?: PlanRevision, images: PlanImages = { card: [], revision: [] }): string {
   const revise = revision
     ? [
         '',
@@ -63,6 +73,7 @@ export function plannerPrompt(project: BoardProject, card: BoardCard, quotas: re
         JSON.stringify({ summary: revision.previous.summary, actions: revision.previous.actions.map(({ id, title, instructions, type, agent, writes, deps, reason }) => ({ id, title, instructions, type, agent, writes, deps, reason })) }),
         ...(revision.previous.revisions?.length ? ['Pedidos anteriores (já atendidos):', ...revision.previous.revisions.map((r) => `- ${r}`)] : []),
         `Pedido da pessoa agora: ${revision.feedback}`,
+        ...imagesNote(images.revision, 'Imagens anexadas a este pedido de revisão (abra cada uma com o Read: ilustram a correção pedida):'),
       ]
     : [];
   return [
@@ -70,6 +81,7 @@ export function plannerPrompt(project: BoardProject, card: BoardCard, quotas: re
     '',
     `Card ${card.ref} (${KIND_TEXT[card.kind]}): ${card.title}`,
     card.body ? `Descrição:\n${card.body}` : 'Sem descrição.',
+    ...imagesNote(images.card, 'Imagens anexadas ao card (abra cada uma com o Read: ilustram a demanda):'),
     '',
     'IAs que podem receber ações (use só as disponíveis; prefira a que tem mais folga quando duas servem):',
     '| agent | bom em | uso | disponível |',
@@ -80,6 +92,7 @@ export function plannerPrompt(project: BoardProject, card: BoardCard, quotas: re
     '- Olhe o repositório o suficiente para entender onde mexer (Read, Grep, Glob). NÃO altere nada.',
     `- Quebre o card em 1 a ${MAX_ACTIONS} ações. Tarefa simples = poucas ações; não invente trabalho.`,
     '- Cada ação vai para um agente que NÃO vê este plano nem as outras ações: as instruções precisam ser completas (arquivos, o que mudar, como conferir).',
+    ...(images.card.length || images.revision.length ? ['- As imagens anexadas chegam sozinhas aos agentes de cada ação (com os caminhos): descreva nas instruções o que importa nelas, sem copiar os caminhos.'] : []),
     '- Todas as ações trabalham na mesma cópia do repositório (um worktree só do card); as que escrevem rodam uma de cada vez, na ordem.',
     '- Use deps para ordem real (ex.: testes depois da implementação). Marque writes=false em análise e revisão.',
     '- Se fizer sentido, termine com uma revisão por uma IA diferente da que implementou.',
@@ -97,6 +110,8 @@ export interface PlannerRun {
   model: string;
   exec: Exec;
   env?: NodeJS.ProcessEnv;
+  /** Pastas fora do projeto que o Read pode abrir (a das imagens anexadas). */
+  addDirs?: readonly string[];
 }
 
 /** Roda o planejador e devolve o JSON cru (summary + actions); o roteador confere. */
@@ -118,6 +133,7 @@ export async function runPlanner(run: PlannerRun, prompt: string): Promise<{ sum
     'project',
     '--strict-mcp-config',
     '--no-session-persistence',
+    ...(run.addDirs ?? []).flatMap((d) => ['--add-dir', d]),
   ];
   // Conta padrão (~/.claude): sem CLAUDE_CONFIG_DIR. Com a variável, mesmo apontando para a pasta padrão, o Claude Code
   // procura o login em outro item do Keychain (o de sufixo), e dá "OAuth session expired" com a conta logada.

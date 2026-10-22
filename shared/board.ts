@@ -65,6 +65,35 @@ export interface CardPlan {
   notes: string[];
   /** Pedidos de revisão já atendidos pelo planejador, do mais antigo ao mais novo. */
   revisions?: string[];
+  /** Imagens anexadas a cada pedido de revisão (mesma ordem de `revisions`; [] = revisão sem imagens). */
+  revisionAttachments?: CardAttachment[][];
+}
+
+/** Tipos de imagem aceitos nos anexos dos cards (conferidos pelos bytes do arquivo, não só pelo tipo enviado). */
+export type AttachmentType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
+export const ATTACHMENT_TYPES: readonly AttachmentType[] = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+/** Imagens por envio (card novo ou pedido de revisão) e tamanho de cada uma. */
+export const ATTACHMENTS_MAX = 5;
+export const ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Imagem anexada a um card (ilustra a demanda ou o pedido de revisão). O arquivo fica no computador do Promp IA;
+ * a página busca em GET /api/board/projects/:id/cards/:card/attachments/:id.
+ */
+export interface CardAttachment {
+  id: string;
+  /** Nome original (limpo), só para mostrar. */
+  name: string;
+  type: AttachmentType;
+  size: number;
+}
+
+/** Imagem no corpo JSON de um POST (card novo ou revisão do plano). */
+export interface NewAttachment {
+  name: string;
+  type: string;
+  /** Conteúdo em base64. */
+  data: string;
 }
 
 /**
@@ -130,6 +159,8 @@ export interface CardWork {
   stage: CardStage;
   /** Planejando uma revisão: o plano anterior continua em `plan` e volta se a revisão falhar. */
   revising?: string;
+  /** Imagens do pedido de revisão em andamento (vão para `plan.revisionAttachments` quando ele é atendido). */
+  revisingAttachments?: CardAttachment[];
   /** Como a fonte mostra o card ("#12", "PRO-3") e o título: para avisos sem buscar a fonte. */
   ref?: string;
   title?: string;
@@ -181,6 +212,8 @@ export interface BoardCard {
   /** Projeto do Orca do card (na visão de todos os projetos); ausente = time do Linear sem projeto ligado. */
   projectId?: string;
   projectName?: string;
+  /** Imagens anexadas ao criar o card (as das revisões ficam no plano). */
+  attachments?: CardAttachment[];
 }
 
 /** GET /api/board/all: os cards de todos os projetos e de todos os times do Linear. */
@@ -236,15 +269,23 @@ export interface BoardIndex {
   linear: boolean;
 }
 
-/** POST /api/board/projects/:id/cards: card novo (vira issue na fonte do projeto). */
-export interface NewCard {
+/** PUT /api/board/projects/:id/cards/:card: card editado (vai para a issue na fonte). */
+export interface CardEdit {
   kind: CardKind;
   title: string;
   body: string;
 }
 
-/** PUT /api/board/projects/:id/cards/:card: card editado (vai para a issue na fonte). */
-export type CardEdit = NewCard;
+/** POST /api/board/projects/:id/cards: card novo (vira issue na fonte do projeto), com imagens opcionais. */
+export interface NewCard extends CardEdit {
+  images?: NewAttachment[];
+}
+
+/** POST /api/board/projects/:id/cards/:card/plan: planejar; com `feedback`, revisar o plano (imagens opcionais). */
+export interface PlanRequest {
+  feedback?: string;
+  images?: NewAttachment[];
+}
 
 /** GET /api/board/projects/:id/cards/:card/details: texto completo da issue (para editar). */
 export interface CardDetails {

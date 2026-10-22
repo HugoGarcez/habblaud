@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentQuota, BoardCard, BoardProject, CardPlan } from '../../shared/board';
 import { setQuiet } from '../log';
 import { tempDir } from '../test/fixtures';
+import { BoardFiles } from './attachments';
 import { CliError, type Exec, type Shell } from './cli';
 import { BoardRunner, taskSpec, workerSummary, worktreeName } from './runner';
 import { BoardStore } from './store';
@@ -126,7 +127,7 @@ function setup(opts: { quotas?: Partial<Record<string, boolean>>; maxWorkers?: n
   const orca = fakeOrca();
   const agents = (): AgentQuota[] =>
     (['claude', 'codex', 'antigravity', 'opencode'] as const).map((a) => ({ agent: a, name: a, installed: true, available: opts.quotas?.[a] ?? true, strengths: '', reason: opts.quotas?.[a] === false ? 'sem cota agora' : undefined }));
-  const runner = new BoardRunner({ store, exec: orca.exec, orca: 'orca', gh: 'gh', git: 'git', now: () => NOW, lookup: async () => ({ project, card }), agents, maxWorkers: opts.maxWorkers, shell: opts.shell, saveAfterMerge: (p, c) => opts.saved?.push([p, c]) });
+  const runner = new BoardRunner({ store, exec: orca.exec, orca: 'orca', gh: 'gh', git: 'git', now: () => NOW, lookup: async () => ({ project, card }), agents, maxWorkers: opts.maxWorkers, shell: opts.shell, files: new BoardFiles(store.attachmentsDir), saveAfterMerge: (p, c) => opts.saved?.push([p, c]) });
   store.setWork('p', card.id, { stage: 'queued', plan, updatedAt: NOW });
   return { store, runner, ...orca };
 }
@@ -148,6 +149,24 @@ describe('runner', () => {
     const spec = taskSpec(project, card, plan.actions[0], 0, 2, { path: '/wt', branch: 'b' });
     expect(spec).toContain('Ação 1 de 2: Implementar');
     expect(spec).toContain('NÃO faça commit');
+  });
+
+  it('Tasks recebem os caminhos dos arquivos do card e de todas as revisões', async () => {
+    const { store, runner, state } = setup();
+    const files = new BoardFiles(store.attachmentsDir);
+    const [original, revision, secondRevision] = files.save(['card', 'revisao', 'revisao-2'].map((name) => ({
+      name: `${name}.jpg`, type: 'image/jpeg', data: Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+    })));
+    store.setAttachments('p', card.id, [original]);
+    store.setWork('p', card.id, { stage: 'queued', plan: { ...plan, revisions: ['primeira', 'segunda'], revisionAttachments: [[revision], [secondRevision]] }, updatedAt: NOW });
+    await runner.tick();
+    expect(work(store).stage).toBe('running');
+    const creates = state.calls.filter((c) => c[2] === 'task-create');
+    expect(creates).toHaveLength(plan.actions.length);
+    for (const call of creates) {
+      const spec = call[call.indexOf('--spec') + 1];
+      for (const attachment of [original, revision, secondRevision]) expect(spec).toContain(files.path(attachment)!);
+    }
   });
 
   it('do aprovado ao PR: coordenador, Run, worktree, Tasks em ordem, workers e finalização', async () => {

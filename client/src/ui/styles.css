@@ -11771,3 +11771,140 @@ html.is-replay #world {
   padding-top: 10px;
   border-top: 1px dashed var(--ui-line);
 }
+
+/* Imagens dos cards do quadro (ui/board-images.ts): seletor, miniaturas e a imagem ampliada. */
+.ui-board-img {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  margin: 0 -6px;
+  border: 1px dashed transparent;
+  border-radius: var(--radius);
+}
+
+.ui-board-img.is-drop {
+  border-color: var(--ui-accent, #7fd1ff);
+  background: var(--ui-bg-soft);
+}
+
+.ui-board-img__bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ui-board-img__add {
+  gap: 6px;
+}
+
+.ui-board-img__add:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ui-board-img__thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ui-board-img__thumbs[hidden] {
+  display: none;
+}
+
+.ui-board-img__thumb {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  border: 2px solid var(--ui-line-strong);
+  border-radius: 4px;
+  background: var(--ui-bg-solid);
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.ui-board-img__thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ui-board-img__remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  background: rgba(10, 12, 18, 0.8);
+}
+
+.ui-board-img__open {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+
+.ui-board-img__open:hover img,
+.ui-board-img__open:focus-visible img {
+  filter: brightness(1.15);
+}
+
+.ui-board-img__gallery {
+  margin-top: 2px;
+}
+
+.ui-board-card__revisions ol {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ui-board-img__viewer {
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  padding: 8px;
+  border: 2px solid var(--ui-line-strong);
+  border-radius: var(--radius);
+  background: var(--ui-bg-solid);
+  box-shadow: 0 30px 80px rgba(5, 7, 12, 0.6);
+  color: var(--ui-text);
+  font: 12px/1.45 var(--font-ui);
+  cursor: zoom-out;
+}
+
+.ui-board-img__viewer::backdrop {
+  background: rgba(5, 7, 12, 0.75);
+}
+
+.ui-board-img__viewer img {
+  display: block;
+  max-width: calc(100vw - 56px);
+  max-height: calc(100vh - 96px);
+  margin: 0 auto;
+  object-fit: contain;
+}
+
+.ui-board-img__viewer-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  cursor: default;
+}
+
+.ui-board-img__viewer-bar > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-muted);
+}

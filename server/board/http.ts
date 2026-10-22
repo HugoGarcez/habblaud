@@ -5,29 +5,36 @@
 //   GET  /api/board/all[?refresh=1]                  200 BoardAllView (todos os projetos e times do Linear)
 //   GET  /api/board/projects/:id[?refresh=1]         200 BoardView | 404
 //   POST /api/board/projects/:id/config              {source, linearTeam?}: 200 BoardProject | 400 | 404
-//   POST /api/board/projects/:id/cards               {kind, title, body}: 201 BoardCard | 400 | 404 | 502 (fonte)
+//   POST /api/board/projects/:id/cards               {kind, title, body, images?}: 201 BoardCard | 400 | 404 | 502 (fonte)
 //   PUT  /api/board/projects/:id/cards/:card         {kind, title, body}: 200 BoardCard (issue editada) | 400 | 404 | 409 | 502
 //   GET  /api/board/projects/:id/cards/:card/details 200 CardDetails (texto completo da issue) | 404 | 502
-//   POST /api/board/projects/:id/cards/:card/plan    {feedback?}: 202 BoardCard (Planejando; com feedback, revisa o plano)
+//   POST /api/board/projects/:id/cards/:card/plan    {feedback?, images?}: 202 BoardCard (Planejando; com feedback, revisa o plano)
 //   PUT  /api/board/projects/:id/cards/:card/plan    PlanEdit: 200 BoardCard | 400 | 404 | 409
 //   POST /api/board/projects/:id/cards/:card/approve {}: 200 BoardCard (na fila) | 404 | 409
 //   POST /api/board/projects/:id/cards/:card/discard {}: 200 BoardCard (de volta à coluna da fonte; cancela a execução)
 //   POST /api/board/projects/:id/cards/:card/retry   {}: 200 BoardCard (card travado volta a rodar) | 409
 //   POST /api/board/projects/:id/cards/:card/answer  {questionId, text}: 200 BoardCard | 400 | 409
 //   POST /api/board/projects/:id/cards/:card/merge   {afterMerge?}: 200 BoardCard (merge do PR; card Concluído) | 409
+//   GET  /api/board/projects/:id/cards/:card/attachments/:att  a imagem (PNG, JPEG, GIF ou WebP) | 404
+//
+// `images` (card novo e pedido de revisão): [{name, type, data (base64)}], até ATTACHMENTS_MAX imagens de até
+// ATTACHMENT_MAX_BYTES cada, só PNG/JPEG/GIF/WebP conferidos pelos bytes (server/board/attachments.ts); só essas duas
+// rotas aceitam o corpo maior (BOARD_IMAGES_BODY_MAX). As imagens vão para o planejador e os agentes pelos caminhos.
 //
 // `:id` é o id do projeto no Orca com encodeURIComponent ("github%3Adono%2Frepo").
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { AFTER_MERGE_MAX, CARD_BODY_MAX, CARD_TITLE_MAX, REVISION_MAX, type BoardProjectConfig, type MergeRequest, type NewCard } from '../../shared/board';
+import { AFTER_MERGE_MAX, CARD_BODY_MAX, CARD_TITLE_MAX, REVISION_MAX, type BoardProjectConfig, type CardEdit, type MergeRequest } from '../../shared/board';
 import { tr } from '../../shared/i18n';
 import { HttpError, readJson, sendJson } from '../http/app';
 import { errMsg, log } from '../log';
+import { BOARD_IMAGES_BODY_MAX, parseImages, type DecodedImage } from './attachments';
 import type { BoardResult, BoardService } from './service';
 
 const PROJECT = /^\/api\/board\/projects\/([^/]+)(\/config|\/cards)?$/;
 const TEAM = /^[A-Za-z0-9_-]{1,32}$/;
 const CARD_ACTION = /^\/api\/board\/projects\/([^/]+)\/cards\/([^/]+)\/(plan|approve|discard|retry|answer|merge|details)$/;
 const CARD = /^\/api\/board\/projects\/([^/]+)\/cards\/([^/]+)$/;
+const ATTACHMENT = /^\/api\/board\/projects\/([^/]+)\/cards\/([^/]+)\/attachments\/([^/]+)$/;
 
 function methodNotAllowed(res: ServerResponse, allow: string): void {
   res.setHeader('Allow', allow);
@@ -52,7 +59,14 @@ export function parseConfig(body: unknown): BoardProjectConfig {
   return { source };
 }
 
-export function parseNewCard(body: unknown): NewCard {
+/** `images` do corpo (card novo ou revisão), já conferidas; erro = 400. */
+export function parseBodyImages(body: unknown): DecodedImage[] {
+  const r = parseImages((body as { images?: unknown } | null)?.images);
+  if ('error' in r) throw new HttpError(400, r.error);
+  return r;
+}
+
+export function parseNewCard(body: unknown): CardEdit {
   const b = body as { kind?: unknown; title?: unknown; body?: unknown } | null;
   const kind = b?.kind;
   if (kind !== 'issue' && kind !== 'feature' && kind !== 'fix') throw new HttpError(400, tr('tipo do card: issue, feature ou fix'));
@@ -75,6 +89,30 @@ export function createBoardRoutes(board: BoardService): (req: IncomingMessage, r
     if (path === '/api/board/all') {
       if (!isRead) return methodNotAllowed(res, 'GET');
       board.allView(url.searchParams.get('refresh') === '1').then((v) => sendJson(res, 200, v), (err) => fail(res, err));
+      return;
+    }
+    const att = ATTACHMENT.exec(path);
+    if (att) {
+      if (!isRead) return methodNotAllowed(res, 'GET');
+      let ids: string[];
+      try {
+        ids = att.slice(1, 4).map(decodeURIComponent);
+      } catch {
+        return sendJson(res, 400, { error: tr('id inválido') });
+      }
+      const found = board.attachment(ids[0], ids[1], ids[2]);
+      if (!found) return sendJson(res, 404, { error: tr('imagem não encontrada') });
+      // Só o tipo conferido pelos bytes, sem farejar outro; nada de script mesmo se o navegador abrir o arquivo sozinho.
+      res.writeHead(200, {
+        'Content-Type': found.attachment.type,
+        'Content-Length': found.data.length,
+        'Cache-Control': 'private, max-age=3600',
+        'X-Content-Type-Options': 'nosniff',
+        'Cross-Origin-Resource-Policy': 'same-origin',
+        'Content-Security-Policy': "default-src 'none'; sandbox",
+        'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(found.attachment.name)}`,
+      });
+      res.end(method === 'HEAD' ? undefined : found.data);
       return;
     }
     const cardOnly = CARD.exec(path);
@@ -125,12 +163,14 @@ export function createBoardRoutes(board: BoardService): (req: IncomingMessage, r
         return;
       }
       if (method !== 'POST') return methodNotAllowed(res, verb === 'plan' ? 'POST, PUT' : 'POST');
-      readJson(req)
+      readJson(req, verb === 'plan' ? BOARD_IMAGES_BODY_MAX : undefined)
         .then(async (body) => {
           if (verb === 'plan') {
             const fb = (body as { feedback?: unknown } | null)?.feedback;
             const feedback = typeof fb === 'string' ? fb.trim().slice(0, REVISION_MAX) : '';
-            reply(await board.plan(pid, cid, feedback || undefined), 202);
+            const images = parseBodyImages(body);
+            if (images.length && !feedback) throw new HttpError(400, tr('As imagens acompanham um pedido de revisão: escreva o que mudar.'));
+            reply(await board.plan(pid, cid, feedback || undefined, images), 202);
           }
           else if (verb === 'approve') reply(await board.approve(pid, cid));
           else if (verb === 'retry') reply(await board.retry(pid, cid));
@@ -159,9 +199,9 @@ export function createBoardRoutes(board: BoardService): (req: IncomingMessage, r
     }
     if (m[2] === '/cards') {
       if (method !== 'POST') return methodNotAllowed(res, 'POST');
-      readJson(req)
+      readJson(req, BOARD_IMAGES_BODY_MAX)
         .then(async (body) => {
-          const r = await board.create(id, parseNewCard(body));
+          const r = await board.create(id, parseNewCard(body), parseBodyImages(body));
           if (!r) return sendJson(res, 404, { error: tr('projeto do Orca desconhecido') });
           if ('error' in r) return sendJson(res, 502, { error: r.error });
           sendJson(res, 201, r.card);
